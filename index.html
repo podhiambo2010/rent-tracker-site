@@ -1,1 +1,177 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rent Snapshot</title>
+  <style>
+    :root { --pad: 14px; }
+    body { font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 1000px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+    input[type="text"] { padding: 8px; min-width: 260px; }
+    button { padding: 8px 12px; cursor: pointer; }
+    .card { border: 1px solid #e3e3e3; border-radius: 10px; padding: var(--pad); margin: 10px 0; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.04);}
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #e6e6e6; padding: 8px; text-align: left; }
+    th { background: #f7f7f7; }
+    .ok { color: #0a7; font-weight: 600; }
+    .due { color: #c30; font-weight: 600; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Rent Snapshot</h1>
+  <div class="muted" id="status">Loading…</div>
+
+  <div class="card">
+    <div class="row">
+      <strong>API base:</strong>
+      <input id="apiBase" type="text" />
+      <button id="saveApi">Use this API</button>
+      <span class="muted">Tip: it’s your Render URL</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Leases</h3>
+    <table id="leasesTbl" hidden>
+      <thead>
+        <tr>
+          <th>Tenant</th><th>Unit</th><th>Rent</th><th>Status</th><th>Lease ID</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="leasesEmpty" class="muted" hidden>No leases found.</div>
+  </div>
+
+  <div class="card">
+    <h3>Current Month Balances (from v_rent_roll)</h3>
+    <table id="balancesTbl" hidden>
+      <thead>
+        <tr>
+          <th>Tenant</th><th>Unit</th><th>Total Due</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="balancesEmpty" class="muted" hidden>No balances to show.</div>
+  </div>
+
+  <script>
+    // ========= CONFIG =========
+    const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com"; // <-- your API base
+    const apiBox = document.getElementById("apiBase");
+    const saveBtn = document.getElementById("saveApi");
+    const statusEl = document.getElementById("status");
+
+    function getAPI() {
+      return localStorage.getItem("rt_api") || DEFAULT_API;
+    }
+    function setAPI(v) {
+      localStorage.setItem("rt_api", v.trim());
+    }
+    apiBox.value = getAPI();
+    saveBtn.onclick = () => {
+      setAPI(apiBox.value);
+      location.reload();
+    };
+
+    // ========= HELPERS =========
+    async function jget(path) {
+      const base = getAPI();
+      const r = await fetch(base + path);
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      return r.json();
+    }
+    function fmtMoney(v) {
+      if (v == null) return "";
+      const n = Number(v);
+      if (Number.isNaN(n)) return v;
+      return "KSh " + n.toLocaleString();
+    }
+
+    // ========= RENDER LEASES =========
+    async function loadLeases() {
+      try {
+        const rows = await jget("/leases");
+        const tbl = document.getElementById("leasesTbl");
+        const empty = document.getElementById("leasesEmpty");
+        const tb = tbl.querySelector("tbody");
+        if (!rows.length) { tbl.hidden = true; empty.hidden = false; return; }
+
+        tb.innerHTML = rows.map(r => {
+          const st = (r.lease_status || "").toLowerCase().includes("active") ? "ok" : "due";
+          // A button that calls /wa_for_lease and opens WhatsApp
+          const waBtn = r.lease_id
+            ? `<button data-lease="${r.lease_id}" class="waBtn">WhatsApp</button>`
+            : `<span class="muted">—</span>`;
+          return `<tr>
+              <td>${r.tenant ?? ""}</td>
+              <td>${r.unit ?? ""}</td>
+              <td>${fmtMoney(r.rent_amount)}</td>
+              <td class="${st}">${r.lease_status ?? ""}</td>
+              <td><code>${r.lease_id ?? ""}</code></td>
+              <td>${waBtn}</td>
+            </tr>`;
+        }).join("");
+        tbl.hidden = false; empty.hidden = true;
+
+        // Attach WhatsApp button handlers
+        tb.querySelectorAll(".waBtn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const leaseId = btn.getAttribute("data-lease");
+            try {
+              const data = await jget(`/wa_for_lease?lease_id=${encodeURIComponent(leaseId)}`);
+              if (data.wa_link) window.open(data.wa_link, "_blank");
+              else alert("Could not create WhatsApp link.");
+            } catch (e) {
+              alert("Error: " + e.message);
+            }
+          });
+        });
+
+      } catch (e) {
+        statusEl.textContent = "Leases error: " + e.message;
+      }
+    }
+
+    // ========= RENDER BALANCES =========
+    async function loadBalances() {
+      try {
+        const rows = await jget("/balances");
+        const tbl = document.getElementById("balancesTbl");
+        const empty = document.getElementById("balancesEmpty");
+        const tb = tbl.querySelector("tbody");
+        if (!rows.length) { tbl.hidden = true; empty.hidden = false; return; }
+
+        tb.innerHTML = rows.map(r => {
+          const st = (Number(r.balance) > 0) ? "due" : "ok";
+          // If you want WA here, we would need the lease_id; you can extend /balances to return it.
+          return `<tr>
+              <td>${r.tenant ?? ""}</td>
+              <td>${r.unit_code ?? ""}</td>
+              <td>${fmtMoney(r.total_due)}</td>
+              <td>${fmtMoney(r.paid_amount)}</td>
+              <td class="${st}">${fmtMoney(r.balance)}</td>
+              <td class="${st}">${r.status ?? (Number(r.balance)>0 ? "Due" : "OK")}</td>
+              <td><span class="muted">—</span></td>
+            </tr>`;
+        }).join("");
+        tbl.hidden = false; empty.hidden = true;
+      } catch (e) {
+        statusEl.textContent = "Balances error: " + e.message;
+      }
+    }
+
+    // ========= INIT =========
+    (async function init(){
+      statusEl.textContent = "Using API: " + getAPI();
+      await loadLeases();
+      await loadBalances();
+    })();
+  </script>
+</body>
+</html>
 
