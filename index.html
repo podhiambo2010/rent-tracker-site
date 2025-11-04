@@ -4,27 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rent Tracker Dashboard</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <style>
-    :root {
-      --bg: #0b1020;
-      --panel: #111936;
-      --panel-2: #0f1730;
-      --text: #f1f5f9;
-      --muted: #93a4c4;
-      --brand: #4f8cff;
-      --brand-2: #7aa7ff;
-      --ok: #22c55e;
-      --warn: #f59e0b;
-      --danger: #ef4444;
-      --chip: #1e2a4a;
-      --bd: #1c2546;
+    :root{
+      --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --text:#f1f5f9;
+      --muted:#93a4c4; --brand:#4f8cff; --brand-2:#7aa7ff; --ok:#22c55e;
+      --warn:#f59e0b; --danger:#ef4444; --chip:#1e2a4a; --bd:#1c2546;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(180deg,var(--bg),#060a19 60%);color:var(--text)}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:linear-gradient(180deg,var(--bg),#060a19 60%);color:var(--text)}
     a{color:var(--brand)}
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
     header{position:sticky;top:0;z-index:5;background:rgba(15,23,48,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
@@ -38,6 +32,7 @@
     .btn.secondary{background:#223260;color:#dbe7ff}
     .btn.ghost{background:transparent;border:1px solid var(--bd)}
     .btn:disabled{opacity:.6;cursor:not-allowed}
+    .btn-outline{background:transparent}
 
     main{max-width:1200px;margin:18px auto;padding:0 18px;display:grid;grid-template-columns:240px 1fr;gap:18px}
     nav{position:sticky;top:66px;align-self:start;background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:10px}
@@ -74,29 +69,12 @@
     .toast{position:fixed;right:16px;bottom:16px;background:#111936;border:1px solid var(--bd);padding:10px 12px;border-radius:10px;display:none}
     .footer{color:var(--muted);padding:18px 20px;border-top:1px solid var(--bd);background:#0a1228}
     .hidden{display:none!important}
-    @media (max-width: 980px){
-      main{grid-template-columns:1fr}
-      nav{position:static}
-      .kpi{grid-column:span 6}
-    }
-    @media (max-width: 640px){
-      .kpi{grid-column:span 12}
-      .env input{max-width:100%;width:220px}
-    }
+
+    @media (max-width:980px){ main{grid-template-columns:1fr} nav{position:static} .kpi{grid-column:span 6} }
+    @media (max-width:640px){ .kpi{grid-column:span 12} .env input{max-width:100%;width:220px} }
   </style>
 </head>
-<<!-- ===== Rent Tracker actions ===== -->
-<div class="panel" style="margin: 16px 0; padding: 12px; background:#111936; border:1px solid #1d2746; border-radius:10px;">
-  <h3 style="margin:0 0 8px;">Invoice Actions</h3>
-  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-    <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
-           style="flex:1; min-width:260px; padding:8px; border-radius:8px; border:1px solid #2a345a; background:#0f1730; color:#fff;">
-    <button id="btnMarkSent" class="btn">Mark as sent</button>
-    <button id="btnHealth" class="btn btn-outline">Auth ping</button>
-  </div>
-  <div id="actionMsg" style="margin-top:8px; font-size:14px; color:#93a4c4;"></div>
-</div>
-<!-- ===== /Rent Tracker actions ===== -->
+<body>
   <div class="shell">
     <header>
       <div class="bar">
@@ -124,6 +102,19 @@
       </nav>
 
       <section>
+        <!-- ===== Invoice Actions (buttons) ===== -->
+        <div class="panel" style="margin: 0 0 16px;">
+          <h3 style="margin:0 0 8px;">Invoice Actions</h3>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
+                   style="flex:1; min-width:260px; padding:8px; border-radius:8px; border:1px solid #2a345a; background:#0f1730; color:#fff;">
+            <button id="btnMarkSent" class="btn">Mark as sent</button>
+            <button id="btnHealth" class="btn btn-outline">Auth ping</button>
+          </div>
+          <div id="actionMsg" style="margin-top:8px; font-size:14px; color:#93a4c4;"></div>
+        </div>
+        <!-- ===== /Invoice Actions ===== -->
+
         <!-- OVERVIEW -->
         <div class="panel" id="tab-overview">
           <h2>Overview</h2>
@@ -149,13 +140,8 @@
             <table>
               <thead>
                 <tr>
-                  <th>Tenant</th>
-                  <th>Unit</th>
-                  <th>Rent</th>
-                  <th>Cycle</th>
-                  <th>Due Day</th>
-                  <th>Status</th>
-                  <th>WhatsApp</th>
+                  <th>Tenant</th><th>Unit</th><th>Rent</th><th>Cycle</th>
+                  <th>Due Day</th><th>Status</th><th>WhatsApp</th>
                 </tr>
               </thead>
               <tbody id="leasesBody"></tbody>
@@ -185,11 +171,8 @@
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Tenant</th>
-                <th>Method</th>
-                <th class="muted">Status</th>
-                <th style="text-align:right">Amount</th>
+                <th>Date</th><th>Tenant</th><th>Method</th>
+                <th class="muted">Status</th><th style="text-align:right">Amount</th>
               </tr>
             </thead>
             <tbody id="paymentsBody"></tbody>
@@ -213,13 +196,8 @@
           <table>
             <thead>
               <tr>
-                <th>Property</th>
-                <th>Unit</th>
-                <th>Tenant</th>
-                <th>Period</th>
-                <th>Due</th>
-                <th>Status</th>
-                <th style="text-align:right">Balance</th>
+                <th>Property</th><th>Unit</th><th>Tenant</th><th>Period</th>
+                <th>Due</th><th>Status</th><th style="text-align:right">Balance</th>
               </tr>
             </thead>
             <tbody id="rentrollBody"></tbody>
@@ -236,10 +214,7 @@
           <table>
             <thead>
               <tr>
-                <th>Tenant</th>
-                <th>Lease</th>
-                <th>Period</th>
-                <th>Status</th>
+                <th>Tenant</th><th>Lease</th><th>Period</th><th>Status</th>
                 <th style="text-align:right">Balance</th>
               </tr>
             </thead>
@@ -258,23 +233,8 @@
             <input id="waBalance" type="number" placeholder="Balance amount (KSh)" />
             <button class="btn" id="waBuild">Build Link</button>
           </div>
-          <p class="muted">Use this for ad‑hoc messages. For real leases, click the WhatsApp icon in the <b>Leases</b> table.</p>
+          <p class="muted">Use this for ad-hoc messages. For real leases, click the WhatsApp icon in the <b>Leases</b> table.</p>
           <div id="waResult" class="muted"></div>
-        </div>
-
-        <!-- SETTINGS -->
-        <div class="panel hidden" id="tab-settings">
-          <h2>Settings</h2>
-          <p class="muted">These settings are local to your browser.</p>
-          <div class="filters">
-            <label style="display:flex;gap:8px;align-items:center">
-              API Base
-              <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
-            </label>
-            <button class="btn" id="saveSettings">Save</button>
-            <button class="btn ghost" id="resetSettings">Reset</button>
-          </div>
-          <p class="muted">CORS is already locked to your static site. No secrets are stored here.</p>
         </div>
       </section>
     </main>
@@ -289,265 +249,7 @@
     </footer>
   </div>
 
-  <script>
-    const $ = (q, el=document)=>el.querySelector(q);
-    const $$ = (q, el=document)=>[...el.querySelectorAll(q)];
-
-    const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com"; // your live API
-
-    const state = {
-      api: localStorage.getItem('apiBase') || DEFAULT_API,
-      monthsPayments: [],
-      monthsRentroll: [],
-      leases: [],
-    };
-
-<style>
-  .btn{padding:8px 12px;border-radius:8px;border:1px solid #2a345a;background:#1a2650;color:#fff;cursor:pointer}
-  .btn:hover{filter:brightness(1.1)}
-  .btn:disabled{opacity:.6;cursor:not-allowed}
-  .btn-outline{background:transparent}
-</style>
-
-    function setAPI(v){ state.api = (v||'').trim().replace(/\/$/,''); localStorage.setItem('apiBase', state.api); $('#apiEcho').textContent = state.api; $('#apiBase').value = state.api; $('#apiBase2').value = state.api; }
-
-    function toast(msg, ms=2400){ const t=$('#toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none', ms); }
-
-    async function jget(path){
-      const url = `${state.api}${path}`;
-      const r = await fetch(url, { headers: { 'Accept':'application/json' }});
-      if(!r.ok){ throw new Error(`${r.status} ${r.statusText}`); }
-      return await r.json();
-    }
-
-    function fmtMoney(n){ if(n==null) return '—'; return Number(n).toLocaleString('en-KE',{style:'currency',currency:'KES',maximumFractionDigits:0}); }
-    function fmtDate(s){ if(!s) return '—'; const d=new Date(s); if(isNaN(d)) return s; return d.toLocaleDateString('en-GB'); }
-
-    // Helpers for empty states
-    function showEmpty(id, isEmpty){ const el=$(id); if(!el) return; el.classList.toggle('hidden', !isEmpty); }
-
-    // Tabs
-    $$("nav .tab").forEach(a=>a.addEventListener('click', e=>{
-      e.preventDefault();
-      const name = a.dataset.tab;
-      $$("nav .tab").forEach(x=>x.setAttribute('aria-selected', x===a));
-      ["overview","leases","payments","rentroll","balances","whatsapp","settings"].forEach(id=>{
-        const el = $(`#tab-${id}`); if(!el) return; el.classList.toggle('hidden', id!==name);
-      });
-      // load on demand
-      if(name==='overview') loadOverview();
-      if(name==='leases') loadLeases();
-      if(name==='payments') initPayments();
-      if(name==='rentroll') initRentroll();
-      if(name==='balances') loadBalances();
-    }));
-
-    // Header controls
-    $('#useApi').addEventListener('click', ()=>{ setAPI($('#apiBase').value); toast('API saved'); });
-    $('#openDocs').addEventListener('click', ()=>{ window.open(`${state.api}/docs`, '_blank'); });
-
-    // Settings
-    $('#saveSettings').addEventListener('click', ()=>{ setAPI($('#apiBase2').value); toast('Saved'); });
-    $('#resetSettings').addEventListener('click', ()=>{ setAPI(DEFAULT_API); toast('Reset to default'); });
-
-    // Overview data
-    async function loadOverview(){
-      try{
-        const [leases, paymentsThisMonth, balances] = await Promise.all([
-          jget('/leases?limit=1000'),
-          (async()=>{
-            const y = new Date().toISOString().slice(0,7);
-            return await jget(`/payments?month=${y}`);
-          })(),
-          jget('/balances')
-        ]);
-        $('#kpiLeases').textContent = leases.length;
-        $('#kpiPayments').textContent = paymentsThisMonth.reduce((s,x)=>s+Number(x.amount||0),0).toLocaleString('en-KE');
-        const open = (await jget('/rent-roll?month='+new Date().toISOString().slice(0,7))).filter(x=>String(x.status).toLowerCase()!=='paid');
-        $('#kpiOpen').textContent = open.length;
-        const bal = balances.reduce((s,x)=>s+Number(x.balance||0),0);
-        $('#kpiBalance').textContent = fmtMoney(bal);
-      }catch(err){ console.error(err); toast('Failed to load overview'); }
-    }
-
-    // Leases
-    $('#reloadLeases').addEventListener('click', loadLeases);
-    $('#leaseSearch').addEventListener('input', ()=> renderLeases());
-
-    async function loadLeases(){
-      try{
-        const rows = await jget('/leases?limit=1000');
-        state.leases = rows;
-        $('#leasesCount').textContent = rows.length + ' rows';
-        renderLeases();
-      }catch(e){ console.error(e); toast('Failed to load leases'); }
-    }
-    function renderLeases(){
-      const q = ($('#leaseSearch').value||'').toLowerCase();
-      const rows = state.leases.filter(r=>
-        r.tenant?.toLowerCase().includes(q) || r.unit?.toLowerCase().includes(q)
-      );
-      const tb = $('#leasesBody'); tb.innerHTML='';
-      if(rows.length===0){ showEmpty('#leasesEmpty', true); return; } else { showEmpty('#leasesEmpty', false); }
-      for(const r of rows){
-        const tr=document.createElement('tr');
-        tr.innerHTML = `
-          <td>${r.tenant||''}</td>
-          <td>${r.unit||''}</td>
-          <td>${fmtMoney(r.rent_amount)}</td>
-          <td>${r.billing_cycle||''}</td>
-          <td>${r.due_day ?? ''}</td>
-          <td><span class="status ${String(r.lease_status).toLowerCase()==='active'?'ok':'due'}">${r.lease_status||''}</span></td>
-          <td><button class="btn ghost" data-lease="${r.lease_id}">WhatsApp</button></td>
-        `;
-        tb.appendChild(tr);
-      }
-      // attach WA buttons
-      $$('#leasesBody [data-lease]').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const id = btn.getAttribute('data-lease');
-          window.open(`${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(id)}`,'_blank');
-        });
-      });
-    }
-
-    // Payments
-    $('#applyPayments').addEventListener('click', loadPayments);
-    $('#clearPayments').addEventListener('click', ()=>{ $('#paymentsTenant').value=''; $('#paymentsStatus').value=''; setSelectValue('#paymentsMonth',''); loadPayments(); });
-
-    async function initPayments(){ await loadPaymentMonths(); await loadPayments(); }
-    async function loadPaymentMonths(){
-      try{ const rows = await jget('/payments/months'); state.monthsPayments = rows; fillMonths('#paymentsMonth', rows); }
-      catch(e){ console.warn('months', e); }
-    }
-    function fillMonths(sel, rows){
-      const s=$(sel); s.innerHTML='';
-      const any = new Option('Any month',''); s.appendChild(any);
-      rows.forEach(r=> s.appendChild(new Option(r.ym, r.ym)) );
-      // default to current month if exists
-      const cur = new Date().toISOString().slice(0,7);
-      if(rows.some(r=>r.ym===cur)) s.value = cur;
-    }
-    function setSelectValue(sel,val){ const s=$(sel); if(s) s.value = val; }
-
-    async function loadPayments(){
-      try{
-        const qs = new URLSearchParams();
-        const m=$('#paymentsMonth').value, t=$('#paymentsTenant').value, st=$('#paymentsStatus').value;
-        if(m) qs.set('month', m);
-        if(t) qs.set('tenant', t);
-        if(st) qs.set('status', st);
-        const rows = await jget('/payments'+(qs.toString()?`?${qs}`:''));
-        $('#paymentsCount').textContent = rows.length + ' rows';
-        const tb=$('#paymentsBody'); tb.innerHTML='';
-        if(rows.length===0){ showEmpty('#paymentsEmpty', true); return; } else { showEmpty('#paymentsEmpty', false); }
-        for(const r of rows){
-          const tr=document.createElement('tr');
-          tr.innerHTML = `
-            <td>${fmtDate(r.received_at)}</td>
-            <td>${r.tenant||''}</td>
-            <td>${r.method||''}</td>
-            <td class="muted">${r.status||''}</td>
-            <td style="text-align:right">${fmtMoney(r.amount)}</td>
-          `;
-          tb.appendChild(tr);
-        }
-      }catch(e){ console.error(e); toast('Failed to load payments'); }
-    }
-
-    // Rent Roll
-    $('#applyRentroll').addEventListener('click', loadRentroll);
-    $('#clearRentroll').addEventListener('click', ()=>{ $('#rentrollTenant').value=''; $('#rentrollProperty').value=''; setSelectValue('#rentrollMonth',''); loadRentroll(); });
-
-    async function initRentroll(){ await loadRentrollMonths(); await loadRentroll(); }
-    async function loadRentrollMonths(){
-      try{ const rows = await jget('/rent-roll/months'); state.monthsRentroll = rows; fillMonths('#rentrollMonth', rows); }
-      catch(e){ console.warn('rr months', e); }
-    }
-
-    async function loadRentroll(){
-      try{
-        const qs = new URLSearchParams();
-        const m=$('#rentrollMonth').value, t=$('#rentrollTenant').value, p=$('#rentrollProperty').value;
-        if(m) qs.set('month', m);
-        if(t) qs.set('tenant', t);
-        if(p) qs.set('property', p);
-        const rows = await jget('/rent-roll'+(qs.toString()?`?${qs}`:''));
-        $('#rentrollCount').textContent = rows.length + ' rows';
-        const tb=$('#rentrollBody'); tb.innerHTML='';
-        if(rows.length===0){ showEmpty('#rentrollEmpty', true); return; } else { showEmpty('#rentrollEmpty', false); }
-        for(const r of rows){
-          const tr=document.createElement('tr');
-          const period = `${r.period_start?.slice(0,10)||''} → ${r.period_end?.slice(0,10)||''}`;
-          const status = String(r.status||'').toLowerCase();
-          tr.innerHTML = `
-            <td>${r.property_name||''}</td>
-            <td>${r.unit_code||''}</td>
-            <td>${r.tenant||''}</td>
-            <td>${period}</td>
-            <td>${fmtDate(r.due_date)}</td>
-            <td><span class="status ${status==='paid'?'ok':'due'}">${r.status||''}</span></td>
-            <td style="text-align:right">${fmtMoney(r.balance)}</td>
-          `;
-          tb.appendChild(tr);
-        }
-      }catch(e){ console.error(e); toast('Failed to load rent roll'); }
-    }
-
-    // Balances
-    $('#reloadBalances').addEventListener('click', loadBalances);
-    async function loadBalances(){
-      try{
-        const rows = await jget('/balances');
-        const tb=$('#balancesBody'); tb.innerHTML='';
-        if(rows.length===0){ showEmpty('#balancesEmpty', true); return; } else { showEmpty('#balancesEmpty', false); }
-        for(const r of rows){
-          const tr=document.createElement('tr');
-          const period = `${(r.period_start||'').slice(0,10)} → ${(r.period_end||'').slice(0,10)}`;
-          const status = String(r.status||'').toLowerCase()==='due' ? 'due':'ok';
-          tr.innerHTML = `
-            <td>${r.tenant||''}</td>
-            <td>${(r.lease_id||'').slice(0,8)}…</td>
-            <td>${period}</td>
-            <td><span class="status ${status}">${r.status||''}</span></td>
-            <td style="text-align:right">${fmtMoney(r.balance)}</td>
-          `;
-          tb.appendChild(tr);
-        }
-      }catch(e){ console.error(e); toast('Failed to load balances'); }
-    }
-
-    // WhatsApp ad-hoc
-    $('#waBuild').addEventListener('click', async ()=>{
-      const t=$('#waTenant').value, p=$('#waPhone').value, per=$('#waPeriod').value, b=$('#waBalance').value;
-      if(!t||!p||!per||!b){ toast('Fill all fields'); return; }
-      try{
-        const qs = new URLSearchParams({ tenant:t, phone_e164:p, period:per, balance:String(b) });
-        const r = await jget('/whatsapp_link?'+qs.toString());
-        $('#waResult').innerHTML = `
-          <div>Message:</div>
-          <pre style="white-space:pre-wrap;background:#0b1430;border:1px solid var(--bd);padding:10px;border-radius:10px">${r.message}</pre>
-          <div style="margin-top:8px">
-            <a class="btn" href="${r.wa_link}" target="_blank" rel="noopener">Open WhatsApp</a>
-            <span class="muted" style="margin-left:8px">alt: <a href="${r.wa_link_alt}" target="_blank" rel="noopener">wa.me</a></span>
-          </div>`;
-      }catch(e){ console.error(e); toast('Failed to build WhatsApp link'); }
-    });
-
-    // boot
-    (function init(){
-      setAPI(state.api);
-      $('#apiBase').value = state.api;
-      $('#apiBase2').value = state.api;
-      $('#yy').textContent = new Date().getFullYear();
-      loadOverview();
-    })();
-  </script>
+  <!-- App logic (must be last, right before </body>) -->
+  <script src="./app.js"></script>
 </body>
 </html>
-
-<!-- App logic -->
-<script src="./app.js"></script>
-</body>
-</html>
-
