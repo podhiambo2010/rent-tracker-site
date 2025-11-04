@@ -85,7 +85,18 @@
     }
   </style>
 </head>
-<body>
+<<!-- ===== Rent Tracker actions ===== -->
+<div class="panel" style="margin: 16px 0; padding: 12px; background:#111936; border:1px solid #1d2746; border-radius:10px;">
+  <h3 style="margin:0 0 8px;">Invoice Actions</h3>
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
+           style="flex:1; min-width:260px; padding:8px; border-radius:8px; border:1px solid #2a345a; background:#0f1730; color:#fff;">
+    <button id="btnMarkSent" class="btn">Mark as sent</button>
+    <button id="btnHealth" class="btn btn-outline">Auth ping</button>
+  </div>
+  <div id="actionMsg" style="margin-top:8px; font-size:14px; color:#93a4c4;"></div>
+</div>
+<!-- ===== /Rent Tracker actions ===== -->
   <div class="shell">
     <header>
       <div class="bar">
@@ -290,6 +301,13 @@
       monthsRentroll: [],
       leases: [],
     };
+
+<style>
+  .btn{padding:8px 12px;border-radius:8px;border:1px solid #2a345a;background:#1a2650;color:#fff;cursor:pointer}
+  .btn:hover{filter:brightness(1.1)}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .btn-outline{background:transparent}
+</style>
 
     function setAPI(v){ state.api = (v||'').trim().replace(/\/$/,''); localStorage.setItem('apiBase', state.api); $('#apiEcho').textContent = state.api; $('#apiBase').value = state.api; $('#apiBase2').value = state.api; }
 
@@ -527,3 +545,9 @@
   </script>
 </body>
 </html>
+
+<!-- App logic -->
+<script src="./app.js"></script>
+</body>
+</html>
+
