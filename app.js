@@ -5,9 +5,12 @@ const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 const $  = (q, el=document) => el.querySelector(q);
 const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+const monthLabel = (ym) => {
+  const [y,m] = (ym||yyyymm()).split("-").map(Number);
+  return new Date(y, m-1, 1).toLocaleString("en-KE", {month:"short", year:"numeric"});
+};
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
-const monthLabel = (d) => d.toLocaleString("en-KE",{month:"short",year:"numeric"});
 
 /* CSV helpers */
 const csvEscape = (v)=> {
@@ -28,17 +31,6 @@ function download(filename, text){
   const a = document.createElement("a");
   a.href = url; a.download = filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
-}
-function openHtmlInNewTab(title, inner){
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
-  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,sans-serif;padding:20px}
-  h1{font-size:18px;margin:0 0 12px} a{display:inline-block;margin:6px 0}
-  table{border-collapse:collapse;width:100%} td,th{border:1px solid #ddd;padding:8px}
-  th{text-align:left;background:#f7f7f7}</style></head><body>${inner}</body></html>`;
-  const blob = new Blob([html], {type:"text/html"});
-  const url = URL.createObjectURL(blob);
-  window.open(url, "_blank");
-  setTimeout(()=> URL.revokeObjectURL(url), 30000);
 }
 
 /* ---------------- app state ---------------- */
@@ -226,16 +218,24 @@ function ensurePaymentsMonthOptions(){
     const val = yyyymm(d);
     const opt = document.createElement("option");
     opt.value = val;
-    opt.textContent = monthLabel(d);
+    opt.textContent = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
     if(i===0) opt.selected = true;
     sel.appendChild(opt);
   }
 }
 ensurePaymentsMonthOptions();
 
+function setPaymentsHeader(month){
+  // Prefer #paymentsTitle if it exists, else fallback to first h3 within the tab
+  const titleEl = $("#paymentsTitle") || $("#tab-payments h3");
+  if (titleEl) titleEl.textContent = `Payments for ${monthLabel(month)}`;
+}
+
 async function loadPayments(){
   try{
     const month = $("#paymentsMonth")?.value || yyyymm();
+    setPaymentsHeader(month);
+
     const tQ = ($("#paymentsTenant")?.value || "").toLowerCase().trim();
     const sQ = $("#paymentsStatus")?.value || "";
     const rows = await jget(`/payments?month=${month}`);
@@ -247,26 +247,26 @@ async function loadPayments(){
     });
     state.paymentsView = filtered;
 
-    // header label
-    const hdr = $("#paymentsHeaderLabel");
-    if(hdr){
-      const [y,m] = (month||yyyymm()).split("-").map(Number);
-      hdr.textContent = `Payments for ${monthLabel(new Date(y, m-1, 1))}`;
-    }
-
     $("#paymentsCount") && ($("#paymentsCount").textContent = filtered.length);
     $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length>0);
 
-    const total = filtered.reduce((s,x)=> s + (Number(x.amount)||0), 0);
-    $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>`
-      <tr>
-        <td>${r.date ? new Date(r.date).toLocaleDateString("en-KE") : "—"}</td>
-        <td>${r.tenant ?? "—"}</td>
-        <td>${r.method ?? "—"}</td>
-        <td class="muted">${r.status ?? "posted"}</td>
-        <td style="text-align:right">${money(r.amount)}</td>
-      </tr>
-    `).join("") + `
+    const total = filtered.reduce((s,r)=> s + (Number(r.amount)||0), 0);
+
+    $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>{
+      // robust date field handling: date || paid_at || created_at || timestamp
+      const rawDt = r.date || r.paid_at || r.created_at || r.timestamp || null;
+      const dt = rawDt ? new Date(rawDt) : null;
+      const dateTxt = dt ? dt.toLocaleDateString("en-KE") : "—";
+      return `
+        <tr>
+          <td>${dateTxt}</td>
+          <td>${r.tenant ?? "—"}</td>
+          <td>${r.method ?? "—"}</td>
+          <td class="muted">${r.status ?? "posted"}</td>
+          <td style="text-align:right">${money(r.amount)}</td>
+        </tr>
+      `;
+    }).join("") + `
       <tr class="total-row">
         <td colspan="4" style="text-align:right"><strong>Total</strong></td>
         <td style="text-align:right"><strong>${money(total)}</strong></td>
@@ -291,7 +291,7 @@ function ensureRentrollMonthOptions(){
     const val = yyyymm(d);
     const opt = document.createElement("option");
     opt.value = val;
-    opt.textContent = monthLabel(d);
+    opt.textContent = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
     if(i===0) opt.selected = true;
     sel.appendChild(opt);
   }
@@ -314,7 +314,6 @@ async function loadRentroll(){
     $("#rentrollCount") && ($("#rentrollCount").textContent = filtered.length);
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length>0);
 
-    const totalBal = filtered.reduce((s,x)=> s + (Number(x.balance)||0), 0);
     $("#rentrollBody") && ($("#rentrollBody").innerHTML = filtered.map(r=>`
       <tr>
         <td>${r.property ?? "—"}</td>
@@ -325,12 +324,7 @@ async function loadRentroll(){
         <td>${r.status ?? "—"}</td>
         <td style="text-align:right">${money(r.balance)}</td>
       </tr>
-    `).join("") + `
-      <tr class="total-row">
-        <td colspan="6" style="text-align:right"><strong>Total</strong></td>
-        <td style="text-align:right"><strong>${money(totalBal)}</strong></td>
-      </tr>
-    `);
+    `).join(""));
   }catch(e){
     console.error(e);
     $("#rentrollBody") && ($("#rentrollBody").innerHTML="");
@@ -353,7 +347,8 @@ async function loadBalances(){
     }
     $("#balancesEmpty")?.classList.add("hidden");
 
-    const total = rows.reduce((s,x)=> s + (Number(x.balance)||0), 0);
+    const totalBal = rows.reduce((s,r)=> s + (Number(r.balance)||0), 0);
+
     $("#balancesBody") && ($("#balancesBody").innerHTML = rows.map(r=>`
       <tr>
         <td>${r.tenant ?? "—"}</td>
@@ -365,7 +360,7 @@ async function loadBalances(){
     `).join("") + `
       <tr class="total-row">
         <td colspan="4" style="text-align:right"><strong>Total</strong></td>
-        <td style="text-align:right"><strong>${money(total)}</strong></td>
+        <td style="text-align:right"><strong>${money(totalBal)}</strong></td>
       </tr>
     `);
   }catch(e){
@@ -376,31 +371,31 @@ async function loadBalances(){
 }
 $("#reloadBalances")?.addEventListener("click", loadBalances);
 
-/* ---------------- auto-inject action & export buttons ---------------- */
-function ensureExtraButtons(){
-  // utility: insert a button after some anchor element
-  function addAfter(anchorSel, id, label, extraClass="btn ghost"){
-    if($(id)) return null;
-    const anchor = $(anchorSel); if(!anchor) return null;
+/* ---------------- auto-inject Export/extra buttons ---------------- */
+function ensureExportButtons(){
+  function addAfter(anchorSel, btnId, label){
+    if($(btnId)) return null;
+    const anchor = $(anchorSel);
+    if(!anchor) return null;
     const btn = document.createElement("button");
-    btn.className = extraClass;
-    btn.id = id.replace(/^#/, "");
+    btn.className = "btn ghost";
+    btn.id = btnId.replace(/^#/, "");
     btn.textContent = label;
     anchor.insertAdjacentElement("afterend", btn);
     return btn;
   }
 
-  // CSV buttons
-  addAfter("#reloadLeases",   "#exportLeases",   "Export CSV");
-  addAfter("#applyPayments",  "#exportPayments", "Export CSV");
-  addAfter("#applyRentroll",  "#exportRentroll", "Export CSV");
-  addAfter("#reloadBalances", "#exportBalances", "Export CSV");
-
-  // NEW: Actions
+  // Leases
+  addAfter("#reloadLeases", "#exportLeases", "Export CSV");
+  // Payments
+  addAfter("#applyPayments", "#exportPayments", "Export CSV");
   addAfter("#exportPayments", "#markVisibleSent", "Mark visible as sent");
-  addAfter("#exportBalances", "#bulkWhatsApp",    "Bulk WhatsApp");
+  // Rent Roll
+  addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
+  // Balances
+  addAfter("#reloadBalances", "#exportBalances", "Export CSV");
+  addAfter("#exportBalances", "#bulkWhatsapp", "Bulk WhatsApp");
 
-  /* Handlers */
   $("#exportLeases")?.addEventListener("click", ()=>{
     const cols = [
       {label:"Tenant", value:r=>r.tenant},
@@ -416,7 +411,7 @@ function ensureExtraButtons(){
 
   $("#exportPayments")?.addEventListener("click", ()=>{
     const cols = [
-      {label:"Date",      value:r=>r.date},
+      {label:"Date",      value:r=> r.date || r.paid_at || r.created_at || r.timestamp || ""},
       {label:"Tenant",    value:r=>r.tenant},
       {label:"Method",    value:r=>r.method},
       {label:"Status",    value:r=>r.status ?? "posted"},
@@ -425,6 +420,17 @@ function ensureExtraButtons(){
       {label:"Payment ID",value:r=>r.id}
     ];
     download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
+  });
+
+  $("#markVisibleSent")?.addEventListener("click", async ()=>{
+    const ids = (state.paymentsView||[]).map(r=>r.invoice_id).filter(Boolean);
+    if(!ids.length) return toast("No visible rows with invoice_id");
+    let ok=0, fail=0;
+    for(const id of ids){
+      try{ await jpost("/invoices/mark_sent", {invoice_id:id, via:"whatsapp"}); ok++; }
+      catch(e){ console.error("mark_sent failed:", id, e); fail++; }
+    }
+    toast(`Marked visible as sent • OK: ${ok}, Failed: ${fail}`);
   });
 
   $("#exportRentroll")?.addEventListener("click", ()=>{
@@ -454,49 +460,14 @@ function ensureExtraButtons(){
     download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
   });
 
-  // NEW A) Payments → Mark visible as sent
-  $("#markVisibleSent")?.addEventListener("click", async ()=>{
-    const ids = Array.from(new Set(
-      (state.paymentsView||[]).map(r=>r.invoice_id).filter(Boolean)
-    ));
-    if(!ids.length) return toast("No invoice IDs in the visible payments.");
-    let ok=0, fail=0;
-    for(const id of ids){
-      try { await jpost("/invoices/mark_sent", { invoice_id:id, via:"whatsapp" }); ok++; }
-      catch(e){ console.error("mark_visible failed:", id, e); fail++; }
-    }
-    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify({processed:ids.length, ok, fail}));
-    toast(`Marked visible as sent: ${ok} • Failed: ${fail}`);
-  });
-
-  // NEW B) Balances → Bulk WhatsApp links
-  $("#bulkWhatsApp")?.addEventListener("click", ()=>{
-    const rows = state.balancesView||[];
-    if(!rows.length) return toast("No balances to build WhatsApp links.");
-    const first = rows[0];
-    const label = (first?.period_start)
-      ? monthLabel(new Date(first.period_start))
-      : monthLabel(new Date());
-
-    const items = rows.map(r=>{
-      const href = r.lease_id
-        ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(r.lease_id)}`
-        : null;
-      const line = href
-        ? `<a href="${href}" target="_blank">Open WA →</a>`
-        : `<span style="color:#888">no lease_id</span>`;
-      return `<tr><td>${csvEscape(r.tenant||"—")}</td><td>${(r.lease_id||"").slice(0,8)}…</td><td>${money(r.balance)}</td><td>${line}</td></tr>`;
-    }).join("");
-
-    openHtmlInNewTab(
-      `WhatsApp Links — ${label}`,
-      `<h1>WhatsApp Links — ${label}</h1>
-       <p>Click each link to open a prefilled WhatsApp message for that tenant.</p>
-       <table>
-         <thead><tr><th>Tenant</th><th>Lease</th><th>Balance</th><th>Link</th></tr></thead>
-         <tbody>${items}</tbody>
-       </table>`
-    );
+  $("#bulkWhatsapp")?.addEventListener("click", ()=>{
+    const urls = (state.balancesView||[])
+      .filter(r => (Number(r.balance)||0) > 0 && (r.lease_id||""))
+      .map(r => `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(r.lease_id)}`);
+    if(!urls.length) return toast("No unpaid balances to message");
+    // open up to 8 tabs to avoid popup blocking
+    urls.slice(0,8).forEach(u => window.open(u, "_blank"));
+    if(urls.length>8) toast(`Opened ${Math.min(urls.length,8)} of ${urls.length}. Use CSV for the rest.`);
   });
 }
 
@@ -511,8 +482,8 @@ function ensureExtraButtons(){
   wireSettings();
   wireActions();
 
-  // add action & export buttons next to existing action buttons
-  ensureExtraButtons();
+  // add the export / extra buttons next to existing action buttons
+  ensureExportButtons();
 
   showTab("overview");  // default view
 })();
