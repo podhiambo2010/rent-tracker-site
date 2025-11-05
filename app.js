@@ -254,16 +254,21 @@ ensurePaymentsMonthOptions();
 function setPaymentsHeader(monthStr, count){
   const h3 = $("#tab-payments h3");
   if (!h3) return;
-  // Label: "Payments for Nov 2025"
   const d = new Date(Number(monthStr.slice(0,4)), Number(monthStr.slice(5,7))-1, 1);
   const label = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
   h3.textContent = `Payments for ${label}`;
-  // Count chip (already exists in markup as bubble), but we refresh if present
   $("#paymentsCount") && ($("#paymentsCount").textContent = count);
 
-  // Total chip
   const chip = ensureChip("#tab-payments h3", "paymentsTotalChip");
   if (chip) chip.textContent = `Total ${money(state.paymentsView.reduce((s,x)=> s + (Number(x.amount)||0), 0))}`;
+}
+
+// robust date picker for payments
+function pickPaymentDate(r){
+  const raw = r?.date || r?.paid_at || r?.paid_date || r?.created_at || r?.timestamp || r?.ts;
+  if(!raw) return null;
+  const dt = new Date(raw);
+  return isNaN(dt) ? null : dt;
 }
 
 async function loadPayments(){
@@ -284,21 +289,31 @@ async function loadPayments(){
     $("#paymentsCount") && ($("#paymentsCount").textContent = filtered.length);
     $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length>0);
 
-    setPaymentsHeader(month, filtered.length); // update header + total
+    setPaymentsHeader(month, filtered.length); // header + total chip
 
-    $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>{
+    // render rows + TOTAL row
+    const total = filtered.reduce((s,x)=> s + (Number(x.amount)||0), 0);
+    const bodyHtml = filtered.map(r=>{
+      const dt = pickPaymentDate(r);
+      const dateStr = dt ? dt.toLocaleDateString("en-KE") : "—";
       const invoiceCopy = r.invoice_id
         ? `<button class="btn ghost" style="padding:2px 6px;margin-left:6px" onclick="copyToClipboard('${r.invoice_id}')">Copy</button>`
         : "";
       return `
       <tr>
-        <td>${r.date ? new Date(r.date).toLocaleDateString("en-KE") : "—"}</td>
+        <td>${dateStr}</td>
         <td>${r.tenant ?? "—"}</td>
         <td>${r.method ?? "—"} ${invoiceCopy}</td>
         <td class="muted">${r.status ?? "posted"}</td>
         <td style="text-align:right">${money(r.amount)}</td>
       </tr>`;
-    }).join(""));
+    }).join("") + `
+      <tr class="total-row">
+        <td colspan="4" style="text-align:right;font-weight:600">Total</td>
+        <td style="text-align:right;font-weight:600">${money(total)}</td>
+      </tr>`;
+
+    $("#paymentsBody") && ($("#paymentsBody").innerHTML = bodyHtml);
   }catch(e){
     console.error(e);
     $("#paymentsBody") && ($("#paymentsBody").innerHTML="");
@@ -392,18 +407,27 @@ async function loadBalances(){
     }
     $("#balancesEmpty")?.classList.add("hidden");
 
-    $("#balancesBody") && ($("#balancesBody").innerHTML = rows.map(r=>`
-      <tr>
-        <td>${r.tenant ?? "—"}</td>
-        <td>${(r.lease_id||"").slice(0,8)}…</td>
-        <td>${r.period_start ?? "—"} → ${r.period_end ?? "—"}</td>
-        <td>${r.status ?? "—"}</td>
-        <td style="text-align:right">${money(r.balance)}</td>
-      </tr>
-    `).join(""));
-
-    // total balances chip
     const total = rows.reduce((s,x)=> s + (Number(x.balance)||0), 0);
+
+    $("#balancesBody") && ($("#balancesBody").innerHTML =
+      rows.map(r=>`
+        <tr>
+          <td>${r.tenant ?? "—"}</td>
+          <td>${(r.lease_id||"").slice(0,8)}…</td>
+          <td>${r.period_start ?? "—"} → ${r.period_end ?? "—"}</td>
+          <td>${r.status ?? "—"}</td>
+          <td style="text-align:right">${money(r.balance)}</td>
+        </tr>
+      `).join("") +
+      `
+        <tr class="total-row">
+          <td colspan="4" style="text-align:right;font-weight:600">Total</td>
+          <td style="text-align:right;font-weight:600">${money(total)}</td>
+        </tr>
+      `
+    );
+
+    // total balances chip (kept)
     const chip = ensureChip("#tab-balances h3", "balancesTotalChip");
     if (chip) chip.textContent = `Total ${money(total)}`;
   }catch(e){
@@ -449,14 +473,13 @@ function ensureExportButtons(){
   $("#exportPayments")?.addEventListener("click", ()=>{
     const month = $("#paymentsMonth")?.value || yyyymm();
     const cols = [
-      {label:"Date",        value:r=>r.date},
+      {label:"Date",        value:r=> (pickPaymentDate(r)?.toISOString?.() || "") },
       {label:"Tenant",      value:r=>r.tenant},
       {label:"Method",      value:r=>r.method},
       {label:"Status",      value:r=>r.status ?? "posted"},
       {label:"Amount",      value:r=>r.amount},
       {label:"Invoice ID",  value:r=>r.invoice_id},
       {label:"Payment ID",  value:r=>r.id},
-      // include period fields if your API includes them
       {label:"Period Start",value:r=>r.period_start},
       {label:"Period End",  value:r=>r.period_end}
     ];
@@ -502,7 +525,6 @@ function ensureExportButtons(){
   wireSettings();
   wireActions();
 
-  // add the export buttons next to existing action buttons
   ensureExportButtons();
 
   // Restore saved months if selects are already rendered
