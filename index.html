@@ -236,6 +236,24 @@
           <p class="muted">Use this for ad-hoc messages. For real leases, click the WhatsApp icon in the <b>Leases</b> table.</p>
           <div id="waResult" class="muted"></div>
         </div>
+
+        <!-- SETTINGS -->
+        <div class="panel hidden" id="tab-settings">
+          <h2>Settings</h2>
+          <p class="muted">These settings are saved in your browser (localStorage).</p>
+          <div class="filters">
+            <label style="display:flex;gap:8px;align-items:center">
+              API Base
+              <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
+            </label>
+            <label style="display:flex;gap:8px;align-items:center">
+              Admin API Token
+              <input id="adminToken" placeholder="Paste API_TOKEN here" />
+            </label>
+            <button class="btn" id="saveSettings">Save</button>
+            <button class="btn ghost" id="resetSettings">Reset</button>
+          </div>
+        </div>
       </section>
     </main>
 
