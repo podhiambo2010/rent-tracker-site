@@ -199,3 +199,255 @@ async function loadBalances(){ /* optional */ }
   // default tab
   showTab('overview');
 })();
+
+// --------- helpers for rendering ----------
+const $ = (sel) => document.querySelector(sel);
+const money = (n) => (n==null ? '—' : `Ksh ${Number(n).toLocaleString('en-KE')}`);
+const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+
+// --------- LEASES ----------
+async function loadLeases() {
+  try {
+    const rows = await jget('/leases?limit=1000');  // you already call this for KPIs
+    state.leases = rows || [];
+    const tbody = $('#leasesBody');
+    const empty = $('#leasesEmpty');
+    if (!tbody) return;
+
+    // basic search filter
+    const q = ($('#leaseSearch')?.value || '').toLowerCase().trim();
+    const filtered = q
+      ? state.leases.filter(r =>
+          (r.tenant||'').toLowerCase().includes(q) ||
+          (r.unit||'').toLowerCase().includes(q))
+      : state.leases;
+
+    if (!filtered.length) {
+      tbody.innerHTML = '';
+      empty.classList.remove('hidden');
+      $('#leasesCount').textContent = '0';
+      return;
+    }
+
+    empty.classList.add('hidden');
+    $('#leasesCount').textContent = filtered.length;
+
+    // We render what the API sends. If a field is missing, we show '—'.
+    tbody.innerHTML = filtered.map(r => {
+      const tenant = r.tenant ?? '—';
+      const unit   = r.unit ?? '—';
+      const rent   = r.rent_amount ?? r.rent ?? '—';
+      const cycle  = r.billing_cycle ?? r.cycle ?? '—';
+      const dueDay = r.due_day ?? '—';
+      const status = r.status ?? 'Active';
+
+      // Optional WhatsApp quick-link using your redirect endpoint (safe even without phone in UI)
+      const waHref  = `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(r.lease_id || r.id || '')}`;
+      const waCell  = (r.lease_id || r.id) ? `<a href="${waHref}" target="_blank">Open</a>` : '—';
+
+      return `
+        <tr>
+          <td>${tenant}</td>
+          <td>${unit}</td>
+          <td>${money(rent)}</td>
+          <td>${cycle}</td>
+          <td>${dueDay}</td>
+          <td><span class="status ${String(status).toLowerCase()==='active'?'ok':'due'}">${status}</span></td>
+          <td>${waCell}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) {
+    console.error(e);
+    $('#leasesBody').innerHTML = '';
+    $('#leasesEmpty').classList.remove('hidden');
+  }
+}
+
+$('#reloadLeases')?.addEventListener('click', loadLeases);
+$('#leaseSearch')?.addEventListener('input', loadLeases);
+
+// --------- PAYMENTS ----------
+async function loadPayments() {
+  try {
+    // default to current YYYY-MM
+    const monthSel = $('#paymentsMonth');
+    const month = monthSel?.value || yyyymm();
+    const tenantQ = ($('#paymentsTenant')?.value || '').toLowerCase().trim();
+    const statusQ = $('#paymentsStatus')?.value || '';
+
+    const rows = await jget(`/payments?month=${month}`);
+    // rows come back with at least id + invoice_id right now; we render safely
+    const filtered = (rows || []).filter(r => {
+      const okT = tenantQ ? (String(r.tenant||'').toLowerCase().includes(tenantQ)) : true;
+      const okS = statusQ ? (String(r.status||'') === statusQ) : true;
+      return okT && okS;
+    });
+
+    $('#paymentsCount').textContent = filtered.length;
+    $('#paymentsEmpty').classList.toggle('hidden', filtered.length>0);
+
+    $('#paymentsBody').innerHTML = filtered.map(r => `
+      <tr>
+        <td>${r.date ? new Date(r.date).toLocaleDateString('en-KE') : '—'}</td>
+        <td>${r.tenant ?? '—'}</td>
+        <td>${r.method ?? '—'}</td>
+        <td class="muted">${r.status ?? 'posted'}</td>
+        <td style="text-align:right">${money(r.amount)}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error(e);
+    $('#paymentsBody').innerHTML = '';
+    $('#paymentsEmpty').classList.remove('hidden');
+  }
+}
+
+// populate month dropdown once
+(function initPaymentsMonth(){
+  const sel = $('#paymentsMonth'); if (!sel) return;
+  if (sel.options.length) return;
+  const now = new Date();
+  for (let i=0;i<12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = d.toLocaleString('en-KE',{month:'short', year:'numeric'});
+    if (i===0) opt.selected = true;
+    sel.appendChild(opt);
+  }
+})();
+$('#applyPayments')?.addEventListener('click', loadPayments);
+$('#clearPayments')?.addEventListener('click', ()=>{
+  $('#paymentsTenant').value=''; $('#paymentsStatus').value='';
+  loadPayments();
+});
+$('#paymentsMonth')?.addEventListener('change', loadPayments);
+
+// --------- RENT ROLL ----------
+async function loadRentroll() {
+  try {
+    const sel = $('#rentrollMonth');
+    const month = sel?.value || yyyymm();
+    const tQ = ($('#rentrollTenant')?.value || '').toLowerCase().trim();
+    const pQ = ($('#rentrollProperty')?.value || '').toLowerCase().trim();
+
+    const rows = await jget(`/rent-roll?month=${month}`);
+    const filtered = (rows||[]).filter(r =>
+      (tQ ? String(r.tenant||'').toLowerCase().includes(tQ) : true) &&
+      (pQ ? String(r.property||'').toLowerCase().includes(pQ) : true)
+    );
+
+    $('#rentrollCount').textContent = filtered.length;
+    $('#rentrollEmpty').classList.toggle('hidden', filtered.length>0);
+
+    $('#rentrollBody').innerHTML = filtered.map(r => `
+      <tr>
+        <td>${r.property ?? '—'}</td>
+        <td>${r.unit ?? '—'}</td>
+        <td>${r.tenant ?? '—'}</td>
+        <td>${r.period ?? `${r.period_start||''} → ${r.period_end||''}`}</td>
+        <td>${money(r.total_due)}</td>
+        <td>${r.status ?? '—'}</td>
+        <td style="text-align:right">${money(r.balance)}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error(e);
+    $('#rentrollBody').innerHTML = '';
+    $('#rentrollEmpty').classList.remove('hidden');
+  }
+}
+$('#applyRentroll')?.addEventListener('click', loadRentroll);
+$('#clearRentroll')?.addEventListener('click', ()=>{
+  $('#rentrollTenant').value=''; $('#rentrollProperty').value='';
+  loadRentroll();
+});
+// one-time month options
+(function initRentrollMonth(){
+  const sel = $('#rentrollMonth'); if (!sel) return;
+  if (sel.options.length) return;
+  const now = new Date();
+  for (let i=0;i<12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = d.toLocaleString('en-KE',{month:'short', year:'numeric'});
+    if (i===0) opt.selected = true;
+    sel.appendChild(opt);
+  }
+})();
+
+// --------- BALANCES (current month) ----------
+async function loadBalances() {
+  try {
+    const rows = await jget('/balances');
+    const tbody = $('#balancesBody');
+    const empty = $('#balancesEmpty');
+
+    if (!rows?.length) {
+      tbody.innerHTML = '';
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.tenant ?? '—'}</td>
+        <td>${(r.lease_id||'').slice(0,8)}…</td>
+        <td>${r.period_start ?? '—'} → ${r.period_end ?? '—'}</td>
+        <td>${r.status ?? '—'}</td>
+        <td style="text-align:right">${money(r.balance)}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error(e);
+    $('#balancesBody').innerHTML = '';
+    $('#balancesEmpty').classList.remove('hidden');
+  }
+}
+$('#reloadBalances')?.addEventListener('click', loadBalances);
+
+// --------- wire tab loads into init() ----------
+async function loadOverview(){
+  try {
+    const [leases, pay, rr, bal] = await Promise.allSettled([
+      jget('/leases?limit=1000'),
+      jget(`/payments?month=${yyyymm()}`),
+      jget(`/rent-roll?month=${yyyymm()}`),
+      jget('/balances')
+    ]);
+
+    const L = leases.status==='fulfilled' ? leases.value||[] : [];
+    $('#kpiLeases').textContent = L.length;
+
+    const RR = rr.status==='fulfilled' ? rr.value||[] : [];
+    $('#kpiOpen').textContent = RR.length;
+
+    const P = pay.status==='fulfilled' ? pay.value||[] : [];
+    // if API returns objects with "amount", sum them; otherwise show count
+    const pSum = P.reduce((s,x)=> s + (Number(x.amount)||0), 0);
+    $('#kpiPayments').textContent = pSum>0 ? pSum.toLocaleString('en-KE') : P.length;
+
+    const B = bal.status==='fulfilled' ? bal.value||[] : [];
+    const bSum = B.reduce((s,x)=> s + (Number(x.balance)||0), 0);
+    $('#kpiBalance').textContent = money(bSum);
+  } catch(e){
+    console.error(e);
+  }
+}
+
+// load tables whenever their tab is opened
+document.querySelectorAll('.tab').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    const tab = el.dataset.tab;
+    document.querySelectorAll('[id^="tab-"]').forEach(p=>p.classList.add('hidden'));
+    $(`#tab-${tab}`)?.classList.remove('hidden');
+
+    if (tab==='leases')   loadLeases();
+    if (tab==='payments') loadPayments();
+    if (tab==='rentroll') loadRentroll();
+    if (tab==='balances') loadBalances();
+  });
+});
