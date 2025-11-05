@@ -7,6 +7,7 @@ const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
+const monthLabel = (d) => d.toLocaleString("en-KE",{month:"short",year:"numeric"});
 
 /* CSV helpers */
 const csvEscape = (v)=> {
@@ -28,29 +29,16 @@ function download(filename, text){
   a.href = url; a.download = filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
 }
-
-/* simple chip creator (idempotent) */
-function ensureChip(parentSel, id){
-  const parent = $(parentSel);
-  if(!parent) return null;
-  let chip = $(`#${id}`);
-  if (!chip) {
-    chip = document.createElement("span");
-    chip.id = id;
-    chip.style.marginLeft = "8px";
-    chip.style.padding = "2px 8px";
-    chip.style.borderRadius = "999px";
-    chip.style.fontSize = "12px";
-    chip.style.background = "rgba(255,255,255,0.08)";
-    chip.style.border = "1px solid rgba(255,255,255,0.12)";
-    chip.style.display = "inline-block";
-    parent.insertAdjacentElement("beforeend", chip);
-  }
-  return chip;
-}
-async function copyToClipboard(txt){
-  try { await navigator.clipboard.writeText(String(txt)); toast("Copied"); }
-  catch { toast("Copy failed"); }
+function openHtmlInNewTab(title, inner){
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,sans-serif;padding:20px}
+  h1{font-size:18px;margin:0 0 12px} a{display:inline-block;margin:6px 0}
+  table{border-collapse:collapse;width:100%} td,th{border:1px solid #ddd;padding:8px}
+  th{text-align:left;background:#f7f7f7}</style></head><body>${inner}</body></html>`;
+  const blob = new Blob([html], {type:"text/html"});
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(()=> URL.revokeObjectURL(url), 30000);
 }
 
 /* ---------------- app state ---------------- */
@@ -209,10 +197,6 @@ async function loadLeases(){
       const leaseId = r.lease_id || r.id || "";
       const waHref  = leaseId ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}` : null;
 
-      const copyBtn = leaseId
-        ? `<button class="btn ghost" style="padding:2px 6px;margin-left:6px" onclick="copyToClipboard('${leaseId}')">Copy</button>`
-        : "";
-
       return `
         <tr>
           <td>${tenant}</td>
@@ -221,7 +205,7 @@ async function loadLeases(){
           <td>${cycle}</td>
           <td>${dueDay}</td>
           <td><span class="status ${String(status).toLowerCase()==="active"?"ok":"due"}">${status}</span></td>
-          <td>${waHref ? `<a href="${waHref}" target="_blank">Open</a>` : "—"} ${copyBtn}</td>
+          <td>${waHref ? `<a href="${waHref}" target="_blank">Open</a>` : "—"}</td>
         </tr>
       `;
     }).join("");
@@ -236,45 +220,22 @@ $("#reloadLeases")?.addEventListener("click", loadLeases);
 /* ---------------- payments ---------------- */
 function ensurePaymentsMonthOptions(){
   const sel = $("#paymentsMonth"); if(!sel || sel.options.length) return;
-  const saved = localStorage.getItem("paymentsMonth") || yyyymm();
-  const base = new Date(Number(saved.slice(0,4)), Number(saved.slice(5,7))-1, 1);
-
+  const now = new Date();
   for(let i=0;i<12;i++){
-    const d = new Date(base.getFullYear(), base.getMonth()-i, 1);
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const val = yyyymm(d);
     const opt = document.createElement("option");
     opt.value = val;
-    opt.textContent = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
+    opt.textContent = monthLabel(d);
     if(i===0) opt.selected = true;
     sel.appendChild(opt);
   }
 }
 ensurePaymentsMonthOptions();
 
-function setPaymentsHeader(monthStr, count){
-  const h3 = $("#tab-payments h3");
-  if (!h3) return;
-  const d = new Date(Number(monthStr.slice(0,4)), Number(monthStr.slice(5,7))-1, 1);
-  const label = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
-  h3.textContent = `Payments for ${label}`;
-  $("#paymentsCount") && ($("#paymentsCount").textContent = count);
-
-  const chip = ensureChip("#tab-payments h3", "paymentsTotalChip");
-  if (chip) chip.textContent = `Total ${money(state.paymentsView.reduce((s,x)=> s + (Number(x.amount)||0), 0))}`;
-}
-
-// robust date picker for payments
-function pickPaymentDate(r){
-  const raw = r?.date || r?.paid_at || r?.paid_date || r?.created_at || r?.timestamp || r?.ts;
-  if(!raw) return null;
-  const dt = new Date(raw);
-  return isNaN(dt) ? null : dt;
-}
-
 async function loadPayments(){
   try{
-    const sel = $("#paymentsMonth");
-    const month = sel?.value || yyyymm();
+    const month = $("#paymentsMonth")?.value || yyyymm();
     const tQ = ($("#paymentsTenant")?.value || "").toLowerCase().trim();
     const sQ = $("#paymentsStatus")?.value || "";
     const rows = await jget(`/payments?month=${month}`);
@@ -286,34 +247,31 @@ async function loadPayments(){
     });
     state.paymentsView = filtered;
 
+    // header label
+    const hdr = $("#paymentsHeaderLabel");
+    if(hdr){
+      const [y,m] = (month||yyyymm()).split("-").map(Number);
+      hdr.textContent = `Payments for ${monthLabel(new Date(y, m-1, 1))}`;
+    }
+
     $("#paymentsCount") && ($("#paymentsCount").textContent = filtered.length);
     $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length>0);
 
-    setPaymentsHeader(month, filtered.length); // header + total chip
-
-    // render rows + TOTAL row
     const total = filtered.reduce((s,x)=> s + (Number(x.amount)||0), 0);
-    const bodyHtml = filtered.map(r=>{
-      const dt = pickPaymentDate(r);
-      const dateStr = dt ? dt.toLocaleDateString("en-KE") : "—";
-      const invoiceCopy = r.invoice_id
-        ? `<button class="btn ghost" style="padding:2px 6px;margin-left:6px" onclick="copyToClipboard('${r.invoice_id}')">Copy</button>`
-        : "";
-      return `
+    $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>`
       <tr>
-        <td>${dateStr}</td>
+        <td>${r.date ? new Date(r.date).toLocaleDateString("en-KE") : "—"}</td>
         <td>${r.tenant ?? "—"}</td>
-        <td>${r.method ?? "—"} ${invoiceCopy}</td>
+        <td>${r.method ?? "—"}</td>
         <td class="muted">${r.status ?? "posted"}</td>
         <td style="text-align:right">${money(r.amount)}</td>
-      </tr>`;
-    }).join("") + `
+      </tr>
+    `).join("") + `
       <tr class="total-row">
-        <td colspan="4" style="text-align:right;font-weight:600">Total</td>
-        <td style="text-align:right;font-weight:600">${money(total)}</td>
-      </tr>`;
-
-    $("#paymentsBody") && ($("#paymentsBody").innerHTML = bodyHtml);
+        <td colspan="4" style="text-align:right"><strong>Total</strong></td>
+        <td style="text-align:right"><strong>${money(total)}</strong></td>
+      </tr>
+    `);
   }catch(e){
     console.error(e);
     $("#paymentsBody") && ($("#paymentsBody").innerHTML="");
@@ -321,28 +279,19 @@ async function loadPayments(){
   }
 }
 $("#applyPayments")?.addEventListener("click", loadPayments);
-$("#clearPayments")?.addEventListener("click", ()=>{
-  $("#paymentsTenant").value=""; $("#paymentsStatus").value="";
-  loadPayments();
-});
-$("#paymentsMonth")?.addEventListener("change", ()=>{
-  const val = $("#paymentsMonth")?.value || yyyymm();
-  localStorage.setItem("paymentsMonth", val);
-  loadPayments();
-});
+$("#clearPayments")?.addEventListener("click", ()=>{ $("#paymentsTenant").value=""; $("#paymentsStatus").value=""; loadPayments(); });
+$("#paymentsMonth")?.addEventListener("change", loadPayments);
 
 /* ---------------- rent roll ---------------- */
 function ensureRentrollMonthOptions(){
   const sel = $("#rentrollMonth"); if(!sel || sel.options.length) return;
-  const saved = localStorage.getItem("rentrollMonth") || yyyymm();
-  const base = new Date(Number(saved.slice(0,4)), Number(saved.slice(5,7))-1, 1);
-
+  const now = new Date();
   for(let i=0;i<12;i++){
-    const d = new Date(base.getFullYear(), base.getMonth()-i, 1);
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const val = yyyymm(d);
     const opt = document.createElement("option");
     opt.value = val;
-    opt.textContent = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
+    opt.textContent = monthLabel(d);
     if(i===0) opt.selected = true;
     sel.appendChild(opt);
   }
@@ -351,8 +300,7 @@ ensureRentrollMonthOptions();
 
 async function loadRentroll(){
   try{
-    const sel = $("#rentrollMonth");
-    const month = sel?.value || yyyymm();
+    const month = $("#rentrollMonth")?.value || yyyymm();
     const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
 
@@ -366,6 +314,7 @@ async function loadRentroll(){
     $("#rentrollCount") && ($("#rentrollCount").textContent = filtered.length);
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length>0);
 
+    const totalBal = filtered.reduce((s,x)=> s + (Number(x.balance)||0), 0);
     $("#rentrollBody") && ($("#rentrollBody").innerHTML = filtered.map(r=>`
       <tr>
         <td>${r.property ?? "—"}</td>
@@ -376,7 +325,12 @@ async function loadRentroll(){
         <td>${r.status ?? "—"}</td>
         <td style="text-align:right">${money(r.balance)}</td>
       </tr>
-    `).join(""));
+    `).join("") + `
+      <tr class="total-row">
+        <td colspan="6" style="text-align:right"><strong>Total</strong></td>
+        <td style="text-align:right"><strong>${money(totalBal)}</strong></td>
+      </tr>
+    `);
   }catch(e){
     console.error(e);
     $("#rentrollBody") && ($("#rentrollBody").innerHTML="");
@@ -384,15 +338,7 @@ async function loadRentroll(){
   }
 }
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
-$("#clearRentroll")?.addEventListener("click", ()=>{
-  $("#rentrollTenant").value=""; $("#rentrollProperty").value="";
-  loadRentroll();
-});
-$("#rentrollMonth")?.addEventListener("change", ()=>{
-  const val = $("#rentrollMonth")?.value || yyyymm();
-  localStorage.setItem("rentrollMonth", val);
-  loadRentroll();
-});
+$("#clearRentroll")?.addEventListener("click", ()=>{ $("#rentrollTenant").value=""; $("#rentrollProperty").value=""; loadRentroll(); });
 
 /* ---------------- balances (current month) ---------------- */
 async function loadBalances(){
@@ -408,28 +354,20 @@ async function loadBalances(){
     $("#balancesEmpty")?.classList.add("hidden");
 
     const total = rows.reduce((s,x)=> s + (Number(x.balance)||0), 0);
-
-    $("#balancesBody") && ($("#balancesBody").innerHTML =
-      rows.map(r=>`
-        <tr>
-          <td>${r.tenant ?? "—"}</td>
-          <td>${(r.lease_id||"").slice(0,8)}…</td>
-          <td>${r.period_start ?? "—"} → ${r.period_end ?? "—"}</td>
-          <td>${r.status ?? "—"}</td>
-          <td style="text-align:right">${money(r.balance)}</td>
-        </tr>
-      `).join("") +
-      `
-        <tr class="total-row">
-          <td colspan="4" style="text-align:right;font-weight:600">Total</td>
-          <td style="text-align:right;font-weight:600">${money(total)}</td>
-        </tr>
-      `
-    );
-
-    // total balances chip (kept)
-    const chip = ensureChip("#tab-balances h3", "balancesTotalChip");
-    if (chip) chip.textContent = `Total ${money(total)}`;
+    $("#balancesBody") && ($("#balancesBody").innerHTML = rows.map(r=>`
+      <tr>
+        <td>${r.tenant ?? "—"}</td>
+        <td>${(r.lease_id||"").slice(0,8)}…</td>
+        <td>${r.period_start ?? "—"} → ${r.period_end ?? "—"}</td>
+        <td>${r.status ?? "—"}</td>
+        <td style="text-align:right">${money(r.balance)}</td>
+      </tr>
+    `).join("") + `
+      <tr class="total-row">
+        <td colspan="4" style="text-align:right"><strong>Total</strong></td>
+        <td style="text-align:right"><strong>${money(total)}</strong></td>
+      </tr>
+    `);
   }catch(e){
     console.error(e);
     $("#balancesBody") && ($("#balancesBody").innerHTML="");
@@ -438,25 +376,31 @@ async function loadBalances(){
 }
 $("#reloadBalances")?.addEventListener("click", loadBalances);
 
-/* ---------------- auto-inject Export CSV buttons ---------------- */
-function ensureExportButtons(){
-  function addAfter(anchorSel, btnId, label){
-    if($(btnId)) return null;
-    const anchor = $(anchorSel);
-    if(!anchor) return null;
+/* ---------------- auto-inject action & export buttons ---------------- */
+function ensureExtraButtons(){
+  // utility: insert a button after some anchor element
+  function addAfter(anchorSel, id, label, extraClass="btn ghost"){
+    if($(id)) return null;
+    const anchor = $(anchorSel); if(!anchor) return null;
     const btn = document.createElement("button");
-    btn.className = "btn ghost";
-    btn.id = btnId.slice(1);
+    btn.className = extraClass;
+    btn.id = id.replace(/^#/, "");
     btn.textContent = label;
     anchor.insertAdjacentElement("afterend", btn);
     return btn;
   }
 
+  // CSV buttons
   addAfter("#reloadLeases",   "#exportLeases",   "Export CSV");
   addAfter("#applyPayments",  "#exportPayments", "Export CSV");
   addAfter("#applyRentroll",  "#exportRentroll", "Export CSV");
   addAfter("#reloadBalances", "#exportBalances", "Export CSV");
 
+  // NEW: Actions
+  addAfter("#exportPayments", "#markVisibleSent", "Mark visible as sent");
+  addAfter("#exportBalances", "#bulkWhatsApp",    "Bulk WhatsApp");
+
+  /* Handlers */
   $("#exportLeases")?.addEventListener("click", ()=>{
     const cols = [
       {label:"Tenant", value:r=>r.tenant},
@@ -471,19 +415,16 @@ function ensureExportButtons(){
   });
 
   $("#exportPayments")?.addEventListener("click", ()=>{
-    const month = $("#paymentsMonth")?.value || yyyymm();
     const cols = [
-      {label:"Date",        value:r=> (pickPaymentDate(r)?.toISOString?.() || "") },
-      {label:"Tenant",      value:r=>r.tenant},
-      {label:"Method",      value:r=>r.method},
-      {label:"Status",      value:r=>r.status ?? "posted"},
-      {label:"Amount",      value:r=>r.amount},
-      {label:"Invoice ID",  value:r=>r.invoice_id},
-      {label:"Payment ID",  value:r=>r.id},
-      {label:"Period Start",value:r=>r.period_start},
-      {label:"Period End",  value:r=>r.period_end}
+      {label:"Date",      value:r=>r.date},
+      {label:"Tenant",    value:r=>r.tenant},
+      {label:"Method",    value:r=>r.method},
+      {label:"Status",    value:r=>r.status ?? "posted"},
+      {label:"Amount",    value:r=>r.amount},
+      {label:"Invoice ID",value:r=>r.invoice_id},
+      {label:"Payment ID",value:r=>r.id}
     ];
-    download(`payments_${month}.csv`, toCSV(state.paymentsView, cols));
+    download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
   });
 
   $("#exportRentroll")?.addEventListener("click", ()=>{
@@ -512,6 +453,51 @@ function ensureExportButtons(){
     ];
     download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
   });
+
+  // NEW A) Payments → Mark visible as sent
+  $("#markVisibleSent")?.addEventListener("click", async ()=>{
+    const ids = Array.from(new Set(
+      (state.paymentsView||[]).map(r=>r.invoice_id).filter(Boolean)
+    ));
+    if(!ids.length) return toast("No invoice IDs in the visible payments.");
+    let ok=0, fail=0;
+    for(const id of ids){
+      try { await jpost("/invoices/mark_sent", { invoice_id:id, via:"whatsapp" }); ok++; }
+      catch(e){ console.error("mark_visible failed:", id, e); fail++; }
+    }
+    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify({processed:ids.length, ok, fail}));
+    toast(`Marked visible as sent: ${ok} • Failed: ${fail}`);
+  });
+
+  // NEW B) Balances → Bulk WhatsApp links
+  $("#bulkWhatsApp")?.addEventListener("click", ()=>{
+    const rows = state.balancesView||[];
+    if(!rows.length) return toast("No balances to build WhatsApp links.");
+    const first = rows[0];
+    const label = (first?.period_start)
+      ? monthLabel(new Date(first.period_start))
+      : monthLabel(new Date());
+
+    const items = rows.map(r=>{
+      const href = r.lease_id
+        ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(r.lease_id)}`
+        : null;
+      const line = href
+        ? `<a href="${href}" target="_blank">Open WA →</a>`
+        : `<span style="color:#888">no lease_id</span>`;
+      return `<tr><td>${csvEscape(r.tenant||"—")}</td><td>${(r.lease_id||"").slice(0,8)}…</td><td>${money(r.balance)}</td><td>${line}</td></tr>`;
+    }).join("");
+
+    openHtmlInNewTab(
+      `WhatsApp Links — ${label}`,
+      `<h1>WhatsApp Links — ${label}</h1>
+       <p>Click each link to open a prefilled WhatsApp message for that tenant.</p>
+       <table>
+         <thead><tr><th>Tenant</th><th>Lease</th><th>Balance</th><th>Link</th></tr></thead>
+         <tbody>${items}</tbody>
+       </table>`
+    );
+  });
 }
 
 /* ---------------- boot ---------------- */
@@ -525,13 +511,8 @@ function ensureExportButtons(){
   wireSettings();
   wireActions();
 
-  ensureExportButtons();
-
-  // Restore saved months if selects are already rendered
-  const pm = localStorage.getItem("paymentsMonth");
-  if (pm && $("#paymentsMonth")) $("#paymentsMonth").value = pm;
-  const rm = localStorage.getItem("rentrollMonth");
-  if (rm && $("#rentrollMonth")) $("#rentrollMonth").value = rm;
+  // add action & export buttons next to existing action buttons
+  ensureExtraButtons();
 
   showTab("overview");  // default view
 })();
