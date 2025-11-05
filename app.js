@@ -1,5 +1,5 @@
-const PROXY = "https://<your-proxy>.onrender.com";
-const API   = "https://rent-tracker-api-16i0.onrender.com";
+// const PROXY = "https://<your-proxy>.onrender.com"; // (optional, not used here)
+const API = "https://rent-tracker-api-16i0.onrender.com";
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 
 const state = {
@@ -24,78 +24,92 @@ function setAdminToken(v) {
   const t = document.querySelector('#adminToken'); if (t) t.value = state.adminToken;
 }
 
-function toast(msg, ms=2400){ const t=document.querySelector('#toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none', ms); }
-async function jget(path){
+function toast(msg, ms = 2400) {
+  const t = document.querySelector('#toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', ms);
+}
+
+async function jget(path) {
   const url = `${state.api}${path}`;
-  const r = await fetch(url, { headers: { 'Accept':'application/json' }});
-  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return await r.json();
 }
 
-async function jpost(path, body){
+async function jpost(path, body) {
   const url = `${state.api}${path}`;
-  const headers = { 'Content-Type':'application/json' };
+  const headers = { 'Content-Type': 'application/json' };
   if (state.adminToken) headers['Authorization'] = `Bearer ${state.adminToken}`;
-  const r = await fetch(url, { method:'POST', headers, body: JSON.stringify(body || {}) });
-  if(!r.ok){
-    const text = await r.text().catch(()=> '');
+  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
     throw new Error(`${r.status} ${r.statusText} — ${text}`);
   }
   return await r.json();
 }
 
 // Header controls
-document.querySelector('#useApi')    ?.addEventListener('click', ()=>{ setAPI(document.querySelector('#apiBase').value); toast('API saved'); });
-document.querySelector('#openDocs')  ?.addEventListener('click', ()=>{ window.open(`${state.api}/docs`, '_blank'); });
+document.querySelector('#useApi')?.addEventListener('click', () => {
+  setAPI(document.querySelector('#apiBase').value);
+  toast('API saved');
+});
+document.querySelector('#openDocs')?.addEventListener('click', () => {
+  window.open(`${state.api}/docs`, '_blank');
+});
 
 // Settings
-document.querySelector('#saveSettings') ?.addEventListener('click', ()=>{
+document.querySelector('#saveSettings')?.addEventListener('click', () => {
   setAPI(document.querySelector('#apiBase2').value);
   setAdminToken(document.querySelector('#adminToken').value);
   toast('Settings saved');
 });
 
-document.querySelector('#resetSettings') ?.addEventListener('click', ()=>{
+document.querySelector('#resetSettings')?.addEventListener('click', () => {
   setAPI(DEFAULT_API);
   setAdminToken("");
   toast('Reset to defaults');
 });
 
 // Invoice Actions
-document.querySelector('#btnMarkSent')?.addEventListener('click', async ()=>{
+document.querySelector('#btnMarkSent')?.addEventListener('click', async () => {
   const id = document.querySelector('#invoiceIdInput').value.trim();
-  if(!id){ toast('Enter an invoice_id'); return; }
-  try{
+  if (!id) { toast('Enter an invoice_id'); return; }
+  try {
     const out = await jpost('/invoices/mark_sent', { invoice_id: id, via: 'whatsapp' });
     document.querySelector('#actionMsg').textContent = JSON.stringify(out);
     toast('Marked as sent');
-  }catch(e){
+  } catch (e) {
     console.error(e);
-    document.querySelector('#actionMsg').textContent = String(e.message||e);
+    document.querySelector('#actionMsg').textContent = String(e.message || e);
     toast('Failed to mark sent');
   }
 });
 
-// Optional "/auth/ping" we added server-side
-document.querySelector('#btnHealth')?.addEventListener('click', async ()=>{
-  try{
+// Optional "/auth/ping"
+document.querySelector('#btnHealth')?.addEventListener('click', async () => {
+  try {
     const url = `${state.api}/auth/ping`;
     const headers = state.adminToken ? { 'Authorization': `Bearer ${state.adminToken}` } : {};
     const r = await fetch(url, { headers });
     const data = await r.json();
     document.querySelector('#actionMsg').textContent = JSON.stringify(data);
     toast(r.ok ? 'Auth OK' : 'Unauthorized');
-  }catch(e){
+  } catch (e) {
     console.error(e);
     toast('Ping failed');
   }
 });
 
-(function init(){
+// Boot
+(function init() {
   setAPI(state.api);
-  document.querySelector('#apiBase') ?.value = state.api;
+  document.querySelector('#apiBase')?.value = state.api;
   document.querySelector('#apiBase2')?.value = state.api;
   document.querySelector('#adminToken')?.value = state.adminToken;
   document.querySelector('#yy').textContent = new Date().getFullYear();
-  loadOverview();
+  if (typeof loadOverview === 'function') {
+    loadOverview();
+  }
 })();
