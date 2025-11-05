@@ -237,7 +237,7 @@
           <div id="waResult" class="muted"></div>
         </div>
 
-        <!-- SETTINGS -->
+ <!-- SETTINGS -->
 <div class="panel hidden" id="tab-settings">
   <h2>Settings</h2>
   <p class="muted">These settings are stored only in your browser (localStorage).</p>
@@ -250,7 +250,7 @@
 
     <label style="display:flex;gap:8px;align-items:center">
       Admin API Token
-      <input id="adminToken" type="password" placeholder="e300262472e2b55205917f9c5abc88ce" />
+      <input id="adminToken" type="password" placeholder="paste your API_TOKEN" autocomplete="off" />
     </label>
 
     <button class="btn" id="saveSettings">Save</button>
@@ -259,11 +259,9 @@
 
   <p class="muted" style="margin-top:8px">
     The Admin API Token must match the <code>API_TOKEN</code> configured on the API service in Render.
-    Don’t share it.
+    It’s saved only in this browser.
   </p>
 </div>
 
-  <!-- App logic (must be last, right before </body>) -->
-  <script src="./app.js"></script>
-</body>
-</html>
+<!-- App logic (must be last, right before </body>) -->
+<script src="./app.js"></script>
