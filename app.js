@@ -7,7 +7,6 @@ const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
-const fmtDate = (s) => { try { return s ? new Date(s).toLocaleDateString("en-KE") : "—"; } catch { return "—"; } };
 
 /* CSV helpers */
 const csvEscape = (v)=> {
@@ -28,6 +27,30 @@ function download(filename, text){
   const a = document.createElement("a");
   a.href = url; a.download = filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+/* simple chip creator (idempotent) */
+function ensureChip(parentSel, id){
+  const parent = $(parentSel);
+  if(!parent) return null;
+  let chip = $(`#${id}`);
+  if (!chip) {
+    chip = document.createElement("span");
+    chip.id = id;
+    chip.style.marginLeft = "8px";
+    chip.style.padding = "2px 8px";
+    chip.style.borderRadius = "999px";
+    chip.style.fontSize = "12px";
+    chip.style.background = "rgba(255,255,255,0.08)";
+    chip.style.border = "1px solid rgba(255,255,255,0.12)";
+    chip.style.display = "inline-block";
+    parent.insertAdjacentElement("beforeend", chip);
+  }
+  return chip;
+}
+async function copyToClipboard(txt){
+  try { await navigator.clipboard.writeText(String(txt)); toast("Copied"); }
+  catch { toast("Copy failed"); }
 }
 
 /* ---------------- app state ---------------- */
@@ -178,13 +201,17 @@ async function loadLeases(){
 
     $("#leasesBody").innerHTML = filtered.map(r=>{
       const tenant = r.tenant ?? "—";
-      const unit   = r.unit   ?? "—";
+      const unit   = r.unit ?? "—";
       const rent   = r.rent_amount ?? r.rent ?? "—";
       const cycle  = r.billing_cycle ?? r.cycle ?? "—";
       const dueDay = r.due_day ?? "—";
       const status = r.status ?? "Active";
       const leaseId = r.lease_id || r.id || "";
       const waHref  = leaseId ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}` : null;
+
+      const copyBtn = leaseId
+        ? `<button class="btn ghost" style="padding:2px 6px;margin-left:6px" onclick="copyToClipboard('${leaseId}')">Copy</button>`
+        : "";
 
       return `
         <tr>
@@ -194,7 +221,7 @@ async function loadLeases(){
           <td>${cycle}</td>
           <td>${dueDay}</td>
           <td><span class="status ${String(status).toLowerCase()==="active"?"ok":"due"}">${status}</span></td>
-          <td>${waHref ? `<a href="${waHref}" target="_blank">Open</a>` : "—"}</td>
+          <td>${waHref ? `<a href="${waHref}" target="_blank">Open</a>` : "—"} ${copyBtn}</td>
         </tr>
       `;
     }).join("");
@@ -209,9 +236,11 @@ $("#reloadLeases")?.addEventListener("click", loadLeases);
 /* ---------------- payments ---------------- */
 function ensurePaymentsMonthOptions(){
   const sel = $("#paymentsMonth"); if(!sel || sel.options.length) return;
-  const now = new Date();
+  const saved = localStorage.getItem("paymentsMonth") || yyyymm();
+  const base = new Date(Number(saved.slice(0,4)), Number(saved.slice(5,7))-1, 1);
+
   for(let i=0;i<12;i++){
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const d = new Date(base.getFullYear(), base.getMonth()-i, 1);
     const val = yyyymm(d);
     const opt = document.createElement("option");
     opt.value = val;
@@ -222,18 +251,25 @@ function ensurePaymentsMonthOptions(){
 }
 ensurePaymentsMonthOptions();
 
-function updatePaymentsHeaderLabel(monthStr){
-  const hdr = $("#tab-payments h2");
-  if(!hdr) return;
-  const d = new Date(`${monthStr}-01`);
-  hdr.textContent = `Payments for ${d.toLocaleString("en-KE",{month:"short", year:"numeric"})}`;
+function setPaymentsHeader(monthStr, count){
+  const h3 = $("#tab-payments h3");
+  if (!h3) return;
+  // Label: "Payments for Nov 2025"
+  const d = new Date(Number(monthStr.slice(0,4)), Number(monthStr.slice(5,7))-1, 1);
+  const label = d.toLocaleString("en-KE",{month:"short", year:"numeric"});
+  h3.textContent = `Payments for ${label}`;
+  // Count chip (already exists in markup as bubble), but we refresh if present
+  $("#paymentsCount") && ($("#paymentsCount").textContent = count);
+
+  // Total chip
+  const chip = ensureChip("#tab-payments h3", "paymentsTotalChip");
+  if (chip) chip.textContent = `Total ${money(state.paymentsView.reduce((s,x)=> s + (Number(x.amount)||0), 0))}`;
 }
 
 async function loadPayments(){
   try{
-    const month = $("#paymentsMonth")?.value || yyyymm();
-    updatePaymentsHeaderLabel(month); // ⬅️ update the “Payments for …” label
-
+    const sel = $("#paymentsMonth");
+    const month = sel?.value || yyyymm();
     const tQ = ($("#paymentsTenant")?.value || "").toLowerCase().trim();
     const sQ = $("#paymentsStatus")?.value || "";
     const rows = await jget(`/payments?month=${month}`);
@@ -248,15 +284,21 @@ async function loadPayments(){
     $("#paymentsCount") && ($("#paymentsCount").textContent = filtered.length);
     $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length>0);
 
-    $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>`
+    setPaymentsHeader(month, filtered.length); // update header + total
+
+    $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>{
+      const invoiceCopy = r.invoice_id
+        ? `<button class="btn ghost" style="padding:2px 6px;margin-left:6px" onclick="copyToClipboard('${r.invoice_id}')">Copy</button>`
+        : "";
+      return `
       <tr>
-        <td>${fmtDate(r.date || r.paid_at || r.created_at)}</td>
+        <td>${r.date ? new Date(r.date).toLocaleDateString("en-KE") : "—"}</td>
         <td>${r.tenant ?? "—"}</td>
-        <td>${r.method ?? "—"}</td>
+        <td>${r.method ?? "—"} ${invoiceCopy}</td>
         <td class="muted">${r.status ?? "posted"}</td>
         <td style="text-align:right">${money(r.amount)}</td>
-      </tr>
-    `).join(""));
+      </tr>`;
+    }).join(""));
   }catch(e){
     console.error(e);
     $("#paymentsBody") && ($("#paymentsBody").innerHTML="");
@@ -268,14 +310,20 @@ $("#clearPayments")?.addEventListener("click", ()=>{
   $("#paymentsTenant").value=""; $("#paymentsStatus").value="";
   loadPayments();
 });
-$("#paymentsMonth")?.addEventListener("change", loadPayments);
+$("#paymentsMonth")?.addEventListener("change", ()=>{
+  const val = $("#paymentsMonth")?.value || yyyymm();
+  localStorage.setItem("paymentsMonth", val);
+  loadPayments();
+});
 
 /* ---------------- rent roll ---------------- */
 function ensureRentrollMonthOptions(){
   const sel = $("#rentrollMonth"); if(!sel || sel.options.length) return;
-  const now = new Date();
+  const saved = localStorage.getItem("rentrollMonth") || yyyymm();
+  const base = new Date(Number(saved.slice(0,4)), Number(saved.slice(5,7))-1, 1);
+
   for(let i=0;i<12;i++){
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const d = new Date(base.getFullYear(), base.getMonth()-i, 1);
     const val = yyyymm(d);
     const opt = document.createElement("option");
     opt.value = val;
@@ -288,7 +336,8 @@ ensureRentrollMonthOptions();
 
 async function loadRentroll(){
   try{
-    const month = $("#rentrollMonth")?.value || yyyymm();
+    const sel = $("#rentrollMonth");
+    const month = sel?.value || yyyymm();
     const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
 
@@ -320,7 +369,15 @@ async function loadRentroll(){
   }
 }
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
-$("#clearRentroll")?.addEventListener("click", ()=>{ $("#rentrollTenant").value=""; $("#rentrollProperty").value=""; loadRentroll(); });
+$("#clearRentroll")?.addEventListener("click", ()=>{
+  $("#rentrollTenant").value=""; $("#rentrollProperty").value="";
+  loadRentroll();
+});
+$("#rentrollMonth")?.addEventListener("change", ()=>{
+  const val = $("#rentrollMonth")?.value || yyyymm();
+  localStorage.setItem("rentrollMonth", val);
+  loadRentroll();
+});
 
 /* ---------------- balances (current month) ---------------- */
 async function loadBalances(){
@@ -344,6 +401,11 @@ async function loadBalances(){
         <td style="text-align:right">${money(r.balance)}</td>
       </tr>
     `).join(""));
+
+    // total balances chip
+    const total = rows.reduce((s,x)=> s + (Number(x.balance)||0), 0);
+    const chip = ensureChip("#tab-balances h3", "balancesTotalChip");
+    if (chip) chip.textContent = `Total ${money(total)}`;
   }catch(e){
     console.error(e);
     $("#balancesBody") && ($("#balancesBody").innerHTML="");
@@ -365,9 +427,10 @@ function ensureExportButtons(){
     anchor.insertAdjacentElement("afterend", btn);
     return btn;
   }
-  addAfter("#reloadLeases", "#exportLeases", "Export CSV");
-  addAfter("#applyPayments", "#exportPayments", "Export CSV");
-  addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
+
+  addAfter("#reloadLeases",   "#exportLeases",   "Export CSV");
+  addAfter("#applyPayments",  "#exportPayments", "Export CSV");
+  addAfter("#applyRentroll",  "#exportRentroll", "Export CSV");
   addAfter("#reloadBalances", "#exportBalances", "Export CSV");
 
   $("#exportLeases")?.addEventListener("click", ()=>{
@@ -384,16 +447,20 @@ function ensureExportButtons(){
   });
 
   $("#exportPayments")?.addEventListener("click", ()=>{
+    const month = $("#paymentsMonth")?.value || yyyymm();
     const cols = [
-      {label:"Date",      value:r=> (r.date || r.paid_at || r.created_at)},
-      {label:"Tenant",    value:r=> r.tenant},
-      {label:"Method",    value:r=> r.method},
-      {label:"Status",    value:r=> r.status ?? "posted"},
-      {label:"Amount",    value:r=> r.amount},
-      {label:"Invoice ID",value:r=> r.invoice_id},
-      {label:"Payment ID",value:r=> r.id}
+      {label:"Date",        value:r=>r.date},
+      {label:"Tenant",      value:r=>r.tenant},
+      {label:"Method",      value:r=>r.method},
+      {label:"Status",      value:r=>r.status ?? "posted"},
+      {label:"Amount",      value:r=>r.amount},
+      {label:"Invoice ID",  value:r=>r.invoice_id},
+      {label:"Payment ID",  value:r=>r.id},
+      // include period fields if your API includes them
+      {label:"Period Start",value:r=>r.period_start},
+      {label:"Period End",  value:r=>r.period_end}
     ];
-    download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
+    download(`payments_${month}.csv`, toCSV(state.paymentsView, cols));
   });
 
   $("#exportRentroll")?.addEventListener("click", ()=>{
@@ -435,6 +502,14 @@ function ensureExportButtons(){
   wireSettings();
   wireActions();
 
+  // add the export buttons next to existing action buttons
   ensureExportButtons();
-  showTab("overview");
+
+  // Restore saved months if selects are already rendered
+  const pm = localStorage.getItem("paymentsMonth");
+  if (pm && $("#paymentsMonth")) $("#paymentsMonth").value = pm;
+  const rm = localStorage.getItem("rentrollMonth");
+  if (rm && $("#rentrollMonth")) $("#rentrollMonth").value = rm;
+
+  showTab("overview");  // default view
 })();
