@@ -16,14 +16,15 @@ const state = {
 function setAPI(v){
   state.api = (v || '').trim().replace(/\/$/,'');
   localStorage.setItem('apiBase', state.api);
-  $('#apiEcho')?.textContent = state.api;
-  $('#apiBase') ?.value = state.api;
-  $('#apiBase2')?.value = state.api;
+
+  const echo = $('#apiEcho'); if (echo) echo.textContent = state.api;
+  const a    = $('#apiBase'); if (a) a.value = state.api;
+  const b    = $('#apiBase2'); if (b) b.value = state.api;
 }
 function setAdminToken(v){
   state.adminToken = v || "";
   localStorage.setItem('adminToken', state.adminToken);
-  $('#adminToken')?.value = state.adminToken;
+  const t = $('#adminToken'); if (t) t.value = state.adminToken;
 }
 function toast(msg, ms=2400){
   const t = $('#toast'); if(!t) return;
@@ -281,7 +282,8 @@ $('#reloadBalances')?.addEventListener('click', loadBalances);
 (function init(){
   setAPI(state.api);
   setAdminToken(state.adminToken);
-  $('#yy')?.textContent = new Date().getFullYear();
+  const yy = $('#yy'); if (yy) yy.textContent = new Date().getFullYear();
+
   wireTabs(); wireHeader(); wireSettings(); wireActions();
-  showTab('overview');              // default tab
+  showTab('overview');
 })();
