@@ -43,6 +43,7 @@ async function jpost(path, body){
   }
   return await r.json();
 }
+
 // Header controls
 document.querySelector('#useApi')    ?.addEventListener('click', ()=>{ setAPI(document.querySelector('#apiBase').value); toast('API saved'); });
 document.querySelector('#openDocs')  ?.addEventListener('click', ()=>{ window.open(`${state.api}/docs`, '_blank'); });
@@ -59,6 +60,7 @@ document.querySelector('#resetSettings') ?.addEventListener('click', ()=>{
   setAdminToken("");
   toast('Reset to defaults');
 });
+
 // Invoice Actions
 document.querySelector('#btnMarkSent')?.addEventListener('click', async ()=>{
   const id = document.querySelector('#invoiceIdInput').value.trim();
@@ -88,6 +90,7 @@ document.querySelector('#btnHealth')?.addEventListener('click', async ()=>{
     toast('Ping failed');
   }
 });
+
 (function init(){
   setAPI(state.api);
   document.querySelector('#apiBase') ?.value = state.api;
