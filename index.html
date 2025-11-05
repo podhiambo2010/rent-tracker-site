@@ -238,34 +238,30 @@
         </div>
 
         <!-- SETTINGS -->
-        <div class="panel hidden" id="tab-settings">
-          <h2>Settings</h2>
-          <p class="muted">These settings are saved in your browser (localStorage).</p>
-          <div class="filters">
-            <label style="display:flex;gap:8px;align-items:center">
-              API Base
-              <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
-            </label>
-            <label style="display:flex;gap:8px;align-items:center">
-              Admin API Token
-              <input id="adminToken" placeholder="Paste API_TOKEN here" />
-            </label>
-            <button class="btn" id="saveSettings">Save</button>
-            <button class="btn ghost" id="resetSettings">Reset</button>
-          </div>
-        </div>
-      </section>
-    </main>
+<div class="panel hidden" id="tab-settings">
+  <h2>Settings</h2>
+  <p class="muted">These settings are stored only in your browser (localStorage).</p>
 
-    <div class="toast" id="toast"></div>
+  <div class="filters" style="gap:14px; align-items:center; flex-wrap:wrap">
+    <label style="display:flex;gap:8px;align-items:center">
+      API Base
+      <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
+    </label>
 
-    <footer class="footer">
-      <div style="max-width:1200px;margin-inline:auto;display:flex;justify-content:space-between;gap:12px;align-items:center">
-        <span>© <span id="yy"></span> Rent Tracker</span>
-        <span class="muted">API: <code id="apiEcho">—</code></span>
-      </div>
-    </footer>
+    <label style="display:flex;gap:8px;align-items:center">
+      Admin API Token
+      <input id="adminToken" type="password" placeholder="e300262472e2b55205917f9c5abc88ce" />
+    </label>
+
+    <button class="btn" id="saveSettings">Save</button>
+    <button class="btn ghost" id="resetSettings">Reset</button>
   </div>
+
+  <p class="muted" style="margin-top:8px">
+    The Admin API Token must match the <code>API_TOKEN</code> configured on the API service in Render.
+    Don’t share it.
+  </p>
+</div>
 
   <!-- App logic (must be last, right before </body>) -->
   <script src="./app.js"></script>
