@@ -1,7 +1,4 @@
 // ======================= Rent Tracker Dashboard (app.js) =======================
-// This file is defensive: it renders whatever the API returns, and never crashes
-// if some fields are missing. It also stores API base + Admin token in localStorage.
-
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 
 /* ---------------- Tiny helpers ---------------- */
@@ -11,12 +8,35 @@ const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).pa
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n || 0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
 
+/* CSV helpers */
+const csvEscape = (v)=> {
+  const s = v==null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+};
+function toCSV(rows, cols){
+  if(!rows?.length) return "";
+  const head = cols.map(c => csvEscape(c.label)).join(",");
+  const body = rows.map(r => cols.map(c => csvEscape(
+    (typeof c.value==="function" ? c.value(r) : r[c.value]) ?? ""
+  )).join(",")).join("\n");
+  return head + "\n" + body;
+}
+function download(filename, text){
+  const blob = new Blob([text], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
 const state = {
   api: localStorage.getItem("apiBase")   || DEFAULT_API,
   adminToken: localStorage.getItem("adminToken") || "",
-  leases: [],
-  paymentsMonth: yyyymm(),
-  rentrollMonth: yyyymm()
+  // last rendered views (for CSV)
+  leasesView: [],
+  paymentsView: [],
+  rentrollView: [],
+  balancesView: []
 };
 
 /* ---------------- Core fetchers ---------------- */
@@ -89,14 +109,21 @@ function wireSettings(){
 
 /* ---------------- Invoice actions ---------------- */
 function wireActions(){
+  // Multi-ID support: comma, space or newline separated invoice_ids
   $("#btnMarkSent")?.addEventListener("click", async ()=>{
-    const id = ($("#invoiceIdInput")?.value || "").trim();
-    if(!id) return toast("Enter an invoice_id");
-    try{
-      const out = await jpost("/invoices/mark_sent", { invoice_id:id, via:"whatsapp" });
-      $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(out));
-      toast("Marked as sent");
-    }catch(e){ console.error(e); $("#actionMsg") && ($("#actionMsg").textContent=String(e.message||e)); toast("Failed to mark sent"); }
+    const raw = ($("#invoiceIdInput")?.value || "").trim();
+    if(!raw) return toast("Enter one or more invoice_id values");
+    const ids = raw.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
+
+    let ok=0, fail=0;
+    for(const id of ids){
+      try{
+        await jpost("/invoices/mark_sent", { invoice_id:id, via:"whatsapp" });
+        ok++;
+      }catch(e){ console.error("mark_sent failed:", id, e); fail++; }
+    }
+    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify({processed:ids.length, ok, fail}));
+    toast(`Marked sent: ${ok} • Failed: ${fail}`);
   });
 
   $("#btnHealth")?.addEventListener("click", async ()=>{
@@ -136,15 +163,14 @@ async function loadOverview(){
 async function loadLeases(){
   try{
     const rows = await jget("/leases?limit=1000");
-    state.leases = rows || [];
-
     const q = ($("#leaseSearch")?.value || "").toLowerCase().trim();
     const filtered = q
-      ? state.leases.filter(r =>
+      ? (rows||[]).filter(r =>
           String(r.tenant||"").toLowerCase().includes(q) ||
           String(r.unit||"").toLowerCase().includes(q))
-      : state.leases;
+      : (rows||[]);
 
+    state.leasesView = filtered;
     $("#leasesCount") && ($("#leasesCount").textContent = filtered.length);
 
     if(!filtered.length){
@@ -184,6 +210,18 @@ async function loadLeases(){
 }
 $("#reloadLeases")?.addEventListener("click", loadLeases);
 $("#leaseSearch")?.addEventListener("input", loadLeases);
+$("#exportLeases")?.addEventListener("click", ()=>{
+  const cols = [
+    {label:"Tenant", value:r=>r.tenant},
+    {label:"Unit",   value:r=>r.unit},
+    {label:"Rent",   value:r=>r.rent_amount ?? r.rent},
+    {label:"Cycle",  value:r=>r.billing_cycle ?? r.cycle},
+    {label:"Due Day",value:r=>r.due_day},
+    {label:"Status", value:r=>r.status},
+    {label:"Lease ID", value:r=>r.lease_id || r.id}
+  ];
+  download(`leases_${yyyymm()}.csv`, toCSV(state.leasesView, cols));
+});
 
 /* ---------------- PAYMENTS ---------------- */
 function ensurePaymentsMonthOptions(){
@@ -214,6 +252,7 @@ async function loadPayments(){
       return okT && okS;
     });
 
+    state.paymentsView = filtered;
     $("#paymentsCount") && ($("#paymentsCount").textContent = filtered.length);
     $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length>0);
 
@@ -235,6 +274,18 @@ async function loadPayments(){
 $("#applyPayments")?.addEventListener("click", loadPayments);
 $("#clearPayments")?.addEventListener("click", ()=>{ $("#paymentsTenant").value=""; $("#paymentsStatus").value=""; loadPayments(); });
 $("#paymentsMonth")?.addEventListener("change", loadPayments);
+$("#exportPayments")?.addEventListener("click", ()=>{
+  const cols = [
+    {label:"Date",    value:r=>r.date},
+    {label:"Tenant",  value:r=>r.tenant},
+    {label:"Method",  value:r=>r.method},
+    {label:"Status",  value:r=>r.status ?? "posted"},
+    {label:"Amount",  value:r=>r.amount},
+    {label:"Invoice ID", value:r=>r.invoice_id},
+    {label:"Payment ID", value:r=>r.id}
+  ];
+  download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
+});
 
 /* ---------------- RENT ROLL ---------------- */
 function ensureRentrollMonthOptions(){
@@ -264,6 +315,7 @@ async function loadRentroll(){
       (pQ ? String(r.property||"").toLowerCase().includes(pQ) : true)
     );
 
+    state.rentrollView = filtered;
     $("#rentrollCount") && ($("#rentrollCount").textContent = filtered.length);
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length>0);
 
@@ -286,11 +338,25 @@ async function loadRentroll(){
 }
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
 $("#clearRentroll")?.addEventListener("click", ()=>{ $("#rentrollTenant").value=""; $("#rentrollProperty").value=""; loadRentroll(); });
+$("#exportRentroll")?.addEventListener("click", ()=>{
+  const cols = [
+    {label:"Property", value:r=>r.property},
+    {label:"Unit",     value:r=>r.unit},
+    {label:"Tenant",   value:r=>r.tenant},
+    {label:"Period",   value:r=>r.period ?? `${r.period_start||""} → ${r.period_end||""}`},
+    {label:"Total Due",value:r=>r.total_due},
+    {label:"Status",   value:r=>r.status},
+    {label:"Balance",  value:r=>r.balance}
+  ];
+  download(`rent_roll_${($("#rentrollMonth")?.value || yyyymm())}.csv`, toCSV(state.rentrollView, cols));
+});
 
 /* ---------------- BALANCES (current month) ---------------- */
 async function loadBalances(){
   try{
     const rows = await jget("/balances");
+    state.balancesView = rows || [];
+
     if(!rows?.length){
       $("#balancesBody") && ($("#balancesBody").innerHTML="");
       $("#balancesEmpty")?.classList.remove("hidden");
@@ -313,6 +379,19 @@ async function loadBalances(){
   }
 }
 $("#reloadBalances")?.addEventListener("click", loadBalances);
+$("#exportBalances")?.addEventListener("click", ()=>{
+  const cols = [
+    {label:"Tenant",  value:r=>r.tenant},
+    {label:"Lease ID",value:r=>r.lease_id},
+    {label:"Period Start", value:r=>r.period_start},
+    {label:"Period End",   value:r=>r.period_end},
+    {label:"Status",  value:r=>r.status},
+    {label:"Total Due", value:r=>r.total_due},
+    {label:"Paid",     value:r=>r.paid_amount},
+    {label:"Balance",  value:r=>r.balance}
+  ];
+  download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
+});
 
 /* ---------------- Boot ---------------- */
 (function init(){
@@ -325,6 +404,5 @@ $("#reloadBalances")?.addEventListener("click", loadBalances);
   wireSettings();
   wireActions();
 
-  // default landing
-  showTab("overview");
+  showTab("overview"); // default
 })();
