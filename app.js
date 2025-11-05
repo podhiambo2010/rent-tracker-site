@@ -7,6 +7,7 @@ const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
+const fmtDate = (s) => { try { return s ? new Date(s).toLocaleDateString("en-KE") : "—"; } catch { return "—"; } };
 
 /* CSV helpers */
 const csvEscape = (v)=> {
@@ -177,7 +178,7 @@ async function loadLeases(){
 
     $("#leasesBody").innerHTML = filtered.map(r=>{
       const tenant = r.tenant ?? "—";
-      const unit   = r.unit ?? "—";
+      const unit   = r.unit   ?? "—";
       const rent   = r.rent_amount ?? r.rent ?? "—";
       const cycle  = r.billing_cycle ?? r.cycle ?? "—";
       const dueDay = r.due_day ?? "—";
@@ -221,9 +222,18 @@ function ensurePaymentsMonthOptions(){
 }
 ensurePaymentsMonthOptions();
 
+function updatePaymentsHeaderLabel(monthStr){
+  const hdr = $("#tab-payments h2");
+  if(!hdr) return;
+  const d = new Date(`${monthStr}-01`);
+  hdr.textContent = `Payments for ${d.toLocaleString("en-KE",{month:"short", year:"numeric"})}`;
+}
+
 async function loadPayments(){
   try{
     const month = $("#paymentsMonth")?.value || yyyymm();
+    updatePaymentsHeaderLabel(month); // ⬅️ update the “Payments for …” label
+
     const tQ = ($("#paymentsTenant")?.value || "").toLowerCase().trim();
     const sQ = $("#paymentsStatus")?.value || "";
     const rows = await jget(`/payments?month=${month}`);
@@ -240,7 +250,7 @@ async function loadPayments(){
 
     $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>`
       <tr>
-        <td>${r.date ? new Date(r.date).toLocaleDateString("en-KE") : "—"}</td>
+        <td>${fmtDate(r.date || r.paid_at || r.created_at)}</td>
         <td>${r.tenant ?? "—"}</td>
         <td>${r.method ?? "—"}</td>
         <td class="muted">${r.status ?? "posted"}</td>
@@ -254,7 +264,10 @@ async function loadPayments(){
   }
 }
 $("#applyPayments")?.addEventListener("click", loadPayments);
-$("#clearPayments")?.addEventListener("click", ()=>{ $("#paymentsTenant").value=""; $("#paymentsStatus").value=""; loadPayments(); });
+$("#clearPayments")?.addEventListener("click", ()=>{
+  $("#paymentsTenant").value=""; $("#paymentsStatus").value="";
+  loadPayments();
+});
 $("#paymentsMonth")?.addEventListener("change", loadPayments);
 
 /* ---------------- rent roll ---------------- */
@@ -341,29 +354,22 @@ $("#reloadBalances")?.addEventListener("click", loadBalances);
 
 /* ---------------- auto-inject Export CSV buttons ---------------- */
 function ensureExportButtons(){
-  // helper to create a button after an anchor element if it doesn't exist
   function addAfter(anchorSel, btnId, label){
-    if($(btnId)) return null; // already exists (btnId expected as CSS selector like #exportLeases)
+    if($(btnId)) return null;
     const anchor = $(anchorSel);
     if(!anchor) return null;
     const btn = document.createElement("button");
     btn.className = "btn ghost";
-    btn.id = btnId.slice(1); // remove leading '#'
+    btn.id = btnId.slice(1);
     btn.textContent = label;
     anchor.insertAdjacentElement("afterend", btn);
     return btn;
   }
-
-  // Leases: after #reloadLeases
   addAfter("#reloadLeases", "#exportLeases", "Export CSV");
-  // Payments: after #applyPayments
   addAfter("#applyPayments", "#exportPayments", "Export CSV");
-  // Rent Roll: after #applyRentroll
   addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
-  // Balances: after #reloadBalances
   addAfter("#reloadBalances", "#exportBalances", "Export CSV");
 
-  // attach handlers (safe if buttons not present)
   $("#exportLeases")?.addEventListener("click", ()=>{
     const cols = [
       {label:"Tenant", value:r=>r.tenant},
@@ -379,13 +385,13 @@ function ensureExportButtons(){
 
   $("#exportPayments")?.addEventListener("click", ()=>{
     const cols = [
-      {label:"Date",      value:r=>r.date},
-      {label:"Tenant",    value:r=>r.tenant},
-      {label:"Method",    value:r=>r.method},
-      {label:"Status",    value:r=>r.status ?? "posted"},
-      {label:"Amount",    value:r=>r.amount},
-      {label:"Invoice ID",value:r=>r.invoice_id},
-      {label:"Payment ID",value:r=>r.id}
+      {label:"Date",      value:r=> (r.date || r.paid_at || r.created_at)},
+      {label:"Tenant",    value:r=> r.tenant},
+      {label:"Method",    value:r=> r.method},
+      {label:"Status",    value:r=> r.status ?? "posted"},
+      {label:"Amount",    value:r=> r.amount},
+      {label:"Invoice ID",value:r=> r.invoice_id},
+      {label:"Payment ID",value:r=> r.id}
     ];
     download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
   });
@@ -429,8 +435,6 @@ function ensureExportButtons(){
   wireSettings();
   wireActions();
 
-  // add the export buttons next to existing action buttons
   ensureExportButtons();
-
-  showTab("overview");  // default view
+  showTab("overview");
 })();
