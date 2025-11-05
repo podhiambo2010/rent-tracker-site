@@ -8,7 +8,7 @@ const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).pa
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
 
-/* CSV helpers (safe even if you don’t show export buttons) */
+/* CSV helpers */
 const csvEscape = (v)=> {
   const s = v==null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
@@ -204,19 +204,6 @@ async function loadLeases(){
   }
 }
 $("#reloadLeases")?.addEventListener("click", loadLeases);
-$("#leaseSearch")?.addEventListener("input", loadLeases);
-$("#exportLeases")?.addEventListener("click", ()=>{
-  const cols = [
-    {label:"Tenant", value:r=>r.tenant},
-    {label:"Unit",   value:r=>r.unit},
-    {label:"Rent",   value:r=>r.rent_amount ?? r.rent},
-    {label:"Cycle",  value:r=>r.billing_cycle ?? r.cycle},
-    {label:"Due Day",value:r=>r.due_day},
-    {label:"Status", value:r=>r.status},
-    {label:"Lease ID", value:r=>r.lease_id || r.id}
-  ];
-  download(`leases_${yyyymm()}.csv`, toCSV(state.leasesView, cols));
-});
 
 /* ---------------- payments ---------------- */
 function ensurePaymentsMonthOptions(){
@@ -269,18 +256,6 @@ async function loadPayments(){
 $("#applyPayments")?.addEventListener("click", loadPayments);
 $("#clearPayments")?.addEventListener("click", ()=>{ $("#paymentsTenant").value=""; $("#paymentsStatus").value=""; loadPayments(); });
 $("#paymentsMonth")?.addEventListener("change", loadPayments);
-$("#exportPayments")?.addEventListener("click", ()=>{
-  const cols = [
-    {label:"Date",      value:r=>r.date},
-    {label:"Tenant",    value:r=>r.tenant},
-    {label:"Method",    value:r=>r.method},
-    {label:"Status",    value:r=>r.status ?? "posted"},
-    {label:"Amount",    value:r=>r.amount},
-    {label:"Invoice ID",value:r=>r.invoice_id},
-    {label:"Payment ID",value:r=>r.id}
-  ];
-  download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
-});
 
 /* ---------------- rent roll ---------------- */
 function ensureRentrollMonthOptions(){
@@ -333,18 +308,6 @@ async function loadRentroll(){
 }
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
 $("#clearRentroll")?.addEventListener("click", ()=>{ $("#rentrollTenant").value=""; $("#rentrollProperty").value=""; loadRentroll(); });
-$("#exportRentroll")?.addEventListener("click", ()=>{
-  const cols = [
-    {label:"Property", value:r=>r.property},
-    {label:"Unit",     value:r=>r.unit},
-    {label:"Tenant",   value:r=>r.tenant},
-    {label:"Period",   value:r=>r.period ?? `${r.period_start||""} → ${r.period_end||""}`},
-    {label:"Total Due",value:r=>r.total_due},
-    {label:"Status",   value:r=>r.status},
-    {label:"Balance",  value:r=>r.balance}
-  ];
-  download(`rent_roll_${($("#rentrollMonth")?.value || yyyymm())}.csv`, toCSV(state.rentrollView, cols));
-});
 
 /* ---------------- balances (current month) ---------------- */
 async function loadBalances(){
@@ -375,19 +338,85 @@ async function loadBalances(){
   }
 }
 $("#reloadBalances")?.addEventListener("click", loadBalances);
-$("#exportBalances")?.addEventListener("click", ()=>{
-  const cols = [
-    {label:"Tenant",      value:r=>r.tenant},
-    {label:"Lease ID",    value:r=>r.lease_id},
-    {label:"Period Start",value:r=>r.period_start},
-    {label:"Period End",  value:r=>r.period_end},
-    {label:"Status",      value:r=>r.status},
-    {label:"Total Due",   value:r=>r.total_due},
-    {label:"Paid",        value:r=>r.paid_amount},
-    {label:"Balance",     value:r=>r.balance}
-  ];
-  download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
-});
+
+/* ---------------- auto-inject Export CSV buttons ---------------- */
+function ensureExportButtons(){
+  // helper to create a button after an anchor element if it doesn't exist
+  function addAfter(anchorSel, btnId, label){
+    if($(btnId)) return null; // already exists (btnId expected as CSS selector like #exportLeases)
+    const anchor = $(anchorSel);
+    if(!anchor) return null;
+    const btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.id = btnId.slice(1); // remove leading '#'
+    btn.textContent = label;
+    anchor.insertAdjacentElement("afterend", btn);
+    return btn;
+  }
+
+  // Leases: after #reloadLeases
+  addAfter("#reloadLeases", "#exportLeases", "Export CSV");
+  // Payments: after #applyPayments
+  addAfter("#applyPayments", "#exportPayments", "Export CSV");
+  // Rent Roll: after #applyRentroll
+  addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
+  // Balances: after #reloadBalances
+  addAfter("#reloadBalances", "#exportBalances", "Export CSV");
+
+  // attach handlers (safe if buttons not present)
+  $("#exportLeases")?.addEventListener("click", ()=>{
+    const cols = [
+      {label:"Tenant", value:r=>r.tenant},
+      {label:"Unit",   value:r=>r.unit},
+      {label:"Rent",   value:r=>r.rent_amount ?? r.rent},
+      {label:"Cycle",  value:r=>r.billing_cycle ?? r.cycle},
+      {label:"Due Day",value:r=>r.due_day},
+      {label:"Status", value:r=>r.status},
+      {label:"Lease ID", value:r=>r.lease_id || r.id}
+    ];
+    download(`leases_${yyyymm()}.csv`, toCSV(state.leasesView, cols));
+  });
+
+  $("#exportPayments")?.addEventListener("click", ()=>{
+    const cols = [
+      {label:"Date",      value:r=>r.date},
+      {label:"Tenant",    value:r=>r.tenant},
+      {label:"Method",    value:r=>r.method},
+      {label:"Status",    value:r=>r.status ?? "posted"},
+      {label:"Amount",    value:r=>r.amount},
+      {label:"Invoice ID",value:r=>r.invoice_id},
+      {label:"Payment ID",value:r=>r.id}
+    ];
+    download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
+  });
+
+  $("#exportRentroll")?.addEventListener("click", ()=>{
+    const cols = [
+      {label:"Property", value:r=>r.property},
+      {label:"Unit",     value:r=>r.unit},
+      {label:"Tenant",   value:r=>r.tenant},
+      {label:"Period",   value:r=>r.period ?? `${r.period_start||""} → ${r.period_end||""}`},
+      {label:"Total Due",value:r=>r.total_due},
+      {label:"Status",   value:r=>r.status},
+      {label:"Balance",  value:r=>r.balance}
+    ];
+    download(`rent_roll_${($("#rentrollMonth")?.value || yyyymm())}.csv`, toCSV(state.rentrollView, cols));
+  });
+
+  $("#exportBalances")?.addEventListener("click", ()=>{
+    const cols = [
+      {label:"Tenant",      value:r=>r.tenant},
+      {label:"Lease ID",    value:r=>r.lease_id},
+      {label:"Period Start",value:r=>r.period_start},
+      {label:"Period End",  value:r=>r.period_end},
+      {label:"Status",      value:r=>r.status},
+      {label:"Total Due",   value:r=>r.total_due},
+      {label:"Paid",        value:r=>r.paid_amount},
+      {label:"Balance",     value:r=>r.balance}
+    ];
+    download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
+  });
+}
 
 /* ---------------- boot ---------------- */
 (function init(){
@@ -399,6 +428,9 @@ $("#exportBalances")?.addEventListener("click", ()=>{
   wireHeader();
   wireSettings();
   wireActions();
+
+  // add the export buttons next to existing action buttons
+  ensureExportButtons();
 
   showTab("overview");  // default view
 })();
