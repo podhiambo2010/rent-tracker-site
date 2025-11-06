@@ -121,18 +121,16 @@ function wireSettings(){
 /* ---------------- invoice actions ---------------- */
 function wireActions(){
   // Mark as sent (multi-ID)
-  $("#btnMarkSent")?.addEventListener("click", async ()=>{
-    const raw = ($("#invoiceIdInput")?.value || "").trim();
-    if(!raw) return toast("Enter one or more invoice_id values");
-    const ids = raw.split(/[\s,]+/).map(s=>s.trim()).filter(Boolean);
-    let ok=0, fail=0;
-    for(const id of ids){
-      try { await jpost("/invoices/mark_sent", { invoice_id:id, via:"whatsapp" }); ok++; }
-      catch(e){ console.error("mark_sent failed:", id, e); fail++; }
-    }
-    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify({processed:ids.length, ok, fail}));
-    toast(`Marked sent: ${ok} • Failed: ${fail}`);
-  });
+  $("#btnAuthPing")?.addEventListener("click", async ()=>{
+  try{
+    const r = await fetch(`${state.api}/admin/ping`, {
+      headers: { "X-Admin-Token": state.adminToken || "" }
+    });
+    const data = await r.json().catch(()=> ({}));
+    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data));
+    toast(r.ok ? "Admin auth OK" : "Unauthorized");
+  }catch(e){ console.error(e); toast("Ping failed"); }
+});
 
   // Auth ping (optional)
   $("#btnHealth")?.addEventListener("click", async ()=>{
