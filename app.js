@@ -68,6 +68,9 @@ async function jpost(path, body){
     throw new Error(`${r.status} ${r.statusText} — ${txt}`);
   }
   return r.json();
+}
+
+/* ---- Dunning helper (uses X-Admin-Token header) ---- */
 async function callDunning(dryRun=true){
   const url = `${state.api}/cron/dunning?dry_run=${dryRun?1:0}`;
   const headers = { "X-Admin-Token": state.adminToken || "" };
@@ -131,6 +134,7 @@ function wireActions(){
     toast(`Marked sent: ${ok} • Failed: ${fail}`);
   });
 
+  // Auth ping (optional)
   $("#btnHealth")?.addEventListener("click", async ()=>{
     try{
       const headers = state.adminToken ? { Authorization:`Bearer ${state.adminToken}` } : {};
@@ -141,7 +145,7 @@ function wireActions(){
     }catch(e){ console.error(e); toast("Ping failed"); }
   });
 
-  // --------- NEW: Dunning buttons (dry run / apply) ----------
+  // --------- Dunning buttons (dry run / apply) ----------
   function ensureBtn(afterSel, id, label){
     if($(id)) return $(id);
     const anchor = $(afterSel);
@@ -155,26 +159,26 @@ function wireActions(){
   const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry",  "Dunning (dry run)");
   const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo", "Dunning (apply)");
 
-  async function callDunning(apply){
-    if(!state.adminToken){ toast("Set Admin token in Settings first"); return; }
-    const url = `${state.api}/cron/dunning?dry_run=${apply?0:1}`;
-    const opt = apply
-      ? { method:"POST", headers:{ "X-Admin-Token": state.adminToken } }
-      : { headers:{ "X-Admin-Token": state.adminToken } };
-    $("#actionMsg") && ($("#actionMsg").textContent = "Running…");
+  bDry?.addEventListener("click", async ()=>{
     try{
-      const r = await fetch(url, opt);
-      const data = await r.json();
+      if(!state.adminToken) return toast("Set Admin token in Settings first");
+      $("#actionMsg") && ($("#actionMsg").textContent = "Running…");
+      const data = await callDunning(true);
       $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
-      toast(apply ? "Dunning applied" : "Preview ready");
-    }catch(e){
-      console.error(e);
-      $("#actionMsg") && ($("#actionMsg").textContent = String(e));
-      toast("Dunning failed");
-    }
-  }
-  bDry?.addEventListener("click",  ()=>callDunning(false));
-  bApply?.addEventListener("click",()=>callDunning(true));
+      toast("Dunning preview ready");
+    }catch(e){ console.error(e); $("#actionMsg") && ($("#actionMsg").textContent = String(e)); toast("Dunning failed"); }
+  });
+
+  bApply?.addEventListener("click", async ()=>{
+    try{
+      if(!state.adminToken) return toast("Set Admin token in Settings first");
+      if(!confirm("Apply late fees and log reminders now?")) return;
+      $("#actionMsg") && ($("#actionMsg").textContent = "Applying…");
+      const data = await callDunning(false);
+      $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
+      toast("Dunning applied");
+    }catch(e){ console.error(e); $("#actionMsg") && ($("#actionMsg").textContent = String(e)); toast("Dunning failed"); }
+  });
 }
 
 /* ---------------- overview KPIs ---------------- */
@@ -353,7 +357,7 @@ async function loadRentroll(){
     `).join(""));
   }catch(e){
     console.error(e);
-    $("#rentrollBody") && ($("#rentrollBody").innerHTML="");
+    $("#rentrollBody") && ($("#rentrollBody").innerHTML=""));
     $("#rentrollEmpty")?.classList.remove("hidden");
   }
 }
