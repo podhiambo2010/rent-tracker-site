@@ -357,7 +357,7 @@ async function loadRentroll(){
     `).join(""));
   }catch(e){
     console.error(e);
-    $("#rentrollBody") && ($("#rentrollBody").innerHTML=""));
+    $("#rentrollBody") && ($("#rentrollBody").innerHTML="");
     $("#rentrollEmpty")?.classList.remove("hidden");
   }
 }
