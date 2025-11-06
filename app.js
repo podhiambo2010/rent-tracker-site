@@ -68,6 +68,15 @@ async function jpost(path, body){
     throw new Error(`${r.status} ${r.statusText} — ${txt}`);
   }
   return r.json();
+async function callDunning(dryRun=true){
+  const url = `${state.api}/cron/dunning?dry_run=${dryRun?1:0}`;
+  const headers = { "X-Admin-Token": state.adminToken || "" };
+  const r = await fetch(url, { method: dryRun ? "GET" : "POST", headers });
+  if(!r.ok){
+    const txt = await r.text().catch(()=> "");
+    throw new Error(`${r.status} ${r.statusText} — ${txt || 'Unauthorized'}`);
+  }
+  return r.json();
 }
 
 /* ---------------- tabs ---------------- */
