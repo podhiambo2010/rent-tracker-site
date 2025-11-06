@@ -132,32 +132,26 @@ function wireActions(){
     }catch(e){ console.error(e); toast("Ping failed"); }
   });
 
-  // ---------------- NEW: Dunning buttons ----------------
-  // Create buttons if they don’t exist and wire them
-  const actionsHost = $("#invoiceActionsHost") || $("#invoiceActions") || document;
+  // --------- NEW: Dunning buttons (dry run / apply) ----------
   function ensureBtn(afterSel, id, label){
     if($(id)) return $(id);
-    const anchor = afterSel ? $(afterSel) : null;
+    const anchor = $(afterSel);
     const btn = document.createElement("button");
     btn.className = "btn ghost";
     btn.id = id.replace(/^#/, "");
     btn.textContent = label;
-    if(anchor) anchor.insertAdjacentElement("afterend", btn);
-    else actionsHost.appendChild(btn);
+    (anchor ? anchor : $("#invoiceActions") || document.body).insertAdjacentElement("afterend", btn);
     return btn;
   }
-  const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry",   "Dunning (dry run)");
-  const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo",  "Dunning (apply)");
+  const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry",  "Dunning (dry run)");
+  const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo", "Dunning (apply)");
 
   async function callDunning(apply){
-    if(!state.adminToken){
-      toast("Set Admin token in Settings first");
-      return;
-    }
+    if(!state.adminToken){ toast("Set Admin token in Settings first"); return; }
     const url = `${state.api}/cron/dunning?dry_run=${apply?0:1}`;
     const opt = apply
-      ? { method:"POST", headers:{ "X-Admin-Token": state.adminToken }}
-      : { headers:{ "X-Admin-Token": state.adminToken }};
+      ? { method:"POST", headers:{ "X-Admin-Token": state.adminToken } }
+      : { headers:{ "X-Admin-Token": state.adminToken } };
     $("#actionMsg") && ($("#actionMsg").textContent = "Running…");
     try{
       const r = await fetch(url, opt);
@@ -297,8 +291,7 @@ async function loadPayments(){
     $("#paymentsBody")?.appendChild(trow);
   }catch(e){
     console.error(e);
-    $("#paymentsBody") && ($("#paymentsBody").innerHTML="";
-    );
+    $("#paymentsBody") && ($("#paymentsBody").innerHTML="");
     $("#paymentsEmpty")?.classList.remove("hidden");
   }
 }
@@ -478,8 +471,7 @@ function ensureExportButtons(){
   wireHeader();
   wireSettings();
   wireActions();
+  ensureExportButtons();
 
-  ensureExportButtons(); // and we also injected the dunning buttons in wireActions()
-
-  showTab("overview");  // default view
+  showTab("overview");
 })();
