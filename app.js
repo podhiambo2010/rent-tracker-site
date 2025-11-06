@@ -108,7 +108,7 @@ function wireSettings(){
 
 /* ---------------- invoice actions ---------------- */
 function wireActions(){
-  // Multi-ID mark_sent: accepts comma, space, or newline-separated IDs
+  // Mark as sent (multi-ID)
   $("#btnMarkSent")?.addEventListener("click", async ()=>{
     const raw = ($("#invoiceIdInput")?.value || "").trim();
     if(!raw) return toast("Enter one or more invoice_id values");
@@ -131,6 +131,47 @@ function wireActions(){
       toast(r.ok ? "Auth OK" : "Unauthorized");
     }catch(e){ console.error(e); toast("Ping failed"); }
   });
+
+  // ---------------- NEW: Dunning buttons ----------------
+  // Create buttons if they don’t exist and wire them
+  const actionsHost = $("#invoiceActionsHost") || $("#invoiceActions") || document;
+  function ensureBtn(afterSel, id, label){
+    if($(id)) return $(id);
+    const anchor = afterSel ? $(afterSel) : null;
+    const btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.id = id.replace(/^#/, "");
+    btn.textContent = label;
+    if(anchor) anchor.insertAdjacentElement("afterend", btn);
+    else actionsHost.appendChild(btn);
+    return btn;
+  }
+  const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry",   "Dunning (dry run)");
+  const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo",  "Dunning (apply)");
+
+  async function callDunning(apply){
+    if(!state.adminToken){
+      toast("Set Admin token in Settings first");
+      return;
+    }
+    const url = `${state.api}/cron/dunning?dry_run=${apply?0:1}`;
+    const opt = apply
+      ? { method:"POST", headers:{ "X-Admin-Token": state.adminToken }}
+      : { headers:{ "X-Admin-Token": state.adminToken }};
+    $("#actionMsg") && ($("#actionMsg").textContent = "Running…");
+    try{
+      const r = await fetch(url, opt);
+      const data = await r.json();
+      $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
+      toast(apply ? "Dunning applied" : "Preview ready");
+    }catch(e){
+      console.error(e);
+      $("#actionMsg") && ($("#actionMsg").textContent = String(e));
+      toast("Dunning failed");
+    }
+  }
+  bDry?.addEventListener("click",  ()=>callDunning(false));
+  bApply?.addEventListener("click",()=>callDunning(true));
 }
 
 /* ---------------- overview KPIs ---------------- */
@@ -179,7 +220,7 @@ async function loadLeases(){
       const tenant = r.tenant ?? "—";
       const unit   = r.unit ?? "—";
       const rent   = r.rent_amount ?? r.rent ?? "—";
-      const cycle  = r.billing_cycle ?? r.cycle ?? "—";
+      const cycle  = r.billing_cycle ?? r.cycle ?? "monthly";
       const dueDay = r.due_day ?? "—";
       const status = r.status ?? "Active";
       const leaseId = r.lease_id || r.id || "";
@@ -221,15 +262,6 @@ function ensurePaymentsMonthOptions(){
 }
 ensurePaymentsMonthOptions();
 
-function setPaymentsHeaderLabel(){
-  const sel = $("#paymentsMonth");
-  const lbl = $("#paymentsHeaderLabel");
-  if(!lbl || !sel) return;
-  const d = new Date(sel.value + "-01T00:00:00");
-  const text = d.toLocaleString("en-KE",{month:"short",year:"numeric"});
-  lbl.textContent = `Payments for ${text}`;
-}
-
 async function loadPayments(){
   try{
     const month = $("#paymentsMonth")?.value || yyyymm();
@@ -249,7 +281,7 @@ async function loadPayments(){
 
     $("#paymentsBody") && ($("#paymentsBody").innerHTML = filtered.map(r=>`
       <tr>
-        <td>${r.date ? new Date(r.date).toLocaleDateString("en-KE") : "—"}</td>
+        <td>${r.paid_at || r.created_at ? new Date(r.paid_at || r.created_at).toLocaleDateString("en-KE") : "—"}</td>
         <td>${r.tenant ?? "—"}</td>
         <td>${r.method ?? "—"}</td>
         <td class="muted">${r.status ?? "posted"}</td>
@@ -257,22 +289,22 @@ async function loadPayments(){
       </tr>
     `).join(""));
 
-    // totals row
+    // Total row
     const total = filtered.reduce((s,x)=> s + (Number(x.amount)||0), 0);
-    $("#paymentsBody")?.insertAdjacentHTML("beforeend",
-      `<tr class="totals"><td colspan="4" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${money(total)}</strong></td></tr>`
-    );
-
-    setPaymentsHeaderLabel();
+    const trow = document.createElement("tr");
+    trow.innerHTML = `<td colspan="4" style="text-align:right;font-weight:600">Total</td>
+                      <td style="text-align:right;font-weight:600">${money(total)}</td>`;
+    $("#paymentsBody")?.appendChild(trow);
   }catch(e){
     console.error(e);
-    $("#paymentsBody") && ($("#paymentsBody").innerHTML="");
+    $("#paymentsBody") && ($("#paymentsBody").innerHTML="";
+    );
     $("#paymentsEmpty")?.classList.remove("hidden");
   }
 }
 $("#applyPayments")?.addEventListener("click", loadPayments);
 $("#clearPayments")?.addEventListener("click", ()=>{ $("#paymentsTenant").value=""; $("#paymentsStatus").value=""; loadPayments(); });
-$("#paymentsMonth")?.addEventListener("change", ()=>{ loadPayments(); setPaymentsHeaderLabel(); });
+$("#paymentsMonth")?.addEventListener("change", loadPayments);
 
 /* ---------------- rent roll ---------------- */
 function ensureRentrollMonthOptions(){
@@ -289,59 +321,6 @@ function ensureRentrollMonthOptions(){
   }
 }
 ensureRentrollMonthOptions();
-
-/* --- NEW: helper to render "Paid/Due/Overdue" badges + totals for visible rows --- */
-function renderRRBuckets(rows){
-  const el = $("#rrBuckets");
-  if(!el) return;
-
-  const today = new Date();
-  let paidC=0, paidSum=0, dueC=0, dueSum=0, ovdC=0, ovdSum=0;
-
-  (rows||[]).forEach(r=>{
-    const bal = Number(r.balance)||0;
-    const periodEnd = r.period_end ? new Date(r.period_end) : null;
-    const isPaid = bal<=0;
-    const isOverdue = !isPaid && periodEnd && (periodEnd < new Date(today.toDateString()));
-    if(isPaid){ paidC++; paidSum += Number(r.total_due)||0; }
-    else if(isOverdue){ ovdC++; ovdSum += bal; }
-    else { dueC++; dueSum += bal; }
-  });
-
-  el.innerHTML = `
-    <div class="chips" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 4px">
-      <span class="chip ok">Paid: ${paidC}</span>
-      <span class="chip warn">Due: ${dueC} • ${money(dueSum)}</span>
-      <span class="chip danger">Overdue: ${ovdC} • ${money(ovdSum)}</span>
-    </div>
-  `;
-}
-
-/* --- NEW: Bulk WhatsApp from Rent Roll (visible rows) --- */
-function bulkWaFromRentroll(){
-  const rows = state.rentrollView || [];
-  if(!rows.length) return toast("No rows visible");
-  const MAX = 12; // safety cap
-  let opened = 0, skipped = 0;
-
-  for(const r of rows){
-    const bal = Number(r.balance)||0;
-    const periodEnd = r.period_end ? new Date(r.period_end) : null;
-    const overdue = bal>0 && periodEnd && (periodEnd < new Date(new Date().toDateString()));
-    const shouldSend = bal>0; // send to both Due & Overdue
-    if(!shouldSend) continue;
-
-    const leaseId = r.lease_id || r.lease || r.id;
-    if(!leaseId){ skipped++; continue; }
-
-    const url = `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}&amount=${encodeURIComponent(bal)}&period=${encodeURIComponent(r.period || `${r.period_start||""}–${r.period_end||""}`)}&overdue=${overdue?1:0}`;
-    window.open(url, "_blank");
-    opened++;
-    if(opened >= MAX) break;
-  }
-
-  toast(`Opened WA: ${opened}${skipped ? ` • Skipped (no lease_id): ${skipped}` : ""}`);
-}
 
 async function loadRentroll(){
   try{
@@ -370,15 +349,6 @@ async function loadRentroll(){
         <td style="text-align:right">${money(r.balance)}</td>
       </tr>
     `).join(""));
-
-    // totals row
-    const totalBal = filtered.reduce((s,x)=> s + (Number(x.balance)||0), 0);
-    $("#rentrollBody")?.insertAdjacentHTML("beforeend",
-      `<tr class="totals"><td colspan="6" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${money(totalBal)}</strong></td></tr>`
-    );
-
-    // badges
-    renderRRBuckets(filtered);
   }catch(e){
     console.error(e);
     $("#rentrollBody") && ($("#rentrollBody").innerHTML="");
@@ -411,11 +381,12 @@ async function loadBalances(){
       </tr>
     `).join(""));
 
-    // totals row
+    // total row
     const total = rows.reduce((s,x)=> s + (Number(x.balance)||0), 0);
-    $("#balancesBody")?.insertAdjacentHTML("beforeend",
-      `<tr class="totals"><td colspan="4" style="text-align:right"><strong>Total</strong></td><td style="text-align:right"><strong>${money(total)}</strong></td></tr>`
-    );
+    const trow = document.createElement("tr");
+    trow.innerHTML = `<td colspan="4" style="text-align:right;font-weight:600">Total</td>
+                      <td style="text-align:right;font-weight:600">${money(total)}</td>`;
+    $("#balancesBody")?.appendChild(trow);
   }catch(e){
     console.error(e);
     $("#balancesBody") && ($("#balancesBody").innerHTML="");
@@ -424,41 +395,25 @@ async function loadBalances(){
 }
 $("#reloadBalances")?.addEventListener("click", loadBalances);
 
-/* ---------------- auto-inject Export CSV buttons + New UI bits ---------------- */
+/* ---------------- auto-inject Export CSV buttons ---------------- */
 function ensureExportButtons(){
-  function addAfter(anchorSel, id, label){
-    if($(id)) return null;
+  function addAfter(anchorSel, btnId, label){
+    if($(btnId)) return null;
     const anchor = $(anchorSel);
     if(!anchor) return null;
     const btn = document.createElement("button");
     btn.className = "btn ghost";
-    btn.id = id.replace(/^#/,"");
+    btn.id = btnId.slice(1);
     btn.textContent = label;
     anchor.insertAdjacentElement("afterend", btn);
     return btn;
   }
 
-  // Leases: after #reloadLeases
   addAfter("#reloadLeases", "#exportLeases", "Export CSV");
-  // Payments: after #applyPayments
   addAfter("#applyPayments", "#exportPayments", "Export CSV");
-  // Rent Roll: after #applyRentroll
-  const expRR = addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
-  // NEW: Bulk WhatsApp button (Rent Roll) after Export CSV
-  const bulkRR = addAfter("#exportRentroll", "#bulkRentroll", "Bulk WhatsApp");
+  addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
+  addAfter("#reloadBalances", "#exportBalances", "Export CSV");
 
-  // NEW: small container for RR badges
-  if(!$("#rrBuckets")){
-    const anchor = $("#applyRentroll");
-    if(anchor){
-      const div = document.createElement("div");
-      div.id = "rrBuckets";
-      div.style.margin = "6px 0 0";
-      anchor.parentElement.insertAdjacentElement("beforeend", div);
-    }
-  }
-
-  // attach handlers
   $("#exportLeases")?.addEventListener("click", ()=>{
     const cols = [
       {label:"Tenant", value:r=>r.tenant},
@@ -474,7 +429,7 @@ function ensureExportButtons(){
 
   $("#exportPayments")?.addEventListener("click", ()=>{
     const cols = [
-      {label:"Date",      value:r=>r.date},
+      {label:"Date",      value:r=>r.paid_at || r.created_at},
       {label:"Tenant",    value:r=>r.tenant},
       {label:"Method",    value:r=>r.method},
       {label:"Status",    value:r=>r.status ?? "posted"},
@@ -493,16 +448,25 @@ function ensureExportButtons(){
       {label:"Period",   value:r=>r.period ?? `${r.period_start||""} → ${r.period_end||""}`},
       {label:"Total Due",value:r=>r.total_due},
       {label:"Status",   value:r=>r.status},
-      {label:"Balance",  value:r=>r.balance},
-      {label:"Lease ID", value:r=>r.lease_id || r.lease || r.id}
+      {label:"Balance",  value:r=>r.balance}
     ];
     download(`rent_roll_${($("#rentrollMonth")?.value || yyyymm())}.csv`, toCSV(state.rentrollView, cols));
   });
 
-  // NEW: bulk WA handler
-  $("#bulkRentroll")?.addEventListener("click", bulkWaFromRentroll);
+  $("#exportBalances")?.addEventListener("click", ()=>{
+    const cols = [
+      {label:"Tenant",      value:r=>r.tenant},
+      {label:"Lease ID",    value:r=>r.lease_id},
+      {label:"Period Start",value:r=>r.period_start},
+      {label:"Period End",  value:r=>r.period_end},
+      {label:"Status",      value:r=>r.status},
+      {label:"Total Due",   value:r=>r.total_due},
+      {label:"Paid",        value:r=>r.paid_amount},
+      {label:"Balance",     value:r=>r.balance}
+    ];
+    download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
+  });
 }
-ensureExportButtons();
 
 /* ---------------- boot ---------------- */
 (function init(){
@@ -515,8 +479,7 @@ ensureExportButtons();
   wireSettings();
   wireActions();
 
-  // add the export buttons next to existing action buttons
-  ensureExportButtons();
+  ensureExportButtons(); // and we also injected the dunning buttons in wireActions()
 
   showTab("overview");  // default view
 })();
