@@ -47,10 +47,12 @@ function setAdminToken(v){
 function toast(msg, ms=2200){ const t=$("#toast"); if(!t) return; t.textContent=msg; t.style.display="block"; setTimeout(()=>t.style.display="none",ms); }
 
 async function jget(path){
-  const r = await fetch(`${state.api}${path}`, { headers:{Accept:"application/json"} });
+  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
+  const r = await fetch(url, { headers: { Accept:"application/json" }});
   if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
+
 async function jpost(path, body){
   const headers = { "Content-Type":"application/json" };
   if(state.adminToken) headers.Authorization = `Bearer ${state.adminToken}`;
