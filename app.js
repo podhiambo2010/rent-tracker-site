@@ -67,11 +67,10 @@ async function jpost(path, body){
 
 /* small helper to read dunning log */
 async function loadDunningLog(month="", stage=""){
-  const qs = [];
-  if(month) qs.push(`month=${encodeURIComponent(month)}`);
-  if(stage) qs.push(`stage=${encodeURIComponent(stage)}`);
-  const url = `${state.api}/reminders/log${qs.length?`?${qs.join("&")}`:""}`;
-  try{
+  const qs  = [];
+  if (month) qs.push(`month=${encodeURIComponent(month)}`);
+  if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
+  const url = `/reminders/log${qs.length ? `?${qs.join("&")}` : ""}`;
     const rows = await jget(url);
     const target = $("#dunningLog") || (()=>{ const pre=document.createElement("pre");
       pre.id="dunningLog"; pre.className="scrollbox"; pre.style.maxHeight="260px"; pre.style.whiteSpace="pre-wrap";
