@@ -48,16 +48,20 @@ function toast(msg, ms=2200){ const t=$("#toast"); if(!t) return; t.textContent=
 
 async function jget(path){
   const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const r = await fetch(url, { headers: { Accept:"application/json" }});
-  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
 
 async function jpost(path, body){
-  const headers = { "Content-Type":"application/json" };
-  if(state.adminToken) headers.Authorization = `Bearer ${state.adminToken}`;
-  const r = await fetch(`${state.api}${path}`, { method:"POST", headers, body: JSON.stringify(body||{}) });
-  if(!r.ok){ const txt = await r.text().catch(()=> ""); throw new Error(`${r.status} ${r.statusText} — ${txt}`); }
+  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
+  const headers = { "Content-Type": "application/json" };
+  if (state.adminToken) headers.Authorization = `Bearer ${state.adminToken}`;
+  const r = await fetch(url, { method: "POST", headers, body: JSON.stringify(body || {}) });
+  if (!r.ok){
+    const txt = await r.text().catch(()=> "");
+    throw new Error(`${r.status} ${r.statusText} — ${txt}`);
+  }
   return r.json();
 }
 
