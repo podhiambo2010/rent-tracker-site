@@ -134,15 +134,18 @@ function wireActions(){
 
 // Auth ping (admin)
 $("#btnHealth")?.addEventListener("click", async () => {
+  const url = `${state.api}/admin/ping`;
+  const headers = { "X-Admin-Token": state.adminToken || "" };
+
+  $("#actionMsg") && ($("#actionMsg").textContent = "Pinging…");
   try {
-    const r = await fetch(`${state.api}/admin/ping`, {
-      headers: { "X-Admin-Token": state.adminToken || "" }
-    });
+    const r = await fetch(url, { method: "GET", headers });
     const data = await r.json().catch(() => ({}));
-    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data));
-    toast(r.ok ? "Admin auth OK" : "Unauthorized");
+    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
+    toast(r.ok ? "Admin auth OK" : "Unauthorized (check token)");
   } catch (e) {
     console.error(e);
+    $("#actionMsg") && ($("#actionMsg").textContent = String(e));
     toast("Ping failed");
   }
 });
