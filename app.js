@@ -98,17 +98,53 @@ async function loadDunningLog(month="", stage=""){
 }
 
 /* ---- Dunning helper (uses X-Admin-Token header) ---- */
-async function callDunning(dryRun=true){
-  const url = `${state.api}/cron/dunning?dry_run=${dryRun?1:0}`;
-  const headers = { "X-Admin-Token": state.adminToken || "" };
-  const r = await fetch(url, { method: dryRun ? "GET" : "POST", headers });
-  if(!r.ok){
-    const txt = await r.text().catch(()=> "");
-    throw new Error(`${r.status} ${r.statusText} — ${txt || 'Unauthorized'}`);
-  }
-  return r.json();
-}
+async function callDunning(apply){
+  if(!state.adminToken){ toast("Set Admin token in Settings first"); return; }
+  const url = `${state.api}/cron/dunning?dry_run=${apply?0:1}`;
+  const opt = apply
+    ? { method:"POST", headers:{ "X-Admin-Token": state.adminToken } }
+    : { headers:{ "X-Admin-Token": state.adminToken } };
 
+  const out = $("#actionMsg"); if(out) out.textContent = "Running…";
+  try{
+    const r = await fetch(url, opt);
+    const data = await r.json();
+
+    // 1) Pretty JSON for reference
+    if(out) out.textContent = JSON.stringify(data, null, 2);
+
+    // 2) Build a human list with WhatsApp links (if API returned .wa)
+    const wrap = $("#dunningPreview") || (()=>{
+      const d = document.createElement("div");
+      d.id = "dunningPreview";
+      const anchor = $("#btnDunningDry") || $("#invoiceActions") || document.body;
+      anchor.insertAdjacentElement("afterend", d);
+      return d;
+    })();
+
+    function listBlock(title, arr){
+      if(!arr || !arr.length) return "";
+      const items = arr.map(x=>{
+        const id = (x.invoice_id||"").slice(0,8)+"…";
+        const fee = x.fee ? ` • fee ${Number(x.fee).toLocaleString("en-KE")}` : "";
+        const wa = x.wa ? ` — <a href="${x.wa}" target="_blank">Open in WhatsApp</a>` : "";
+        return `<li>Inv ${id} • Lease ${String(x.lease_id||"").slice(0,8)}… • Bal ${Number(x.balance||0).toLocaleString("en-KE")}${fee}${wa}</li>`;
+      }).join("");
+      return `<h4 style="margin:.75rem 0">${title}</h4><ul>${items}</ul>`;
+    }
+
+    wrap.innerHTML =
+      listBlock("Day 5 reminders", data.day5) +
+      listBlock("Day 10 (late fee stage)", data.day10) +
+      listBlock("Overdue (past months)", data.overdue);
+
+    toast(apply ? "Dunning applied" : "Preview ready");
+  }catch(e){
+    console.error(e);
+    if(out) out.textContent = String(e);
+    toast("Dunning failed");
+  }
+}
 /* ---------------- tabs ---------------- */
 function showTab(name){
   $$(".tab").forEach(a => a.setAttribute("aria-selected", a.dataset.tab===name ? "true":"false"));
@@ -212,6 +248,20 @@ $("#btnHealth")?.addEventListener("click", async () => {
     }catch(e){ console.error(e); $("#actionMsg") && ($("#actionMsg").textContent = String(e)); toast("Dunning failed"); }
   });
 }
+
+  // Dunning log quick buttons
+  const bLogRecent = document.createElement("button");
+  bLogRecent.className = "btn ghost";
+  bLogRecent.textContent = "Dunning log (recent)";
+  bApply?.insertAdjacentElement("afterend", bLogRecent);
+
+  const bLogMonth = document.createElement("button");
+  bLogMonth.className = "btn ghost";
+  bLogMonth.textContent = "Dunning log (this month)";
+  bLogRecent.insertAdjacentElement("afterend", bLogMonth);
+
+  bLogRecent.addEventListener("click", ()=> loadDunningLog());
+  bLogMonth.addEventListener("click", ()=> loadDunningLog(yyyymm()));
 
 /* ---------------- overview KPIs ---------------- */
 async function loadOverview(){
