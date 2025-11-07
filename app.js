@@ -70,6 +70,33 @@ async function jpost(path, body){
   return r.json();
 }
 
+async function loadDunningLog(month="", stage=""){
+  const qs = [];
+  if(month) qs.push(`month=${encodeURIComponent(month)}`);
+  if(stage) qs.push(`stage=${encodeURIComponent(stage)}`);
+  const url = `${state.api}/reminders/log${qs.length?`?${qs.join("&")}`:""}`;
+  try{
+    const rows = await jget(url);
+    const target = $("#dunningLog") || (()=>{
+      const pre = document.createElement("pre");
+      pre.id = "dunningLog";
+      pre.className = "scrollbox";
+      pre.style.maxHeight = "260px";
+      pre.style.whiteSpace = "pre-wrap";
+      const anchor = $("#invoiceActions") || document.body;
+      anchor.insertAdjacentElement("afterend", pre);
+      return pre;
+    })();
+    target.textContent = rows.length
+      ? rows.map(r=>`${new Date(r.created_at).toLocaleString("en-KE")} • ${r.stage} • ${r.amount} • ${String(r.invoice_id).slice(0,8)}…`).join("\n")
+      : "No dunning log rows.";
+    toast("Loaded dunning log");
+  }catch(e){
+    console.error(e);
+    toast("Failed to load dunning log");
+  }
+}
+
 /* ---- Dunning helper (uses X-Admin-Token header) ---- */
 async function callDunning(dryRun=true){
   const url = `${state.api}/cron/dunning?dry_run=${dryRun?1:0}`;
