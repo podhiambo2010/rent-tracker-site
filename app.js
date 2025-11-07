@@ -66,20 +66,33 @@ async function jpost(path, body){
 }
 
 /* small helper to read dunning log */
-async function loadDunningLog(month="", stage=""){
-  const qs  = [];
+async function loadDunningLog(month = "", stage = ""){
+  const qs = [];
   if (month) qs.push(`month=${encodeURIComponent(month)}`);
   if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
   const url = `/reminders/log${qs.length ? `?${qs.join("&")}` : ""}`;
+
+  try{
     const rows = await jget(url);
-    const target = $("#dunningLog") || (()=>{ const pre=document.createElement("pre");
-      pre.id="dunningLog"; pre.className="scrollbox"; pre.style.maxHeight="260px"; pre.style.whiteSpace="pre-wrap";
-      ($("#invoiceActions")||document.body).insertAdjacentElement("afterend", pre); return pre; })();
+    const target = $("#dunningLog") || (() => {
+      const pre = document.createElement("pre");
+      pre.id = "dunningLog";
+      pre.className = "scrollbox";
+      pre.style.maxHeight = "260px";
+      pre.style.whiteSpace = "pre-wrap";
+      const anchor = $("#invoiceActions") || document.body;
+      anchor.insertAdjacentElement("afterend", pre);
+      return pre;
+    })();
+
     target.textContent = rows.length
-      ? rows.map(r=>`${new Date(r.created_at).toLocaleString("en-KE")} • ${r.stage} • ${r.amount} • ${String(r.invoice_id).slice(0,8)}…`).join("\n")
+      ? rows.map(r => `${new Date(r.created_at).toLocaleString("en-KE")} • ${r.stage} • ${r.amount} • ${String(r.invoice_id).slice(0,8)}…`).join("\n")
       : "No dunning log rows.";
     toast("Loaded dunning log");
-  }catch(e){ console.error(e); toast("Failed to load dunning log"); }
+  }catch(e){
+    console.error(e);
+    toast("Failed to load dunning log");
+  }
 }
 
 /* ---- Dunning helper (returns JSON; uses X-Admin-Token) ---- */
@@ -145,54 +158,94 @@ function wireSettings(){
 
 /* ---------------- invoice actions (ALL buttons, scoped) ---------------- */
 function wireActions(){
-  // Admin auth ping
+  // --- Auth ping (admin) ---
   $("#btnAuthPing")?.addEventListener("click", async ()=>{
-  if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
-  const url = `${state.api}/admin/ping`;
-  const headers = { "X-Admin-Token": state.adminToken };
-  $("#actionMsg") && ($("#actionMsg").textContent = "Pinging…");
-  try{
-    const r = await fetch(url, { method:"GET", headers });
-    const data = await r.json().catch(()=> ({}));
-    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
-    toast(r.ok ? "Admin auth OK" : "Unauthorized (check token)");
-  }catch(e){
-    console.error(e);
-    $("#actionMsg") && ($("#actionMsg").textContent = String(e));
-    toast("Ping failed");
-  }
-});
+    if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
+    const url = `${state.api}/admin/ping`;
+    const headers = { "X-Admin-Token": state.adminToken };
+    $("#actionMsg") && ($("#actionMsg").textContent = "Pinging…");
+    try{
+      const r = await fetch(url, { method: "GET", headers });
+      const data = await r.json().catch(()=> ({}));
+      $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
+      toast(r.ok ? "Admin auth OK" : "Unauthorized (check token)");
+    }catch(e){
+      console.error(e);
+      $("#actionMsg") && ($("#actionMsg").textContent = String(e));
+      toast("Ping failed");
+    }
+  });
 
-  // Dunning buttons (dry run / apply)
+  // --- helpers to create buttons next to Mark as sent ---
   function ensureBtn(afterSel, id, label){
-    if($(id)) return $(id);
-    const anchor = $(afterSel);
+    if ($(id)) return $(id);
+    const anchor = $(afterSel) || $("#btnMarkSent") || $("#invoiceActions");
     const btn = document.createElement("button");
     btn.className = "btn ghost";
     btn.id = id.replace(/^#/, "");
     btn.textContent = label;
-    (anchor ? anchor : $("#invoiceActions") || document.body).insertAdjacentElement("afterend", btn);
+    (anchor || document.body).insertAdjacentElement("afterend", btn);
     return btn;
   }
+
+  // Dunning buttons
   const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry",  "Dunning (dry run)");
   const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo", "Dunning (apply)");
 
-  bDry?.addEventListener("click", async ()=>{ if(!state.adminToken) return toast("Set Admin token in Settings first"); await callDunning(true); });
-  bApply?.addEventListener("click", async ()=>{ if(!state.adminToken) return toast("Set Admin token in Settings first"); if(!confirm("Apply late fees and log reminders now?")) return; await callDunning(false); });
+  async function callDunning(apply){
+    if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
+    const url = `${state.api}/cron/dunning?dry_run=${apply ? 0 : 1}`;
+    const opt = apply
+      ? { method: "POST", headers: { "X-Admin-Token": state.adminToken } }
+      : { headers: { "X-Admin-Token": state.adminToken } };
 
-  // Dunning log quick buttons (➡ moved INSIDE wireActions so bApply is in scope)
-  const bLogRecent = document.createElement("button");
-  bLogRecent.className = "btn ghost";
-  bLogRecent.textContent = "Dunning log (recent)";
-  bApply?.insertAdjacentElement("afterend", bLogRecent);
+    const out = $("#actionMsg"); if (out) out.textContent = apply ? "Applying…" : "Running…";
+    const r = await fetch(url, opt);
+    const data = await r.json();
 
-  const bLogMonth = document.createElement("button");
-  bLogMonth.className = "btn ghost";
-  bLogMonth.textContent = "Dunning log (this month)";
-  bLogRecent.insertAdjacentElement("afterend", bLogMonth);
+    // pretty JSON
+    if (out) out.textContent = JSON.stringify(data, null, 2);
 
-  bLogRecent.addEventListener("click", ()=> loadDunningLog());
-  bLogMonth.addEventListener("click", ()=> loadDunningLog(yyyymm()));
+    // human list with WhatsApp links when provided by API
+    const wrap = $("#dunningPreview") || (() => {
+      const d = document.createElement("div");
+      d.id = "dunningPreview";
+      const anchor = $("#btnDunningDry") || $("#invoiceActions") || document.body;
+      anchor.insertAdjacentElement("afterend", d);
+      return d;
+    })();
+
+    const listBlock = (title, arr) => {
+      if (!arr || !arr.length) return "";
+      const items = arr.map(x => {
+        const id = (x.invoice_id || "").slice(0,8) + "…";
+        const fee = x.fee ? ` • fee ${Number(x.fee).toLocaleString("en-KE")}` : "";
+        const wa  = x.wa ? ` — <a href="${x.wa}" target="_blank">Open in WhatsApp</a>` : "";
+        return `<li>Inv ${id} • Lease ${String(x.lease_id||"").slice(0,8)}… • Bal ${Number(x.balance||0).toLocaleString("en-KE")}${fee}${wa}</li>`;
+      }).join("");
+      return `<h4 style="margin:.75rem 0">${title}</h4><ul>${items}</ul>`;
+    };
+
+    wrap.innerHTML =
+      listBlock("Day 5 reminders", data.day5) +
+      listBlock("Day 10 (late fee stage)", data.day10) +
+      listBlock("Overdue (past months)", data.overdue);
+
+    toast(apply ? "Dunning applied" : "Preview ready");
+  }
+
+  bDry?.addEventListener("click",  () => callDunning(false));
+  bApply?.addEventListener("click", () => {
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
+    if (confirm("Apply late fees and log reminders now?")) callDunning(true);
+  });
+
+  // Dunning log buttons
+  const bLogRecent = ensureBtn("#btnDunningGo", "#btnDunningLogRecent", "Dunning log (recent)");
+  const bLogMonth  = ensureBtn("#btnDunningLogRecent", "#btnDunningLogMonth", "Dunning log (this month)");
+
+  bLogRecent?.addEventListener("click", () => loadDunningLog());
+  bLogMonth?.addEventListener("click",  () => loadDunningLog(yyyymm()));
 }
 
 /* ---------------- overview KPIs ---------------- */
