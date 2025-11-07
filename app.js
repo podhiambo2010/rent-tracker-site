@@ -132,16 +132,20 @@ function wireActions(){
   }catch(e){ console.error(e); toast("Ping failed"); }
 });
 
-  // Auth ping (optional)
-  $("#btnHealth")?.addEventListener("click", async ()=>{
-    try{
-      const headers = state.adminToken ? { Authorization:`Bearer ${state.adminToken}` } : {};
-      const r = await fetch(`${state.api}/auth/ping`, { headers });
-      const data = await r.json().catch(()=> ({}));
-      $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data));
-      toast(r.ok ? "Auth OK" : "Unauthorized");
-    }catch(e){ console.error(e); toast("Ping failed"); }
-  });
+ // Auth ping (admin)
+$("#btnHealth")?.addEventListener("click", async () => {
+  try {
+    const r = await fetch(`${state.api}/admin/ping`, {
+      headers: { "X-Admin-Token": state.adminToken || "" }
+    });
+    const data = await r.json().catch(()=> ({}));
+    $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data));
+    toast(r.ok ? "Admin auth OK" : "Unauthorized");
+  } catch (e) {
+    console.error(e);
+    toast("Ping failed");
+  }
+});
 
   // --------- Dunning buttons (dry run / apply) ----------
   function ensureBtn(afterSel, id, label){
