@@ -158,8 +158,29 @@ function wireSettings(){
 
 /* ---------------- invoice actions (ALL buttons, scoped) ---------------- */
 function wireActions(){
-  // --- Auth ping (admin) ---
-  $("#btnAuthPing")?.addEventListener("click", async ()=>{
+  // Helper to create a button if missing
+  function ensureBtn(afterSel, id, label){
+    if ($(id)) return $(id);
+    const anchor = $(afterSel) || $("#btnMarkSent") || $("#invoiceActions");
+    const btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.id = id.replace(/^#/, "");
+    btn.textContent = label;
+    (anchor || document.body).insertAdjacentElement("afterend", btn);
+    return btn;
+  }
+
+  // Ensure dunning + log buttons exist
+  const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry", "Dunning (dry run)");
+  const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo", "Dunning (apply)");
+  const bLogR  = ensureBtn("#btnDunningGo", "#btnDunningLogRecent", "Dunning log (recent)");
+  const bLogM  = ensureBtn("#btnDunningLogRecent", "#btnDunningLogMonth", "Dunning log (this month)");
+
+  // Auth ping: accept either existing id or create one
+  const authBtn = $("#btnAuthPing") || $("#btnHealth") || ensureBtn("#btnDunningLogMonth", "#btnAuthPing", "Auth ping");
+
+  // Auth ping handler (admin token via X-Admin-Token)
+  authBtn?.addEventListener("click", async ()=>{
     if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
     const url = `${state.api}/admin/ping`;
     const headers = { "X-Admin-Token": state.adminToken };
@@ -176,22 +197,6 @@ function wireActions(){
     }
   });
 
-  // --- helpers to create buttons next to Mark as sent ---
-  function ensureBtn(afterSel, id, label){
-    if ($(id)) return $(id);
-    const anchor = $(afterSel) || $("#btnMarkSent") || $("#invoiceActions");
-    const btn = document.createElement("button");
-    btn.className = "btn ghost";
-    btn.id = id.replace(/^#/, "");
-    btn.textContent = label;
-    (anchor || document.body).insertAdjacentElement("afterend", btn);
-    return btn;
-  }
-
-  // Dunning buttons
-  const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry",  "Dunning (dry run)");
-  const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo", "Dunning (apply)");
-
   async function callDunning(apply){
     if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
     const url = `${state.api}/cron/dunning?dry_run=${apply ? 0 : 1}`;
@@ -203,10 +208,8 @@ function wireActions(){
     const r = await fetch(url, opt);
     const data = await r.json();
 
-    // pretty JSON
     if (out) out.textContent = JSON.stringify(data, null, 2);
 
-    // human list with WhatsApp links when provided by API
     const wrap = $("#dunningPreview") || (() => {
       const d = document.createElement("div");
       d.id = "dunningPreview";
@@ -234,18 +237,14 @@ function wireActions(){
     toast(apply ? "Dunning applied" : "Preview ready");
   }
 
-  bDry?.addEventListener("click",  () => callDunning(false));
+  bDry?.addEventListener("click", () => callDunning(false));
   bApply?.addEventListener("click", () => {
     if (!state.adminToken) return toast("Set Admin token in Settings first");
     if (confirm("Apply late fees and log reminders now?")) callDunning(true);
   });
 
-  // Dunning log buttons
-  const bLogRecent = ensureBtn("#btnDunningGo", "#btnDunningLogRecent", "Dunning log (recent)");
-  const bLogMonth  = ensureBtn("#btnDunningLogRecent", "#btnDunningLogMonth", "Dunning log (this month)");
-
-  bLogRecent?.addEventListener("click", () => loadDunningLog());
-  bLogMonth?.addEventListener("click",  () => loadDunningLog(yyyymm()));
+  bLogR?.addEventListener("click", () => loadDunningLog());
+  bLogM?.addEventListener("click", () => loadDunningLog(yyyymm()));
 }
 
 /* ---------------- overview KPIs ---------------- */
