@@ -125,10 +125,12 @@ async function loadDunningLog(month="", stage=""){
     const bar = document.createElement("div");
     bar.className = "logbar";
     bar.innerHTML = `
-      <span>Dunning log</span>
-      <button id="logCollapse" class="btn ghost" type="button">Collapse</button>
-      <button id="logClear" class="btn ghost" type="button">Clear</button>
-    `;
+    <span>Dunning log</span>
+    <button id="logExpand" class="btn ghost" type="button">Expand</button>
+    <button id="logCollapse" class="btn ghost" type="button">Collapse</button>
+    <button id="logClear" class="btn ghost" type="button">Clear</button>
+`;
+    
     const pre = document.createElement("pre");
     pre.id = "dunningLog";
     wrap.appendChild(bar); wrap.appendChild(pre);
@@ -153,6 +155,11 @@ async function loadDunningLog(month="", stage=""){
       const pre = document.getElementById("dunningLog");
       if (pre) pre.textContent = "";
     });
+    wrap.querySelector("#logExpand").addEventListener("click", ()=>{
+  wrap.classList.toggle("log-expanded");
+  wrap.querySelector("#logExpand").textContent =
+    wrap.classList.contains("log-expanded") ? "Shrink" : "Expand";
+});
   }
 
   const pre = document.getElementById("dunningLog");
