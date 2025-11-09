@@ -66,34 +66,65 @@ async function jpost(path, body){
 }
 
 /* small helper to read dunning log */
-async function loadDunningLog(month = "", stage = ""){
+let _logBusy = false;
+
+async function loadDunningLog(month="", stage=""){
+  if (_logBusy) return;        // debounce rapid clicks
+  _logBusy = true;
+
   const qs = [];
   if (month) qs.push(`month=${encodeURIComponent(month)}`);
   if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
-  const url = `/reminders/log${qs.length ? `?${qs.join("&")}` : ""}`;
+  qs.push("limit=200");         // cap rows for snappy UI
+
+  const url = `${state.api}/reminders/log${qs.length?`?${qs.join("&")}`:""}`;
+
+  // ensure container exists + show spinner
+  const target = $("#dunningLog") || (() => {
+    const pre = document.createElement("pre");
+    pre.id = "dunningLog";
+    pre.className = "scrollbox";
+    pre.style.maxHeight = "280px";
+    pre.style.overflow = "auto";
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.font = "12px/1.35 monospace";
+    pre.style.background = "rgba(0,0,0,0.3)";
+    pre.style.border = "1px solid rgba(255,255,255,0.12)";
+    pre.style.borderRadius = "10px";
+    pre.style.padding = "10px";
+    pre.style.marginTop = "10px";
+    const anchor = $("#invoiceActions") || document.body;
+    anchor.insertAdjacentElement("afterend", pre);
+    return pre;
+  })();
+
+  target.textContent = "Loading dunning log…";
 
   try{
-    const rows = await jget(url);
-    const target = $("#dunningLog") || (() => {
-      const pre = document.createElement("pre");
-      pre.id = "dunningLog";
-      pre.className = "scrollbox";
-      pre.style.maxHeight = "260px";
-      pre.style.whiteSpace = "pre-wrap";
-      const anchor = $("#invoiceActions") || document.body;
-      anchor.insertAdjacentElement("afterend", pre);
-      return pre;
-    })();
-
-    target.textContent = rows.length
-      ? rows.map(r => `${new Date(r.created_at).toLocaleString("en-KE")} • ${r.stage} • ${r.amount} • ${String(r.invoice_id).slice(0,8)}…`).join("\n")
-      : "No dunning log rows.";
+    const rows = await jget(url);   // uses absolute URL helper
+    if (!rows?.length){
+      target.textContent = "No dunning log rows.";
+    } else {
+      // render compact lines (max 200 already)
+      const lines = rows.map(r => {
+        const ts = new Date(r.created_at).toLocaleString("en-KE");
+        const inv = String(r.invoice_id||"").slice(0,8)+"…";
+        const lea = String(r.lease_id||"").slice(0,8)+"…";
+        const amt = Number(r.amount||0).toLocaleString("en-KE");
+        return `${ts} • ${r.stage} • KSh ${amt} • inv ${inv} • lease ${lea}`;
+      });
+      target.textContent = lines.join("\n");
+    }
     toast("Loaded dunning log");
   }catch(e){
     console.error(e);
+    target.textContent = `Failed to load dunning log: ${e}`;
     toast("Failed to load dunning log");
+  }finally{
+    _logBusy = false;
   }
 }
+
 
 /* ---- Dunning helper (returns JSON; uses X-Admin-Token) ---- */
 async function callDunning(preview){
