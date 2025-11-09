@@ -90,8 +90,8 @@ function _injectLogCSS(){
   `;
   const s = document.createElement("style"); s.textContent = css;
   document.head.appendChild(s); _logCssInjected = true;
+  pre.style.display = "block"; // ensure it's visible even after Collapse
 }
-
 function _findInvoicePanel(){
   const anchor = document.getElementById("invoiceActions");
   if (!anchor) return null;
