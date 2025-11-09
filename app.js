@@ -72,14 +72,21 @@ let _logCssInjected = false;
 function _injectLogCSS(){
   if (_logCssInjected) return;
   const css = `
-  #dunningLogWrap{margin:16px 0 0}
+  #dunningLogWrap{ margin:24px 0 0 }
   #dunningLogWrap .logbar{
-    display:flex; gap:.5rem; align-items:center;
-    margin-bottom:.5rem; font:600 13px system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem;
+    font:600 13px system-ui,-apple-system,Segoe UI,Roboto,Arial;
   }
-  #dunningLog{max-height:280px; overflow:auto; white-space:pre-wrap;
-    font:12px/1.35 monospace; background:rgba(0,0,0,.3);
-    border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px;}
+  #dunningLog{
+    max-height:360px; overflow:auto; white-space:pre;
+    background:#0b1020;              /* solid (no transparency)   */
+    color:#e6edf3;                    /* light text                */
+    border:1px solid rgba(255,255,255,.18);
+    border-radius:12px; padding:12px;
+    box-shadow:0 8px 28px rgba(0,0,0,.45);
+    position:relative; z-index:20;    /* sit above the card        */
+  }
+  .log-expanded #dunningLog{ max-height:70vh; }
   `;
   const s = document.createElement("style"); s.textContent = css;
   document.head.appendChild(s); _logCssInjected = true;
