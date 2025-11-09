@@ -67,64 +67,113 @@ async function jpost(path, body){
 
 /* small helper to read dunning log */
 let _logBusy = false;
+let _logCssInjected = false;
+
+function _injectLogCSS(){
+  if (_logCssInjected) return;
+  const css = `
+  #dunningLogWrap{margin:16px 0 0}
+  #dunningLogWrap .logbar{
+    display:flex; gap:.5rem; align-items:center;
+    margin-bottom:.5rem; font:600 13px system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  }
+  #dunningLog{max-height:280px; overflow:auto; white-space:pre-wrap;
+    font:12px/1.35 monospace; background:rgba(0,0,0,.3);
+    border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:10px;}
+  `;
+  const s = document.createElement("style"); s.textContent = css;
+  document.head.appendChild(s); _logCssInjected = true;
+}
+
+function _findInvoicePanel(){
+  const anchor = document.getElementById("invoiceActions");
+  if (!anchor) return null;
+  // Walk up until a panel-like container (has class 'panel' or large rounded box)
+  let el = anchor;
+  for (let i=0; i<5 && el; i++){
+    if (el.classList && el.classList.contains("panel")) return el;
+    el = el.parentElement;
+  }
+  // Fallback to the anchor itself
+  return anchor;
+}
 
 async function loadDunningLog(month="", stage=""){
-  if (_logBusy) return;        // debounce rapid clicks
+  if (_logBusy) return;
   _logBusy = true;
+  _injectLogCSS();
 
   const qs = [];
   if (month) qs.push(`month=${encodeURIComponent(month)}`);
   if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
-  qs.push("limit=200");         // cap rows for snappy UI
-
+  qs.push("limit=200");  // safety cap
   const url = `${state.api}/reminders/log${qs.length?`?${qs.join("&")}`:""}`;
 
-  // ensure container exists + show spinner
-  const target = $("#dunningLog") || (() => {
+  // Place OUTSIDE the “Invoice Actions” panel
+  const panel = _findInvoicePanel();
+  let wrap = document.getElementById("dunningLogWrap");
+  if (!wrap){
+    wrap = document.createElement("div");
+    wrap.id = "dunningLogWrap";
+    const bar = document.createElement("div");
+    bar.className = "logbar";
+    bar.innerHTML = `
+      <span>Dunning log</span>
+      <button id="logCollapse" class="btn ghost" type="button">Collapse</button>
+      <button id="logClear" class="btn ghost" type="button">Clear</button>
+    `;
     const pre = document.createElement("pre");
     pre.id = "dunningLog";
-    pre.className = "scrollbox";
-    pre.style.maxHeight = "280px";
-    pre.style.overflow = "auto";
-    pre.style.whiteSpace = "pre-wrap";
-    pre.style.font = "12px/1.35 monospace";
-    pre.style.background = "rgba(0,0,0,0.3)";
-    pre.style.border = "1px solid rgba(255,255,255,0.12)";
-    pre.style.borderRadius = "10px";
-    pre.style.padding = "10px";
-    pre.style.marginTop = "10px";
-    const anchor = $("#invoiceActions") || document.body;
-    anchor.insertAdjacentElement("afterend", pre);
-    return pre;
-  })();
+    wrap.appendChild(bar); wrap.appendChild(pre);
 
-  target.textContent = "Loading dunning log…";
+    // Insert AFTER the panel node so it doesn’t overlap
+    if (panel?.parentElement){
+      panel.parentElement.insertBefore(wrap, panel.nextSibling);
+    } else {
+      (document.querySelector("#invoiceActions") || document.body)
+        .insertAdjacentElement("afterend", wrap);
+    }
+
+    // Wire buttons
+    wrap.querySelector("#logCollapse").addEventListener("click", ()=>{
+      const pre = document.getElementById("dunningLog");
+      if (!pre) return;
+      const hidden = pre.style.display === "none";
+      pre.style.display = hidden ? "block" : "none";
+      wrap.querySelector("#logCollapse").textContent = hidden ? "Collapse" : "Expand";
+    });
+    wrap.querySelector("#logClear").addEventListener("click", ()=>{
+      const pre = document.getElementById("dunningLog");
+      if (pre) pre.textContent = "";
+    });
+  }
+
+  const pre = document.getElementById("dunningLog");
+  pre.textContent = "Loading dunning log…";
 
   try{
-    const rows = await jget(url);   // uses absolute URL helper
+    const rows = await jget(url);
     if (!rows?.length){
-      target.textContent = "No dunning log rows.";
+      pre.textContent = "No dunning log rows.";
     } else {
-      // render compact lines (max 200 already)
-      const lines = rows.map(r => {
+      const lines = rows.map(r=>{
         const ts = new Date(r.created_at).toLocaleString("en-KE");
         const inv = String(r.invoice_id||"").slice(0,8)+"…";
         const lea = String(r.lease_id||"").slice(0,8)+"…";
         const amt = Number(r.amount||0).toLocaleString("en-KE");
         return `${ts} • ${r.stage} • KSh ${amt} • inv ${inv} • lease ${lea}`;
       });
-      target.textContent = lines.join("\n");
+      pre.textContent = lines.join("\n");
     }
     toast("Loaded dunning log");
   }catch(e){
     console.error(e);
-    target.textContent = `Failed to load dunning log: ${e}`;
+    pre.textContent = `Failed to load dunning log: ${e}`;
     toast("Failed to load dunning log");
   }finally{
     _logBusy = false;
   }
 }
-
 
 /* ---- Dunning helper (returns JSON; uses X-Admin-Token) ---- */
 async function callDunning(preview){
