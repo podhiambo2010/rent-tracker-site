@@ -1,4 +1,4 @@
-/* ==================== Rent Tracker Dashboard — app.js (fixed) ==================== */
+/* ==================== Rent Tracker Dashboard — app.js (fixed & cleaned) ==================== */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 
 /* ---------------- tiny helpers ---------------- */
@@ -52,7 +52,6 @@ async function jget(path){
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
-
 async function jpost(path, body){
   const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
   const headers = { "Content-Type": "application/json" };
@@ -65,7 +64,7 @@ async function jpost(path, body){
   return r.json();
 }
 
-/* small helper to read dunning log */
+/* ---------------- Dunning log (UI + fetch) ---------------- */
 let _logBusy = false;
 let _logCssInjected = false;
 
@@ -79,29 +78,27 @@ function _injectLogCSS(){
   }
   #dunningLog{
     max-height:360px; overflow:auto; white-space:pre;
-    background:#0b1020;              /* solid (no transparency)   */
-    color:#e6edf3;                    /* light text                */
+    background:#0b1020;              /* solid, not transparent */
+    color:#e6edf3;                    /* light text */
     border:1px solid rgba(255,255,255,.18);
     border-radius:12px; padding:12px;
     box-shadow:0 8px 28px rgba(0,0,0,.45);
-    position:relative; z-index:20;    /* sit above the card        */
+    position:relative; z-index:20;    /* above the card */
   }
   .log-expanded #dunningLog{ max-height:70vh; }
   `;
   const s = document.createElement("style"); s.textContent = css;
   document.head.appendChild(s); _logCssInjected = true;
-  pre.style.display = "block"; // ensure it's visible even after Collapse
 }
+
 function _findInvoicePanel(){
   const anchor = document.getElementById("invoiceActions");
   if (!anchor) return null;
-  // Walk up until a panel-like container (has class 'panel' or large rounded box)
   let el = anchor;
   for (let i=0; i<5 && el; i++){
     if (el.classList && el.classList.contains("panel")) return el;
     el = el.parentElement;
   }
-  // Fallback to the anchor itself
   return anchor;
 }
 
@@ -113,10 +110,9 @@ async function loadDunningLog(month="", stage=""){
   const qs = [];
   if (month) qs.push(`month=${encodeURIComponent(month)}`);
   if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
-  qs.push("limit=200");  // safety cap
+  qs.push("limit=200");
   const url = `${state.api}/reminders/log${qs.length?`?${qs.join("&")}`:""}`;
 
-  // Place OUTSIDE the “Invoice Actions” panel
   const panel = _findInvoicePanel();
   let wrap = document.getElementById("dunningLogWrap");
   if (!wrap){
@@ -125,17 +121,14 @@ async function loadDunningLog(month="", stage=""){
     const bar = document.createElement("div");
     bar.className = "logbar";
     bar.innerHTML = `
-    <span>Dunning log</span>
-    <button id="logExpand" class="btn ghost" type="button">Expand</button>
-    <button id="logCollapse" class="btn ghost" type="button">Collapse</button>
-    <button id="logClear" class="btn ghost" type="button">Clear</button>
-`;
-    
-    const pre = document.createElement("pre");
-    pre.id = "dunningLog";
+      <span>Dunning log</span>
+      <button id="logExpand" class="btn ghost" type="button">Expand</button>
+      <button id="logCollapse" class="btn ghost" type="button">Collapse</button>
+      <button id="logClear" class="btn ghost" type="button">Clear</button>
+    `;
+    const pre = document.createElement("pre"); pre.id = "dunningLog";
     wrap.appendChild(bar); wrap.appendChild(pre);
 
-    // Insert AFTER the panel node so it doesn’t overlap
     if (panel?.parentElement){
       panel.parentElement.insertBefore(wrap, panel.nextSibling);
     } else {
@@ -143,26 +136,24 @@ async function loadDunningLog(month="", stage=""){
         .insertAdjacentElement("afterend", wrap);
     }
 
-    // Wire buttons
     wrap.querySelector("#logCollapse").addEventListener("click", ()=>{
-      const pre = document.getElementById("dunningLog");
-      if (!pre) return;
-      const hidden = pre.style.display === "none";
-      pre.style.display = hidden ? "block" : "none";
+      const p = $("#dunningLog"); if (!p) return;
+      const hidden = p.style.display === "none";
+      p.style.display = hidden ? "block" : "none";
       wrap.querySelector("#logCollapse").textContent = hidden ? "Collapse" : "Expand";
     });
     wrap.querySelector("#logClear").addEventListener("click", ()=>{
-      const pre = document.getElementById("dunningLog");
-      if (pre) pre.textContent = "";
+      const p = $("#dunningLog"); if (p) p.textContent = "";
     });
     wrap.querySelector("#logExpand").addEventListener("click", ()=>{
-  wrap.classList.toggle("log-expanded");
-  wrap.querySelector("#logExpand").textContent =
-    wrap.classList.contains("log-expanded") ? "Shrink" : "Expand";
-});
+      wrap.classList.toggle("log-expanded");
+      wrap.querySelector("#logExpand").textContent =
+        wrap.classList.contains("log-expanded") ? "Shrink" : "Expand";
+    });
   }
 
-  const pre = document.getElementById("dunningLog");
+  const pre = $("#dunningLog");
+  pre.style.display = "block";
   pre.textContent = "Loading dunning log…";
 
   try{
@@ -202,7 +193,6 @@ async function callDunning(preview){
   const data = await r.json();
   if(out) out.textContent = JSON.stringify(data, null, 2);
 
-  // build human list with WhatsApp links if present
   const wrap = $("#dunningPreview") || (()=>{ const d=document.createElement("div"); d.id="dunningPreview";
     ($("#btnDunningDry")||$("#invoiceActions")||document.body).insertAdjacentElement("afterend", d); return d; })();
   const listBlock = (title, arr)=>{
@@ -250,9 +240,8 @@ function wireSettings(){
   $("#resetSettings")?.addEventListener("click", ()=>{ setAPI(DEFAULT_API); setAdminToken(""); toast("Reset to defaults"); });
 }
 
-/* ---------------- invoice actions (ALL buttons, scoped) ---------------- */
+/* ---------------- invoice actions (buttons) ---------------- */
 function wireActions(){
-  // Helper to create a button if missing
   function ensureBtn(afterSel, id, label){
     if ($(id)) return $(id);
     const anchor = $(afterSel) || $("#btnMarkSent") || $("#invoiceActions");
@@ -264,23 +253,19 @@ function wireActions(){
     return btn;
   }
 
-  // Ensure dunning + log buttons exist
   const bDry   = ensureBtn("#btnMarkSent", "#btnDunningDry", "Dunning (dry run)");
   const bApply = ensureBtn("#btnDunningDry", "#btnDunningGo", "Dunning (apply)");
   const bLogR  = ensureBtn("#btnDunningGo", "#btnDunningLogRecent", "Dunning log (recent)");
   const bLogM  = ensureBtn("#btnDunningLogRecent", "#btnDunningLogMonth", "Dunning log (this month)");
-
-  // Auth ping: accept either existing id or create one
   const authBtn = $("#btnAuthPing") || $("#btnHealth") || ensureBtn("#btnDunningLogMonth", "#btnAuthPing", "Auth ping");
 
-  // Auth ping handler (admin token via X-Admin-Token)
+  // Auth ping (admin)
   authBtn?.addEventListener("click", async ()=>{
     if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
     const url = `${state.api}/admin/ping`;
-    const headers = { "X-Admin-Token": state.adminToken };
     $("#actionMsg") && ($("#actionMsg").textContent = "Pinging…");
     try{
-      const r = await fetch(url, { method: "GET", headers });
+      const r = await fetch(url, { method: "GET", headers:{ "X-Admin-Token": state.adminToken } });
       const data = await r.json().catch(()=> ({}));
       $("#actionMsg") && ($("#actionMsg").textContent = JSON.stringify(data, null, 2));
       toast(r.ok ? "Admin auth OK" : "Unauthorized (check token)");
@@ -291,54 +276,13 @@ function wireActions(){
     }
   });
 
-  async function callDunning(apply){
-    if (!state.adminToken){ toast("Set Admin token in Settings first"); return; }
-    const url = `${state.api}/cron/dunning?dry_run=${apply ? 0 : 1}`;
-    const opt = apply
-      ? { method: "POST", headers: { "X-Admin-Token": state.adminToken } }
-      : { headers: { "X-Admin-Token": state.adminToken } };
-
-    const out = $("#actionMsg"); if (out) out.textContent = apply ? "Applying…" : "Running…";
-    const r = await fetch(url, opt);
-    const data = await r.json();
-
-    if (out) out.textContent = JSON.stringify(data, null, 2);
-
-    const wrap = $("#dunningPreview") || (() => {
-      const d = document.createElement("div");
-      d.id = "dunningPreview";
-      const anchor = $("#btnDunningDry") || $("#invoiceActions") || document.body;
-      anchor.insertAdjacentElement("afterend", d);
-      return d;
-    })();
-
-    const listBlock = (title, arr) => {
-      if (!arr || !arr.length) return "";
-      const items = arr.map(x => {
-        const id = (x.invoice_id || "").slice(0,8) + "…";
-        const fee = x.fee ? ` • fee ${Number(x.fee).toLocaleString("en-KE")}` : "";
-        const wa  = x.wa ? ` — <a href="${x.wa}" target="_blank">Open in WhatsApp</a>` : "";
-        return `<li>Inv ${id} • Lease ${String(x.lease_id||"").slice(0,8)}… • Bal ${Number(x.balance||0).toLocaleString("en-KE")}${fee}${wa}</li>`;
-      }).join("");
-      return `<h4 style="margin:.75rem 0">${title}</h4><ul>${items}</ul>`;
-    };
-
-    wrap.innerHTML =
-      listBlock("Day 5 reminders", data.day5) +
-      listBlock("Day 10 (late fee stage)", data.day10) +
-      listBlock("Overdue (past months)", data.overdue);
-
-    toast(apply ? "Dunning applied" : "Preview ready");
-  }
-
-  bDry?.addEventListener("click", () => callDunning(false));
-  bApply?.addEventListener("click", () => {
+  bDry?.addEventListener("click", ()=> callDunning(true));
+  bApply?.addEventListener("click", ()=>{
     if (!state.adminToken) return toast("Set Admin token in Settings first");
-    if (confirm("Apply late fees and log reminders now?")) callDunning(true);
+    if (confirm("Apply late fees and log reminders now?")) callDunning(false);
   });
-
-  bLogR?.addEventListener("click", () => loadDunningLog());
-  bLogM?.addEventListener("click", () => loadDunningLog(yyyymm()));
+  bLogR?.addEventListener("click", ()=> loadDunningLog());
+  bLogM?.addEventListener("click", ()=> loadDunningLog(yyyymm()));
 }
 
 /* ---------------- overview KPIs ---------------- */
@@ -448,7 +392,10 @@ async function loadRentroll(){
     const tQ=($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ=($("#rentrollProperty")?.value || "").toLowerCase().trim();
     const rows=await jget(`/rent-roll?month=${month}`);
-    const filtered=(rows||[]).filter(r => (tQ ? String(r.tenant||"").toLowerCase().includes(tQ) : true) && (pQ ? String(r.property||"").toLowerCase().includes(pQ) : true));
+    const filtered=(rows||[]).filter(r =>
+      (tQ ? String(r.tenant||"").toLowerCase().includes(tQ) : true) &&
+      (pQ ? String(r.property||"").toLowerCase().includes(pQ) : true)
+    );
     state.rentrollView=filtered;
     $("#rentrollCount") && ($("#rentrollCount").textContent=filtered.length);
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length>0);
