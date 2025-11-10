@@ -471,31 +471,49 @@ ensureRentrollMonthOptions();
 
 async function loadRentroll(){
   try{
-    const month=$("#rentrollMonth")?.value || yyyymm();
-    const tQ=($("#rentrollTenant")?.value || "").toLowerCase().trim();
-    const pQ=($("#rentrollProperty")?.value || "").toLowerCase().trim();
-    const rows=await jget(`/rent-roll?month=${month}`);
-    const filtered=(rows||[]).filter(r =>
+    const month = $("#rentrollMonth")?.value || yyyymm();
+    const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
+    const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
+
+    const rows = await jget(`/rent-roll?month=${month}`);
+    const filtered = (rows||[]).filter(r =>
       (tQ ? String(r.tenant||"").toLowerCase().includes(tQ) : true) &&
       (pQ ? String(r.property||"").toLowerCase().includes(pQ) : true)
     );
-    state.rentrollView=filtered;
-    $("#rentrollCount") && ($("#rentrollCount").textContent=filtered.length);
-    $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length>0);
-    $("#rentrollBody") && ($("#rentrollBody").innerHTML=filtered.map(r=>`
-      <tr>
-        <td>${r.property ?? "—"}</td>
-        <td>${r.unit ?? "—"}</td>
-        <td>${r.tenant ?? "—"}</td>
-        <td>${r.period ?? `${r.period_start||"—"} → ${r.period_end||"—"}`}</td>
-        <td>${money(r.total_due)}</td>
-        <td>${r.status ?? "—"}</td>
-        <td style="text-align:right">${money(r.balance)}</td>
-      </tr>`).join(""));
-  }catch(e){ console.error(e); $("#rentrollBody") && ($("#rentrollBody").innerHTML=""); $("#rentrollEmpty")?.classList.remove("hidden"); }
+
+    state.rentrollView = filtered;
+    $("#rentrollCount") && ($("#rentrollCount").textContent = filtered.length);
+    $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length > 0);
+
+    $("#rentrollBody") && ($("#rentrollBody").innerHTML = filtered.map(r => {
+      const periodLabel = r.period ?? `${r.period_start||"—"} → ${r.period_end||"—"}`;
+      return `
+        <tr>
+          <td>${r.property ?? "—"}</td>
+          <td>${r.unit ?? "—"}</td>
+          <td>${r.tenant ?? "—"}</td>
+          <td>${periodLabel}</td>
+          <td>${money(r.total_due)}</td>
+          <td class="status-cell">${r.status ?? "—"}</td>
+          <td style="text-align:right">${money(r.balance)}</td>
+          <td>
+            <button class="btn ghost rentroll-wa"
+                    data-action="wa"
+                    data-lease="${r.lease_id}">WhatsApp</button>
+            <button class="btn ghost rentroll-mark"
+                    data-action="mark"
+                    data-lease="${r.lease_id}"
+                    data-month="${month}">Mark sent</button>
+          </td>
+        </tr>`;
+    }).join(""));
+
+  }catch(e){
+    console.error(e);
+    $("#rentrollBody") && ($("#rentrollBody").innerHTML = "");
+    $("#rentrollEmpty")?.classList.remove("hidden");
+  }
 }
-$("#applyRentroll")?.addEventListener("click", loadRentroll);
-$("#clearRentroll")?.addEventListener("click", ()=>{ $("#rentrollTenant").value=""; $("#rentrollProperty").value=""; loadRentroll(); });
 
 /* ---------------- balances ---------------- */
 async function loadBalances(){
