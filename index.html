@@ -9,6 +9,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+  <!-- somewhere in your header HTML -->
+<button id="setAdminTokenBtn" title="Set Admin Token">⚙️ Admin Token</button>
+
+<script>
+  document.getElementById('setAdminTokenBtn')?.addEventListener('click', () => {
+    const t = prompt("Paste ADMIN_TOKEN");
+    if (t) setAdminToken(t);
+  });
+</script>
+
   <style>
     :root{
       --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --text:#f1f5f9;
