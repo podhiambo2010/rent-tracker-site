@@ -263,5 +263,54 @@
   </p>
 </div>
 
+<!-- index.html (very bottom, before </body>) -->
+<script>
+  const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
+
+  function getAdminToken() {
+    let t = localStorage.getItem("admin_token");
+    if (!t) {
+      t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
+      if (t) localStorage.setItem("admin_token", t);
+    }
+    return t || "";
+  }
+  function setAdminToken(t){ localStorage.setItem("admin_token", t); }
+
+  async function markInvoiceSent(invoiceId) {
+    const token = getAdminToken();
+    const r = await fetch(`${API_BASE}/invoices/mark_sent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Token": token
+      },
+      body: JSON.stringify({ invoice_id: invoiceId })
+    });
+    if (!r.ok) {
+      const err = await r.text().catch(()=> "");
+      alert("Failed to mark sent: " + r.status + " " + err);
+      return null;
+    }
+    return r.json();
+  }
+
+  function onWhatsApp(leaseId){
+    window.open(`${API_BASE}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}`, "_blank");
+  }
+
+  async function onMarkSent(btn, invoiceId){
+    btn.disabled = true;
+    const data = await markInvoiceSent(invoiceId);
+    if (data?.invoice) {
+      const row = btn.closest("tr");
+      row?.querySelector(".inv-status")?.replaceChildren(document.createTextNode(data.invoice.status));
+      row?.querySelector(".inv-sent-at")?.replaceChildren(document.createTextNode(data.invoice.sent_at ?? ""));
+    } else {
+      btn.disabled = false;
+    }
+  }
+</script>
+        
 <!-- App logic (must be last, right before </body>) -->
 <script src="./app.js"></script>
