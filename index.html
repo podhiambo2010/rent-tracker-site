@@ -9,16 +9,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- somewhere in your header HTML -->
-<button id="setAdminTokenBtn" title="Set Admin Token">⚙️ Admin Token</button>
-
-<script>
-  document.getElementById('setAdminTokenBtn')?.addEventListener('click', () => {
-    const t = prompt("Paste ADMIN_TOKEN");
-    if (t) setAdminToken(t);
-  });
-</script>
-
   <style>
     :root{
       --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --text:#f1f5f9;
@@ -36,7 +26,7 @@
     .brand{display:flex;align-items:center;gap:10px}
     .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),#13b5d1);box-shadow:0 6px 22px rgba(79,140,255,.45)}
     .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.3px}
-    .env{display:flex;gap:8px;align-items:center}
+    .env{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .env input{width:360px;max-width:50vw;background:var(--panel-2);border:1px solid var(--bd);color:var(--text);padding:8px 10px;border-radius:10px}
     .btn{background:var(--brand);border:none;color:white;padding:9px 12px;border-radius:10px;font-weight:600;cursor:pointer}
     .btn.secondary{background:#223260;color:#dbe7ff}
@@ -96,6 +86,8 @@
           <input id="apiBase" placeholder="API base e.g. https://rent-tracker-api-16i0.onrender.com" />
           <button class="btn" id="useApi">Use this API</button>
           <button class="btn secondary" id="openDocs">/docs</button>
+          <!-- Admin Token gear lives in the BODY, not HEAD -->
+          <button class="btn ghost" id="setAdminTokenBtn" title="Set Admin Token">⚙️ Admin Token</button>
         </div>
       </div>
     </header>
@@ -247,80 +239,91 @@
           <div id="waResult" class="muted"></div>
         </div>
 
- <!-- SETTINGS -->
-<div class="panel hidden" id="tab-settings">
-  <h2>Settings</h2>
-  <p class="muted">These settings are stored only in your browser (localStorage).</p>
+        <!-- SETTINGS -->
+        <div class="panel hidden" id="tab-settings">
+          <h2>Settings</h2>
+          <p class="muted">These settings are stored only in your browser (localStorage).</p>
 
-  <div class="filters" style="gap:14px; align-items:center; flex-wrap:wrap">
-    <label style="display:flex;gap:8px;align-items:center">
-      API Base
-      <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
-    </label>
+          <div class="filters" style="gap:14px; align-items:center; flex-wrap:wrap">
+            <label style="display:flex;gap:8px;align-items:center">
+              API Base
+              <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
+            </label>
 
-    <label style="display:flex;gap:8px;align-items:center">
-      Admin API Token
-      <input id="adminToken" type="password" placeholder="paste your API_TOKEN" autocomplete="off" />
-    </label>
+            <label style="display:flex;gap:8px;align-items:center">
+              Admin Token
+              <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off" />
+            </label>
 
-    <button class="btn" id="saveSettings">Save</button>
-    <button class="btn ghost" id="resetSettings">Reset</button>
+            <button class="btn" id="saveSettings">Save</button>
+            <button class="btn ghost" id="resetSettings">Reset</button>
+          </div>
+
+          <p class="muted" style="margin-top:8px">
+            The Admin Token must match the <code>ADMIN_TOKEN</code> configured on the API service in Render.
+            It’s saved only in this browser.
+          </p>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <p class="muted" style="margin-top:8px">
-    The Admin API Token must match the <code>API_TOKEN</code> configured on the API service in Render.
-    It’s saved only in this browser.
-  </p>
-</div>
+  <!-- ==== Helpers and actions (load AFTER HTML so elements exist) ==== -->
+  <script>
+    const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
 
-<!-- index.html (very bottom, before </body>) -->
-<script>
-  const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
-
-  function getAdminToken() {
-    let t = localStorage.getItem("admin_token");
-    if (!t) {
-      t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
-      if (t) localStorage.setItem("admin_token", t);
+    function getAdminToken() {
+      let t = localStorage.getItem("admin_token");
+      if (!t) {
+        t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
+        if (t) localStorage.setItem("admin_token", t);
+      }
+      return t || "";
     }
-    return t || "";
-  }
-  function setAdminToken(t){ localStorage.setItem("admin_token", t); }
+    function setAdminToken(t){ localStorage.setItem("admin_token", t); }
 
-  async function markInvoiceSent(invoiceId) {
-    const token = getAdminToken();
-    const r = await fetch(`${API_BASE}/invoices/mark_sent`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Admin-Token": token
-      },
-      body: JSON.stringify({ invoice_id: invoiceId })
+    async function markInvoiceSent(invoiceId) {
+      const token = getAdminToken();
+      const r = await fetch(`${API_BASE}/invoices/mark_sent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": token
+        },
+        body: JSON.stringify({ invoice_id: invoiceId })
+      });
+      if (!r.ok) {
+        const err = await r.text().catch(()=> "");
+        alert("Failed to mark sent: " + r.status + " " + err);
+        return null;
+      }
+      return r.json();
+    }
+
+    function onWhatsApp(leaseId){
+      window.open(`${API_BASE}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}`, "_blank");
+    }
+
+    async function onMarkSent(btn, invoiceId){
+      btn.disabled = true;
+      const data = await markInvoiceSent(invoiceId);
+      if (data?.invoice) {
+        const row = btn.closest("tr");
+        row?.querySelector(".inv-status")?.replaceChildren(document.createTextNode(data.invoice.status));
+        row?.querySelector(".inv-sent-at")?.replaceChildren(document.createTextNode(data.invoice.sent_at ?? ""));
+      } else {
+        btn.disabled = false;
+      }
+    }
+
+    // Wire the Admin Token gear now that helpers exist
+    document.getElementById('setAdminTokenBtn')?.addEventListener('click', () => {
+      const t = prompt("Paste ADMIN_TOKEN");
+      if (t) setAdminToken(t);
     });
-    if (!r.ok) {
-      const err = await r.text().catch(()=> "");
-      alert("Failed to mark sent: " + r.status + " " + err);
-      return null;
-    }
-    return r.json();
-  }
+  </script>
 
-  function onWhatsApp(leaseId){
-    window.open(`${API_BASE}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}`, "_blank");
-  }
-
-  async function onMarkSent(btn, invoiceId){
-    btn.disabled = true;
-    const data = await markInvoiceSent(invoiceId);
-    if (data?.invoice) {
-      const row = btn.closest("tr");
-      row?.querySelector(".inv-status")?.replaceChildren(document.createTextNode(data.invoice.status));
-      row?.querySelector(".inv-sent-at")?.replaceChildren(document.createTextNode(data.invoice.sent_at ?? ""));
-    } else {
-      btn.disabled = false;
-    }
-  }
-</script>
-        
-<!-- App logic (must be last, right before </body>) -->
-<script src="./app.js"></script>
+  <!-- App logic (must be last) -->
+  <script src="./app.js"></script>
+</body>
+</html>
