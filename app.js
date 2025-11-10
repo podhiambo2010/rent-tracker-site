@@ -567,3 +567,135 @@ function ensureExportButtons(){
   wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons();
   showTab("overview");
 })();
+
+// ======= DASHBOARD BOOTSTRAP =======
+
+// --- tiny toast (optional)
+function toast(msg, ms = 2200) {
+  const el = document.getElementById("actionMsg");
+  if (!el) return alert(msg);
+  el.textContent = msg;
+  el.style.opacity = 1;
+  setTimeout(() => (el.style.opacity = 0), ms);
+}
+
+// Persist + read API base
+const API_DEFAULT = "https://rent-tracker-api-16i0.onrender.com";
+function getApiBase() {
+  return localStorage.getItem("api_base") || API_DEFAULT;
+}
+function setApiBase(v) {
+  localStorage.setItem("api_base", v);
+}
+
+// Persist + read ADMIN token
+function getAdminToken() {
+  return localStorage.getItem("admin_token") || "";
+}
+function setAdminToken(token) {
+  localStorage.setItem("admin_token", token);
+}
+
+// On load: hydrate header + settings fields
+(function initEnvFields() {
+  const api = getApiBase();
+  const tkn = getAdminToken();
+  const apiBaseInput = document.getElementById("apiBase");
+  const apiBase2 = document.getElementById("apiBase2");
+  const adminToken = document.getElementById("adminToken");
+
+  if (apiBaseInput) apiBaseInput.value = api;
+  if (apiBase2) apiBase2.value = api;
+  if (adminToken) adminToken.value = tkn;
+})();
+
+// Open Swagger docs for the current API base
+document.getElementById("openDocs")?.addEventListener("click", () => {
+  const base = document.getElementById("apiBase")?.value?.trim() || getApiBase();
+  window.open(`${base.replace(/\/+$/,'')}/docs`, "_blank");
+});
+
+// Use-this-API button
+document.getElementById("useApi")?.addEventListener("click", () => {
+  const v = document.getElementById("apiBase")?.value?.trim();
+  if (!v) return toast("Enter an API base first");
+  setApiBase(v);
+  toast("API base saved");
+});
+
+// Settings: Save / Reset
+document.getElementById("saveSettings")?.addEventListener("click", () => {
+  const base = document.getElementById("apiBase2")?.value?.trim();
+  const t = document.getElementById("adminToken")?.value || "";
+  if (base) setApiBase(base);
+  setAdminToken(t);
+  // also mirror to header input
+  const apiBaseInput = document.getElementById("apiBase");
+  if (apiBaseInput && base) apiBaseInput.value = base;
+  toast("Settings saved");
+});
+
+document.getElementById("resetSettings")?.addEventListener("click", () => {
+  localStorage.removeItem("api_base");
+  localStorage.removeItem("admin_token");
+  document.getElementById("apiBase") && (document.getElementById("apiBase").value = API_DEFAULT);
+  document.getElementById("apiBase2") && (document.getElementById("apiBase2").value = API_DEFAULT);
+  const at = document.getElementById("adminToken");
+  if (at) at.value = "";
+  toast("Settings reset");
+});
+
+// Admin Token gear in the header
+document.getElementById("setAdminTokenBtn")?.addEventListener("click", () => {
+  const t = prompt("Paste ADMIN_TOKEN");
+  if (t) {
+    setAdminToken(t);
+    toast("Admin token saved");
+  }
+});
+
+// Helper: fetch with admin header
+async function adminFetch(path, opts = {}) {
+  const base = getApiBase().replace(/\/+$/,'');
+  const token = getAdminToken();
+  const headers = Object.assign(
+    { "Content-Type": "application/json", "X-Admin-Token": token },
+    opts.headers || {}
+  );
+  const res = await fetch(`${base}${path}`, { ...opts, headers });
+  return res;
+}
+
+// Auth ping (tests X-Admin-Token against /admin/ping)
+document.getElementById("btnHealth")?.addEventListener("click", async () => {
+  try {
+    const r = await adminFetch("/admin/ping", { method: "POST" });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      return toast(`Auth failed: ${r.status} ${t}`);
+    }
+    toast("Admin auth OK");
+  } catch (e) {
+    toast("Network error");
+  }
+});
+
+// Mark invoice as sent
+document.getElementById("btnMarkSent")?.addEventListener("click", async () => {
+  const id = document.getElementById("invoiceIdInput")?.value?.trim();
+  if (!id) return toast("Enter an invoice_id first");
+  try {
+    const r = await adminFetch("/invoices/mark_sent", {
+      method: "POST",
+      body: JSON.stringify({ invoice_id: id })
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      return toast(`Failed: ${r.status} ${t}`);
+    }
+    const js = await r.json();
+    toast(`Marked sent: ${js?.invoice?.status || "sent"}`);
+  } catch {
+    toast("Network error");
+  }
+});
