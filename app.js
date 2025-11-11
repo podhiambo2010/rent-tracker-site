@@ -25,6 +25,17 @@ function download(filename, text){
   a.href=url; a.download=filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },0);
 }
+function buildWhatsAppURL(msisdn, payload) {
+  const msg = [
+    `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
+    `Pay via M-Pesa Paybill 522533, Account 8035949.`,
+    `Other options: PesaLink / Bank transfer / Cheque / Cash / M-Pesa agents (Paybill 522522 → KCB acct).`,
+    `After paying, share the KCB SMS ref (Paybill) or transfer slip (others).`,
+    `Due: ${payload.due_date}. Thank you — Global Star Investments.`
+  ].join('\n');
+  const clean = (msisdn||'').toString().replace(/\D/g,'');
+  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
+}
 
 /* ---------- app state ---------- */
 const state = {
@@ -624,3 +635,24 @@ function ensureExportButtons(){
   // Default tab
   showTab("overview");
 })();
+
+function getSelectedMonth() {
+  // return the YYYY-MM month that your grid is showing
+  // Example if you have a <select id="monthPicker">:
+  const v = $('#monthPicker')?.value;
+  return v || new Date().toISOString().slice(0,7);
+}
+
+function getRowsForMonth(ym) {
+  // Adapt to however your table data is stored.
+  // Expect an array of row objects with:
+  // tenant_name, tenant_phone, unit_name, period_label, total_due, due_date, id, status
+  return window.RENT_ROWS?.filter(r => r.period_ym === ym) || [];
+}
+
+function getSelectedInvoiceIds() {
+  // If you already support row selection, return the invoice IDs for selected rows.
+  // For now, collect all visible unsent invoices:
+  const ym = getSelectedMonth();
+  return getRowsForMonth(ym).filter(r => r.status !== 'PAID').map(r => r.id);
+}
