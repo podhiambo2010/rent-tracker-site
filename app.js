@@ -1,4 +1,4 @@
-/* ==================== Rent Tracker Dashboard — app.js (clean) ==================== */
+/* ==================== Rent Tracker Dashboard — app.js (fixed) ==================== */
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
@@ -25,35 +25,17 @@ function download(filename, text){
   a.href=url; a.download=filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },0);
 }
-function buildWhatsAppURL(msisdn, payload) {
-  const msg = [
-    `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
-    `Pay via M-Pesa Paybill 522533, Account 8035949.`,
-    `Other options: PesaLink / Bank transfer / Cheque / Cash / M-Pesa agents (Paybill 522522 → KCB acct).`,
-    `After paying, share the KCB SMS ref (Paybill) or transfer slip (others).`,
-    `Due: ${payload.due_date}. Thank you — Global Star Investments.`
-  ].join('\n');
-  const clean = (msisdn||'').toString().replace(/\D/g,'');
-  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
-}
 
-function buildWhatsAppURL(msisdn, payload) {
-  const msg = [
-    `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
-    `Pay via M-Pesa Paybill 522533, Account 8035949.`,
-    `Other options: PesaLink / Bank transfer / Cheque / Cash / M-Pesa agents (Paybill 522522 → KCB acct).`,
-    `After paying, share the KCB SMS ref (Paybill) or transfer slip (others).`,
-    `Due: ${payload.due_date}. Thank you — Global Star Investments.`
-  ].join('\n');
-  const clean = String(msisdn||'').replace(/\D/g,'');
-  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
-}
-
+/* Messaging helpers */
 function getSelectedMonth() {
-  // If you have a month picker <select id="monthPicker" value="YYYY-MM"> this will use it.
   return document.querySelector('#monthPicker')?.value || new Date().toISOString().slice(0,7);
 }
-
+function fmtMonYearFromISO(isoDate) {
+  try {
+    const d = new Date(isoDate);
+    return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  } catch { return ''; }
+}
 function buildWhatsAppURL(msisdn, payload) {
   const msg = [
     `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
@@ -66,40 +48,42 @@ function buildWhatsAppURL(msisdn, payload) {
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 
+/* ---------- API helpers ---------- */
 async function apiJSON(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`API ${r.status}: ${url}`);
   return r.json();
 }
+async function jget(path){
+  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
+  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+async function jpost(path, body, {admin=false}={}){
+  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
+  const headers = { "Content-Type": "application/json" };
+  if (admin && state.adminToken) headers["X-Admin-Token"] = state.adminToken;
+  const r = await fetch(url, { method: "POST", headers, body: JSON.stringify(body||{}) });
+  if (!r.ok){
+    const txt = await r.text().catch(()=> "");
+    throw new Error(`${r.status} ${r.statusText} — ${txt}`);
+  }
+  return r.json();
+}
 
-// rent-roll for a month (from your API). We’ll use rows with balance > 0 only.
+/* ---------- API consumers for buttons ---------- */
 async function getRentRollForMonth(ym) {
-  // /rent-roll?month=YYYY-MM returns mv_rent_roll rows
-  const url = `${DEFAULT_API}/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`;
-  return apiJSON(url); // [{tenant, unit_code, lease_id, period_start, due_date, total_due, paid_amount, balance, ...}]
+  return apiJSON(`${state.api}/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`);
 }
-
-// phone & email for a lease (from your API)
 async function getContactForLease(lease_id) {
-  const url = `${DEFAULT_API}/contact_for_lease?lease_id=${encodeURIComponent(lease_id)}`;
-  return apiJSON(url); // { tenant, phone, email }
+  return apiJSON(`${state.api}/contact_for_lease?lease_id=${encodeURIComponent(lease_id)}`);
 }
-
-// invoice id for a lease + month (for mark_sent)
 async function getInvoiceIdForLeaseMonth(lease_id, ym) {
-  const url = `${DEFAULT_API}/invoices/for_lease_month?lease_id=${encodeURIComponent(lease_id)}&month=${encodeURIComponent(ym)}`;
-  const data = await fetch(url);
-  if (data.status === 404) return null; // none found
-  const json = await data.json();
-  return json?.invoice?.id || null; // UUID as string
-}
-
-function fmtMonYearFromISO(isoDate) {
-  // "2025-11-01T00:00:00Z" -> "Nov 2025"
-  try {
-    const d = new Date(isoDate);
-    return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-  } catch { return ''; }
+  const res = await fetch(`${state.api}/invoices/for_lease_month?lease_id=${encodeURIComponent(lease_id)}&month=${encodeURIComponent(ym)}`);
+  if (res.status === 404) return null;
+  const json = await res.json();
+  return json?.invoice?.id || null; // UUID (string)
 }
 
 /* ---------- app state ---------- */
@@ -118,7 +102,7 @@ function toast(msg, ms=2200){
   setTimeout(()=>{ el.style.opacity = 0; }, ms);
 }
 
-/* ---------- environment setters (mirror inputs + persist) ---------- */
+/* ---------- environment setters ---------- */
 function setAPI(v){
   state.api = (v||DEFAULT_API).trim().replace(/\/$/,"");
   localStorage.setItem("api_base", state.api);
@@ -131,42 +115,6 @@ function setAdminToken(v){
   $("#adminToken") && ($("#adminToken").value = state.adminToken);
 }
 
-function getSelectedMonth() {
-  return $('#monthPicker')?.value || new Date().toISOString().slice(0,7); // "YYYY-MM"
-}
-
-// Expect your table loader to stash rows here (do this where you render the grid)
-window.RENT_ROWS = window.RENT_ROWS || []; // [{id, tenant_name, tenant_phone, unit_name, period_label, period_ym, total_due, due_date, status}]
-
-function getRowsForMonth(ym) {
-  return (window.RENT_ROWS||[]).filter(r => r.period_ym === ym);
-}
-
-function getSelectedInvoiceIds() {
-  const ym = getSelectedMonth();
-  return getRowsForMonth(ym).filter(r => r.status !== 'PAID').map(r => r.id);
-}
-
-/* ---------- json fetchers ---------- */
-async function jget(path){
-  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
-async function jpost(path, body, {admin=false}={}){
-  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const headers = { "Content-Type": "application/json" };
-  // Our API accepts either Authorization: Bearer <ADMIN_TOKEN> or X-Admin-Token
-  if (admin && state.adminToken) headers["X-Admin-Token"] = state.adminToken;
-  const r = await fetch(url, { method: "POST", headers, body: JSON.stringify(body||{}) });
-  if (!r.ok){
-    const txt = await r.text().catch(()=> "");
-    throw new Error(`${r.status} ${r.statusText} — ${txt}`);
-  }
-  return r.json();
-}
-
 /* =================================================================== */
 /*                           DUNNING / LOG UI                           */
 /* =================================================================== */
@@ -176,18 +124,8 @@ function _injectLogCSS(){
   if (_logCssInjected) return;
   const css = `
   #dunningLogWrap{ margin:24px 0 0 }
-  #dunningLogWrap .logbar{
-    display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem;
-    font:600 13px system-ui,-apple-system,Segoe UI,Roboto,Arial;
-  }
-  #dunningLog{
-    max-height:360px; overflow:auto; white-space:pre;
-    background:#0b1020; color:#e6edf3;
-    border:1px solid rgba(255,255,255,.18);
-    border-radius:12px; padding:12px;
-    box-shadow:0 8px 28px rgba(0,0,0,.45);
-    position:relative; z-index:20;
-  }
+  #dunningLogWrap .logbar{ display:flex; gap:.5rem; align-items:center; margin-bottom:.5rem; font:600 13px system-ui,-apple-system,Segoe UI,Roboto,Arial; }
+  #dunningLog{ max-height:360px; overflow:auto; white-space:pre; background:#0b1020; color:#e6edf3; border:1px solid rgba(255,255,255,.18); border-radius:12px; padding:12px; box-shadow:0 8px 28px rgba(0,0,0,.45) }
   .log-expanded #dunningLog{ max-height:70vh; }
   `;
   const s = document.createElement("style"); s.textContent = css;
@@ -205,7 +143,6 @@ function _findInvoicePanel(){
 }
 async function loadDunningLog(month="", stage=""){
   if (_logBusy) return; _logBusy = true; _injectLogCSS();
-
   const qs = [];
   if (month) qs.push(`month=${encodeURIComponent(month)}`);
   if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
@@ -229,8 +166,7 @@ async function loadDunningLog(month="", stage=""){
     if (panel?.parentElement){
       panel.parentElement.insertBefore(wrap, panel.nextSibling);
     } else {
-      (document.querySelector("#invoiceActions") || document.body)
-        .insertAdjacentElement("afterend", wrap);
+      (document.querySelector("#invoiceActions") || document.body).insertAdjacentElement("afterend", wrap);
     }
     wrap.querySelector("#logCollapse").addEventListener("click", ()=>{
       const p = $("#dunningLog"); if (!p) return;
@@ -241,8 +177,7 @@ async function loadDunningLog(month="", stage=""){
     wrap.querySelector("#logClear").addEventListener("click", ()=>{ const p=$("#dunningLog"); if(p) p.textContent=""; });
     wrap.querySelector("#logExpand").addEventListener("click", ()=>{
       wrap.classList.toggle("log-expanded");
-      wrap.querySelector("#logExpand").textContent =
-        wrap.classList.contains("log-expanded") ? "Shrink" : "Expand";
+      wrap.querySelector("#logExpand").textContent = wrap.classList.contains("log-expanded") ? "Shrink" : "Expand";
     });
   }
 
@@ -274,7 +209,6 @@ async function loadDunningLog(month="", stage=""){
   }
 }
 
-/* Dunning (preview/apply) */
 async function callDunning(preview){
   if(!state.adminToken){ toast("Set Admin token in Settings first"); return; }
   const url = `${state.api}/cron/dunning?dry_run=${preview?1:0}`;
@@ -307,89 +241,6 @@ async function callDunning(preview){
   toast(preview ? "Dunning preview ready" : "Dunning applied");
   return data;
 }
-
-$('#btnSendAll')?.addEventListener('click', () => {
-  document.querySelector('#btnSendAll')?.addEventListener('click', async () => {
-  const ym = getSelectedMonth();        // "YYYY-MM"
-  try {
-    const rows = await getRentRollForMonth(ym);
-    // Only tenants with a positive balance need a message
-    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
-
-    if (!dueRows.length) {
-      alert('Nothing to send for ' + ym);
-      return;
-    }
-
-    // open WhatsApp chats, one by one (throttled)
-    let opened = 0, skippedNoPhone = 0;
-    for (const r of dueRows) {
-      const contact = await getContactForLease(r.lease_id);
-      const phone = (contact?.phone || '').trim();
-      if (!phone) { skippedNoPhone++; continue; }
-
-      const url = buildWhatsAppURL(phone, {
-        tenant_name: contact?.tenant || r.tenant || 'Tenant',
-        unit: r.unit_code || 'Unit',
-        period: fmtMonYearFromISO(r.period_start),
-        amount_due: Number(r.balance || r.total_due || 0),
-        due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE') : ''
-      });
-
-      window.open(url, '_blank');
-      opened++;
-      await new Promise(res => setTimeout(res, 600)); // throttle to avoid popup blocks
-    }
-
-    alert(`Opened ${opened} WhatsApp chats. Skipped ${skippedNoPhone} (no phone).`);
-  } catch (e) {
-    console.error(e);
-    alert('Send All failed: ' + e.message);
-  }
-});
-
-
-$('#btnMarkSent')?.addEventListener('click', async () => {
-  document.querySelector('#btnMarkSent')?.addEventListener('click', async () => {
-  const ym = getSelectedMonth();
-  try {
-    const rows = await getRentRollForMonth(ym);
-    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
-
-    // look up invoice UUIDs for those leases+month
-    const invoiceIds = [];
-    for (const r of dueRows) {
-      const id = await getInvoiceIdForLeaseMonth(r.lease_id, ym);
-      if (id) invoiceIds.push(id);
-      await new Promise(res => setTimeout(res, 120)); // gentle throttle
-    }
-
-    if (!invoiceIds.length) {
-      alert('No invoices found to mark for ' + ym);
-      return;
-    }
-
-    const res = await fetch(`${DEFAULT_API}/invoices/mark_sent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        invoice_ids: invoiceIds,     // UUIDs array
-        sent_via: 'whatsapp',
-        sent_to: 'tenant',
-        sent_at: new Date().toISOString()
-      })
-    });
-    if (!res.ok) throw new Error('API returned ' + res.status);
-    const out = await res.json();
-
-    alert(`Marked as sent: ${out.updated?.length || 0} invoices.`);
-    // if you have a refresh:
-    if (typeof window.refreshGrid === 'function') await window.refreshGrid();
-  } catch (e) {
-    console.error(e);
-    alert('Mark Sent failed: ' + e.message);
-  }
-});
 
 /* =================================================================== */
 /*                                TABS                                  */
@@ -434,48 +285,11 @@ function wireSettings(){
   });
 }
 
-$('#btnSendAll')?.addEventListener('click', () => {
-  const ym = getSelectedMonth();
-  const rows = getRowsForMonth(ym).filter(r => r.status !== 'PAID');
-  if (!rows.length) { alert('Nothing to send for ' + ym); return; }
-
-  rows.forEach((r, i) => {
-    const url = buildWhatsAppURL(r.tenant_phone, {
-      tenant_name: r.tenant_name,
-      unit: r.unit_name,
-      period: r.period_label,     // e.g., "Nov 2025"
-      amount_due: r.total_due,
-      due_date: r.due_date
-    });
-    setTimeout(() => window.open(url, '_blank'), i * 600); // stagger to avoid popup blockers
-  });
-});
-
-$('#btnMarkSent')?.addEventListener('click', async () => {
-  const ids = getSelectedInvoiceIds();
-  if (!ids.length) { alert('Select at least one invoice row.'); return; }
-
-  const res = await fetch(`${DEFAULT_API}/invoices/mark_sent`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({
-      invoice_ids: ids,
-      sent_via: 'whatsapp',
-      sent_to: 'tenant',
-      sent_at: new Date().toISOString()
-    })
-  });
-  if (!res.ok) { alert('Mark-sent failed'); return; }
-  // re-load your data so counters update
-  if (typeof refreshGrid === 'function') await refreshGrid();
-  (window.toast||alert)('Marked as sent');
-});
-
 /* =================================================================== */
 /*                        INVOICE ACTIONS (panel)                       */
 /* =================================================================== */
 function wireActions(){
-  // Ensure a <pre id="actionMsg"> exists just below the panel (some themes already have it)
+  // Ensure a <pre id="actionMsg"> exists
   if (!$("#actionMsg")){
     const pre = document.createElement("pre");
     pre.id = "actionMsg";
@@ -483,7 +297,7 @@ function wireActions(){
     anchor.insertAdjacentElement("afterend", pre);
   }
 
-  // Mark as sent (single invoice via input)
+  // Single "Mark as sent" (by typing UUID)
   $("#btnMarkSent")?.addEventListener("click", async ()=>{
     const invoice_id = ($("#invoiceIdInput")?.value || "").trim();
     if (!invoice_id) return toast("Enter an invoice_id first");
@@ -502,7 +316,6 @@ function wireActions(){
   });
 
   // Dunning buttons
-  // Create if missing (safe to run multiple times)
   function ensure(afterSel, id, label){
     if ($(id)) return $(id);
     const anchor = $(afterSel) || $("#invoiceActions") || document.body;
@@ -519,28 +332,9 @@ function wireActions(){
   const bLogM  = ensure("#btnDunningLogRecent", "#btnDunningLogMonth", "Dunning log (this month)");
 
   bDry?.addEventListener("click",  ()=> callDunning(true));
-  bApply?.addEventListener("click", ()=>{
-    if (!state.adminToken) return toast("Set Admin token in Settings first");
-    if (confirm("Apply late fees and log reminders now?")) callDunning(false);
-  });
+  bApply?.addEventListener("click", ()=>{ if (!state.adminToken) return toast("Set Admin token in Settings first"); if (confirm("Apply late fees and log reminders now?")) callDunning(false); });
   bLogR?.addEventListener("click", ()=> loadDunningLog());
   bLogM?.addEventListener("click", ()=> loadDunningLog(yyyymm()));
-
-  // Admin ping
-  const healthBtn = $("#btnHealth");
-  healthBtn?.addEventListener("click", async ()=>{
-    if (!state.adminToken) return toast("Set Admin token in Settings first");
-    $("#actionMsg").textContent = "Pinging…";
-    try{
-      const r = await fetch(`${state.api}/admin/ping`, { headers: { "X-Admin-Token": state.adminToken }});
-      const data = await r.json().catch(()=> ({}));
-      $("#actionMsg").textContent = JSON.stringify(data, null, 2);
-      toast(r.ok ? "Admin auth OK" : "Unauthorized");
-    }catch(e){
-      $("#actionMsg").textContent = String(e);
-      toast("Ping failed");
-    }
-  });
 }
 
 /* =================================================================== */
@@ -584,7 +378,7 @@ async function loadLeases(){
       const rent   = r.rent_amount ?? r.rent ?? "—";
       const cycle  = r.billing_cycle ?? r.cycle ?? "monthly";
       const dueDay = r.due_day ?? "—";
-      const status = r.status ?? "Active";
+      const status = r.lease_status ?? r.status ?? "Active";
       const leaseId = r.lease_id || r.id || "";
       const waHref  = leaseId ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}` : null;
       return `<tr>
@@ -671,13 +465,6 @@ function ensureRentrollMonthOptions(){
 }
 ensureRentrollMonthOptions();
 
-async function getInvoiceIdForLeaseMonth(leaseId, month){
-  try{
-    const res = await jget(`/invoices/for_lease_month?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(month)}`);
-    return res?.invoice?.id || null;
-  }catch{ return null; }
-}
-
 async function loadRentroll(){
   try{
     const month = $("#rentrollMonth")?.value || yyyymm();
@@ -687,7 +474,7 @@ async function loadRentroll(){
     const rows = await jget(`/rent-roll?month=${month}`);
     const filtered = (rows||[]).filter(r =>
       (tQ ? String(r.tenant||"").toLowerCase().includes(tQ) : true) &&
-      (pQ ? String(r.property||"").toLowerCase().includes(pQ) : true)
+      (pQ ? String(r.property_name||r.property||"").toLowerCase().includes(pQ) : true)
     );
 
     state.rentrollView = filtered;
@@ -698,8 +485,8 @@ async function loadRentroll(){
       const periodLabel = r.period ?? `${r.period_start||"—"} → ${r.period_end||"—"}`;
       return `
         <tr>
-          <td>${r.property ?? "—"}</td>
-          <td>${r.unit ?? "—"}</td>
+          <td>${r.property_name ?? r.property ?? "—"}</td>
+          <td>${r.unit_code ?? r.unit ?? "—"}</td>
           <td>${r.tenant ?? "—"}</td>
           <td>${periodLabel}</td>
           <td>${money(r.total_due)}</td>
@@ -798,7 +585,7 @@ function ensureExportButtons(){
 
   $("#exportLeases")?.addEventListener("click", ()=>{
     const cols=[{label:"Tenant",value:r=>r.tenant},{label:"Unit",value:r=>r.unit},{label:"Rent",value:r=>r.rent_amount ?? r.rent},
-      {label:"Cycle",value:r=>r.billing_cycle ?? r.cycle},{label:"Due Day",value:r=>r.due_day},{label:"Status",value:r=>r.status},
+      {label:"Cycle",value:r=>r.billing_cycle ?? r.cycle},{label:"Due Day",value:r=>r.due_day},{label:"Status",value:r=>r.lease_status ?? r.status},
       {label:"Lease ID",value:r=>r.lease_id || r.id}];
     download(`leases_${yyyymm()}.csv`, toCSV(state.leasesView, cols));
   });
@@ -808,7 +595,7 @@ function ensureExportButtons(){
     download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
   });
   $("#exportRentroll")?.addEventListener("click", ()=>{
-    const cols=[{label:"Property",value:r=>r.property},{label:"Unit",value:r=>r.unit},{label:"Tenant",value:r=>r.tenant},
+    const cols=[{label:"Property",value:r=>r.property_name ?? r.property},{label:"Unit",value:r=>r.unit_code ?? r.unit},{label:"Tenant",value:r=>r.tenant},
       {label:"Period",value:r=>r.period ?? `${r.period_start||""} → ${r.period_end||""}`},{label:"Total Due",value:r=>r.total_due},
       {label:"Status",value:r=>r.status},{label:"Balance",value:r=>r.balance}];
     download(`rent_roll_${($("#rentrollMonth")?.value || yyyymm())}.csv`, toCSV(state.rentrollView, cols));
@@ -822,38 +609,81 @@ function ensureExportButtons(){
 }
 
 /* =================================================================== */
+/*                     BIG BUTTONS (Overview panel)                     */
+/* =================================================================== */
+$("#btnSendAll")?.addEventListener("click", async () => {
+  const ym = getSelectedMonth();
+  try {
+    const rows = await getRentRollForMonth(ym);
+    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
+    if (!dueRows.length) { alert('Nothing to send for ' + ym); return; }
+
+    let opened = 0, skippedNoPhone = 0;
+    for (const r of dueRows) {
+      const contact = await getContactForLease(r.lease_id);
+      const phone = (contact?.phone || '').trim();
+      if (!phone) { skippedNoPhone++; continue; }
+
+      const url = buildWhatsAppURL(phone, {
+        tenant_name: contact?.tenant || r.tenant || 'Tenant',
+        unit: r.unit_code || r.unit || 'Unit',
+        period: fmtMonYearFromISO(r.period_start),
+        amount_due: Number(r.balance || r.total_due || 0),
+        due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE') : ''
+      });
+      window.open(url, '_blank');
+      opened++;
+      await new Promise(res => setTimeout(res, 600));
+    }
+    alert(`Opened ${opened} WhatsApp chats. Skipped ${skippedNoPhone} (no phone).`);
+  } catch (e) {
+    console.error(e);
+    alert('Send All failed: ' + e.message);
+  }
+});
+
+$("#btnMarkSelected")?.addEventListener("click", async () => {  // if your button id is different, match it
+  const ym = getSelectedMonth();
+  try {
+    const rows = await getRentRollForMonth(ym);
+    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
+
+    const invoiceIds = [];
+    for (const r of dueRows) {
+      const id = await getInvoiceIdForLeaseMonth(r.lease_id, ym);
+      if (id) invoiceIds.push(id);
+      await new Promise(res => setTimeout(res, 120));
+    }
+    if (!invoiceIds.length) { alert('No invoices found to mark for ' + ym); return; }
+
+    const res = await fetch(`${state.api}/invoices/mark_sent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        invoice_ids: invoiceIds,
+        sent_via: 'whatsapp',
+        sent_to: 'tenant',
+        sent_at: new Date().toISOString()
+      })
+    });
+    if (!res.ok) throw new Error('API returned ' + res.status);
+    const out = await res.json();
+    alert(`Marked as sent: ${out.updated?.length || 0} invoices.`);
+    if (typeof window.refreshGrid === 'function') await window.refreshGrid();
+  } catch (e) {
+    console.error(e);
+    alert('Mark Sent failed: ' + e.message);
+  }
+});
+
+/* =================================================================== */
 /*                                 BOOT                                 */
 /* =================================================================== */
 (function init(){
-  // Hydrate header + settings
   setAPI(state.api);
   setAdminToken(state.adminToken);
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
 
-  // Wire UI
   wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons();
-
-  // Default tab
   showTab("overview");
 })();
-
-function getSelectedMonth() {
-  // return the YYYY-MM month that your grid is showing
-  // Example if you have a <select id="monthPicker">:
-  const v = $('#monthPicker')?.value;
-  return v || new Date().toISOString().slice(0,7);
-}
-
-function getRowsForMonth(ym) {
-  // Adapt to however your table data is stored.
-  // Expect an array of row objects with:
-  // tenant_name, tenant_phone, unit_name, period_label, total_due, due_date, id, status
-  return window.RENT_ROWS?.filter(r => r.period_ym === ym) || [];
-}
-
-function getSelectedInvoiceIds() {
-  // If you already support row selection, return the invoice IDs for selected rows.
-  // For now, collect all visible unsent invoices:
-  const ym = getSelectedMonth();
-  return getRowsForMonth(ym).filter(r => r.status !== 'PAID').map(r => r.id);
-}
