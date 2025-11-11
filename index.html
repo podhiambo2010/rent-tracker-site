@@ -102,6 +102,27 @@
         <a class="tab" data-tab="whatsapp">📱 WhatsApp</a>
         <a class="tab" data-tab="settings">⚙️ Settings</a>
       </nav>
+/* Per-panel scrollers */
+.table-wrap{
+  max-height: calc(100vh - 320px); /* fits under header/kpis */
+  overflow: auto;
+  border-radius: 12px;
+}
+
+/* Sticky table headers inside scrollers */
+.table-wrap table{ width:100%; border-collapse: collapse; }
+.table-wrap thead th{
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #0f1730;           /* match your theme */
+}
+
+/* Keep long logs/previews contained */
+#dunningLog, #dunningOut{
+  max-height: 40vh;
+  overflow: auto;
+}
 
       <section>
         <!-- ===== Invoice Actions (buttons) ===== -->
