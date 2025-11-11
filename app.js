@@ -1,4 +1,4 @@
-/* ==================== Rent Tracker Dashboard — app.js (fixed) ==================== */
+/* ==================== Rent Tracker Dashboard — app.js (cleaned) ==================== */
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
@@ -37,11 +37,10 @@ function fmtMonYearFromISO(isoDate) {
   } catch { return ''; }
 }
 
-// --- clear WhatsApp message with full payment options ---
+/* Clear WhatsApp message with full payment options */
 function buildWhatsAppURL(msisdn, payload) {
   const kes = n => `KES ${Number(n||0).toLocaleString('en-KE')}`;
   const dueDate = payload.due_date || '';
-
   const msg = [
     `Hello ${payload.tenant_name},`,
     `Rent for ${payload.unit} — ${payload.period}`,
@@ -62,7 +61,6 @@ function buildWhatsAppURL(msisdn, payload) {
     ``,
     `Thank you — Global Star Investments Limited.`
   ].join('\n');
-
   const clean = String(msisdn||'').replace(/\D/g,'');
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
@@ -91,7 +89,7 @@ async function jpost(path, body, {admin=false}={}){
   return r.json();
 }
 
-/* ---------- API consumers for buttons ---------- */
+/* ---------- API consumers ---------- */
 async function getRentRollForMonth(ym) {
   return apiJSON(`${state.api}/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`);
 }
@@ -253,7 +251,6 @@ async function callDunning(preview){
     const r = await fetch(url, opt);
     const data = await r.json();
 
-    // Render friendly summary + per-item lists
     const list = (title, arr) => {
       if (!arr?.length) return `\n${title}: 0`;
       const items = arr.map(x => {
@@ -338,12 +335,11 @@ function wireActions(){
     anchor.insertAdjacentElement("afterend", pre);
   }
 
-  // ---------- Single "Mark as sent" (by typing UUID) ----------
+  // Single "Mark as sent" (by typing UUID)
   $("#btnMarkSent")?.addEventListener("click", async ()=>{
     const invoice_id = ($("#invoiceIdInput")?.value || "").trim();
     if (!invoice_id) return toast("Enter an invoice_id first");
     if (!state.adminToken) return toast("Set Admin token in Settings first");
-
     $("#actionMsg").textContent = "Marking as sent…";
     try{
       const data = await jpost("/invoices/mark_sent", { invoice_id }, {admin:true});
@@ -356,7 +352,7 @@ function wireActions(){
     }
   });
 
-  // ---------- Dunning buttons (ensure & wire) ----------
+  // Dunning helpers
   function ensureButton(afterSel, id, label){
     if ($(id)) return $(id);
     const anchor = $(afterSel) || $("#invoiceActions") || document.body;
@@ -373,14 +369,11 @@ function wireActions(){
   const bLogM  = ensureButton("#btnDunningLogRecent","#btnDunningLogMonth","Dunning log (this month)");
 
   bDry?.addEventListener("click",  ()=> callDunning(true));
-  bApply?.addEventListener("click", ()=>{
-    if (!state.adminToken) return toast("Set Admin token in Settings first");
-    if (confirm("Apply late fees and log reminders now?")) callDunning(false);
-  });
+  bApply?.addEventListener("click", ()=>{ if (!state.adminToken) return toast("Set Admin token in Settings first"); if (confirm("Apply late fees and log reminders now?")) callDunning(false); });
   bLogR?.addEventListener("click", ()=> loadDunningLog());
   bLogM?.addEventListener("click", ()=> loadDunningLog(yyyymm()));
 
-  // ---------- Auth ping (robust selector) ----------
+  // Auth ping
   const authBtn =
     $("#btnHealth") ||
     Array.from(document.querySelectorAll("button"))
@@ -393,7 +386,7 @@ function wireActions(){
       const r = await fetch(`${state.api}/admin/ping`, {
         headers: {
           "X-Admin-Token": state.adminToken,
-          "Authorization": `Bearer ${state.adminToken}` // also send as Bearer just in case
+          "Authorization": `Bearer ${state.adminToken}`
         }
       });
       const data = await r.json().catch(()=> ({}));
@@ -404,28 +397,6 @@ function wireActions(){
       toast("Ping failed");
     }
   });
-}
-
-  // Dunning buttons
-  function ensure(afterSel, id, label){
-    if ($(id)) return $(id);
-    const anchor = $(afterSel) || $("#invoiceActions") || document.body;
-    const btn = document.createElement("button");
-    btn.className = "btn ghost";
-    btn.id = id.slice(1);
-    btn.textContent = label;
-    anchor.insertAdjacentElement("afterend", btn);
-    return btn;
-  }
-  const bDry   = ensure("#btnMarkSent", "#btnDunningDry", "Dunning (dry run)");
-  const bApply = ensure("#btnDunningDry", "#btnDunningGo",  "Dunning (apply)");
-  const bLogR  = ensure("#btnDunningGo", "#btnDunningLogRecent", "Dunning log (recent)");
-  const bLogM  = ensure("#btnDunningLogRecent", "#btnDunningLogMonth", "Dunning log (this month)");
-
-  bDry?.addEventListener("click",  ()=> callDunning(true));
-  bApply?.addEventListener("click", ()=>{ if (!state.adminToken) return toast("Set Admin token in Settings first"); if (confirm("Apply late fees and log reminders now?")) callDunning(false); });
-  bLogR?.addEventListener("click", ()=> loadDunningLog());
-  bLogM?.addEventListener("click", ()=> loadDunningLog(yyyymm()));
 }
 
 /* =================================================================== */
@@ -714,18 +685,15 @@ $("#btnSendAll")?.addEventListener("click", async () => {
       const contact = await getContactForLease(r.lease_id);
       const phone = (contact?.phone || '').trim();
       if (!phone) { skippedNoPhone++; continue; }
-     // inside #btnSendAll click loop
       const url = buildWhatsAppURL(phone, {
         tenant_name: contact?.tenant || r.tenant || 'Tenant',
         unit: r.unit_code || r.unit || 'Unit',
         period: fmtMonYearFromISO(r.period_start),
-        // numbers for the message:
         total_due: Number(r.total_due || 0),
         paid_to_date: Number(r.paid_amount || 0),
         amount_due: Number(r.balance || r.total_due || 0),
         due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE', { day:'2-digit', month:'short', year:'numeric' }) : ''
       });
-
       window.open(url, '_blank');
       opened++;
       await new Promise(res => setTimeout(res, 600));
@@ -737,7 +705,7 @@ $("#btnSendAll")?.addEventListener("click", async () => {
   }
 });
 
-$("#btnMarkSelected")?.addEventListener("click", async () => {  // if your button id is different, match it
+$("#btnMarkSelected")?.addEventListener("click", async () => {
   const ym = getSelectedMonth();
   try {
     const rows = await getRentRollForMonth(ym);
@@ -778,7 +746,6 @@ $("#btnMarkSelected")?.addEventListener("click", async () => {  // if your butto
   setAPI(state.api);
   setAdminToken(state.adminToken);
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
-
   wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons();
   showTab("overview");
 })();
