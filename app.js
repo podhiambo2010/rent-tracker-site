@@ -350,26 +350,44 @@ $('#btnSendAll')?.addEventListener('click', () => {
 
 
 $('#btnMarkSent')?.addEventListener('click', async () => {
-  const selected = getSelectedInvoiceIds();
-  if (!selected.length) { alert('Select at least one invoice row.'); return; }
-
+  document.querySelector('#btnMarkSent')?.addEventListener('click', async () => {
+  const ym = getSelectedMonth();
   try {
+    const rows = await getRentRollForMonth(ym);
+    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
+
+    // look up invoice UUIDs for those leases+month
+    const invoiceIds = [];
+    for (const r of dueRows) {
+      const id = await getInvoiceIdForLeaseMonth(r.lease_id, ym);
+      if (id) invoiceIds.push(id);
+      await new Promise(res => setTimeout(res, 120)); // gentle throttle
+    }
+
+    if (!invoiceIds.length) {
+      alert('No invoices found to mark for ' + ym);
+      return;
+    }
+
     const res = await fetch(`${DEFAULT_API}/invoices/mark_sent`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        invoice_ids: selected,
+        invoice_ids: invoiceIds,     // UUIDs array
         sent_via: 'whatsapp',
         sent_to: 'tenant',
         sent_at: new Date().toISOString()
       })
     });
-    if (!res.ok) throw new Error('API error');
-    // Refresh table/counters:
-    await refreshGrid?.(); // if you have a function that reloads data
-    (window.toast||alert)('Marked as sent');
+    if (!res.ok) throw new Error('API returned ' + res.status);
+    const out = await res.json();
+
+    alert(`Marked as sent: ${out.updated?.length || 0} invoices.`);
+    // if you have a refresh:
+    if (typeof window.refreshGrid === 'function') await window.refreshGrid();
   } catch (e) {
-    alert('Mark-sent failed. Check API logs.');
+    console.error(e);
+    alert('Mark Sent failed: ' + e.message);
   }
 });
 
