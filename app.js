@@ -739,6 +739,24 @@ $("#btnMarkSelected")?.addEventListener("click", async () => {
   }
 });
 
+/* Wrap tables in scrollable containers so each panel scrolls independently */
+function ensurePanelScrollWrappers(){
+  const ids = ["leasesBody","paymentsBody","rentrollBody","balancesBody"];
+  ids.forEach(id=>{
+    const tb = document.getElementById(id);
+    if(!tb) return;
+    const table = tb.closest("table");
+    if(!table) return;
+    const parent = table.parentElement;
+    if(parent && !parent.classList.contains("table-wrap")){
+      const wrap = document.createElement("div");
+      wrap.className = "table-wrap";
+      parent.insertBefore(wrap, table);
+      wrap.appendChild(table);
+    }
+  });
+}
+
 /* =================================================================== */
 /*                                 BOOT                                 */
 /* =================================================================== */
@@ -746,6 +764,7 @@ $("#btnMarkSelected")?.addEventListener("click", async () => {
   setAPI(state.api);
   setAdminToken(state.adminToken);
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
-  wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons();
+  wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons(); ensurePanelScrollWrappers();
+// <-- add this line
   showTab("overview");
 })();
