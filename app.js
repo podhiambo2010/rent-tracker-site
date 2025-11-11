@@ -309,21 +309,45 @@ async function callDunning(preview){
 }
 
 $('#btnSendAll')?.addEventListener('click', () => {
-  const month = getSelectedMonth();
-  const rows = getRowsForMonth(month).filter(r => r.status !== 'PAID');
-  if (!rows.length) { alert('Nothing to send for ' + month); return; }
+  document.querySelector('#btnSendAll')?.addEventListener('click', async () => {
+  const ym = getSelectedMonth();        // "YYYY-MM"
+  try {
+    const rows = await getRentRollForMonth(ym);
+    // Only tenants with a positive balance need a message
+    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
 
-  rows.forEach((r, i) => {
-    const url = buildWhatsAppURL(r.tenant_phone, {
-      tenant_name: r.tenant_name,
-      unit: r.unit_name,
-      period: r.period_label,   // e.g., "Nov 2025"
-      amount_due: r.total_due,
-      due_date: r.due_date
-    });
-    setTimeout(() => window.open(url, '_blank'), i * 600); // stagger to avoid popup blockers
-  });
+    if (!dueRows.length) {
+      alert('Nothing to send for ' + ym);
+      return;
+    }
+
+    // open WhatsApp chats, one by one (throttled)
+    let opened = 0, skippedNoPhone = 0;
+    for (const r of dueRows) {
+      const contact = await getContactForLease(r.lease_id);
+      const phone = (contact?.phone || '').trim();
+      if (!phone) { skippedNoPhone++; continue; }
+
+      const url = buildWhatsAppURL(phone, {
+        tenant_name: contact?.tenant || r.tenant || 'Tenant',
+        unit: r.unit_code || 'Unit',
+        period: fmtMonYearFromISO(r.period_start),
+        amount_due: Number(r.balance || r.total_due || 0),
+        due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE') : ''
+      });
+
+      window.open(url, '_blank');
+      opened++;
+      await new Promise(res => setTimeout(res, 600)); // throttle to avoid popup blocks
+    }
+
+    alert(`Opened ${opened} WhatsApp chats. Skipped ${skippedNoPhone} (no phone).`);
+  } catch (e) {
+    console.error(e);
+    alert('Send All failed: ' + e.message);
+  }
 });
+
 
 $('#btnMarkSent')?.addEventListener('click', async () => {
   const selected = getSelectedInvoiceIds();
