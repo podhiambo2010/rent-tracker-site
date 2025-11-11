@@ -37,6 +37,18 @@ function buildWhatsAppURL(msisdn, payload) {
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 
+function buildWhatsAppURL(msisdn, payload) {
+  const msg = [
+    `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
+    `Pay via M-Pesa Paybill 522533, Account 8035949.`,
+    `Other options: PesaLink / Bank transfer / Cheque / Cash / M-Pesa agents (Paybill 522522 → KCB acct).`,
+    `After paying, share the KCB SMS ref (Paybill) or transfer slip (others).`,
+    `Due: ${payload.due_date}. Thank you — Global Star Investments.`
+  ].join('\n');
+  const clean = String(msisdn||'').replace(/\D/g,'');
+  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
+}
+
 /* ---------- app state ---------- */
 const state = {
   api:        (localStorage.getItem("api_base") || DEFAULT_API).replace(/\/$/,""),
@@ -64,6 +76,22 @@ function setAdminToken(v){
   state.adminToken = v || "";
   localStorage.setItem("admin_token", state.adminToken);
   $("#adminToken") && ($("#adminToken").value = state.adminToken);
+}
+
+function getSelectedMonth() {
+  return $('#monthPicker')?.value || new Date().toISOString().slice(0,7); // "YYYY-MM"
+}
+
+// Expect your table loader to stash rows here (do this where you render the grid)
+window.RENT_ROWS = window.RENT_ROWS || []; // [{id, tenant_name, tenant_phone, unit_name, period_label, period_ym, total_due, due_date, status}]
+
+function getRowsForMonth(ym) {
+  return (window.RENT_ROWS||[]).filter(r => r.period_ym === ym);
+}
+
+function getSelectedInvoiceIds() {
+  const ym = getSelectedMonth();
+  return getRowsForMonth(ym).filter(r => r.status !== 'PAID').map(r => r.id);
 }
 
 /* ---------- json fetchers ---------- */
@@ -310,6 +338,43 @@ function wireSettings(){
     toast("Reset to defaults");
   });
 }
+
+$('#btnSendAll')?.addEventListener('click', () => {
+  const ym = getSelectedMonth();
+  const rows = getRowsForMonth(ym).filter(r => r.status !== 'PAID');
+  if (!rows.length) { alert('Nothing to send for ' + ym); return; }
+
+  rows.forEach((r, i) => {
+    const url = buildWhatsAppURL(r.tenant_phone, {
+      tenant_name: r.tenant_name,
+      unit: r.unit_name,
+      period: r.period_label,     // e.g., "Nov 2025"
+      amount_due: r.total_due,
+      due_date: r.due_date
+    });
+    setTimeout(() => window.open(url, '_blank'), i * 600); // stagger to avoid popup blockers
+  });
+});
+
+$('#btnMarkSent')?.addEventListener('click', async () => {
+  const ids = getSelectedInvoiceIds();
+  if (!ids.length) { alert('Select at least one invoice row.'); return; }
+
+  const res = await fetch(`${DEFAULT_API}/invoices/mark_sent`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      invoice_ids: ids,
+      sent_via: 'whatsapp',
+      sent_to: 'tenant',
+      sent_at: new Date().toISOString()
+    })
+  });
+  if (!res.ok) { alert('Mark-sent failed'); return; }
+  // re-load your data so counters update
+  if (typeof refreshGrid === 'function') await refreshGrid();
+  (window.toast||alert)('Marked as sent');
+});
 
 /* =================================================================== */
 /*                        INVOICE ACTIONS (panel)                       */
