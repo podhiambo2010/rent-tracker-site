@@ -227,6 +227,47 @@ async function callDunning(preview){
   return data;
 }
 
+$('#btnSendAll')?.addEventListener('click', () => {
+  const month = getSelectedMonth();
+  const rows = getRowsForMonth(month).filter(r => r.status !== 'PAID');
+  if (!rows.length) { alert('Nothing to send for ' + month); return; }
+
+  rows.forEach((r, i) => {
+    const url = buildWhatsAppURL(r.tenant_phone, {
+      tenant_name: r.tenant_name,
+      unit: r.unit_name,
+      period: r.period_label,   // e.g., "Nov 2025"
+      amount_due: r.total_due,
+      due_date: r.due_date
+    });
+    setTimeout(() => window.open(url, '_blank'), i * 600); // stagger to avoid popup blockers
+  });
+});
+
+$('#btnMarkSent')?.addEventListener('click', async () => {
+  const selected = getSelectedInvoiceIds();
+  if (!selected.length) { alert('Select at least one invoice row.'); return; }
+
+  try {
+    const res = await fetch(`${DEFAULT_API}/invoices/mark_sent`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        invoice_ids: selected,
+        sent_via: 'whatsapp',
+        sent_to: 'tenant',
+        sent_at: new Date().toISOString()
+      })
+    });
+    if (!res.ok) throw new Error('API error');
+    // Refresh table/counters:
+    await refreshGrid?.(); // if you have a function that reloads data
+    (window.toast||alert)('Marked as sent');
+  } catch (e) {
+    alert('Mark-sent failed. Check API logs.');
+  }
+});
+
 /* =================================================================== */
 /*                                TABS                                  */
 /* =================================================================== */
