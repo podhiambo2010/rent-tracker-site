@@ -49,6 +49,59 @@ function buildWhatsAppURL(msisdn, payload) {
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 
+function getSelectedMonth() {
+  // If you have a month picker <select id="monthPicker" value="YYYY-MM"> this will use it.
+  return document.querySelector('#monthPicker')?.value || new Date().toISOString().slice(0,7);
+}
+
+function buildWhatsAppURL(msisdn, payload) {
+  const msg = [
+    `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
+    `Pay via M-Pesa Paybill 522533, Account 8035949.`,
+    `Other options: PesaLink / Bank transfer / Cheque / Cash / M-Pesa agents (Paybill 522522 → KCB acct).`,
+    `After paying, share the KCB SMS ref (Paybill) or transfer slip (others).`,
+    `Due: ${payload.due_date}. Thank you — Global Star Investments.`
+  ].join('\n');
+  const clean = String(msisdn||'').replace(/\D/g,'');
+  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
+}
+
+async function apiJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`API ${r.status}: ${url}`);
+  return r.json();
+}
+
+// rent-roll for a month (from your API). We’ll use rows with balance > 0 only.
+async function getRentRollForMonth(ym) {
+  // /rent-roll?month=YYYY-MM returns mv_rent_roll rows
+  const url = `${DEFAULT_API}/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`;
+  return apiJSON(url); // [{tenant, unit_code, lease_id, period_start, due_date, total_due, paid_amount, balance, ...}]
+}
+
+// phone & email for a lease (from your API)
+async function getContactForLease(lease_id) {
+  const url = `${DEFAULT_API}/contact_for_lease?lease_id=${encodeURIComponent(lease_id)}`;
+  return apiJSON(url); // { tenant, phone, email }
+}
+
+// invoice id for a lease + month (for mark_sent)
+async function getInvoiceIdForLeaseMonth(lease_id, ym) {
+  const url = `${DEFAULT_API}/invoices/for_lease_month?lease_id=${encodeURIComponent(lease_id)}&month=${encodeURIComponent(ym)}`;
+  const data = await fetch(url);
+  if (data.status === 404) return null; // none found
+  const json = await data.json();
+  return json?.invoice?.id || null; // UUID as string
+}
+
+function fmtMonYearFromISO(isoDate) {
+  // "2025-11-01T00:00:00Z" -> "Nov 2025"
+  try {
+    const d = new Date(isoDate);
+    return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  } catch { return ''; }
+}
+
 /* ---------- app state ---------- */
 const state = {
   api:        (localStorage.getItem("api_base") || DEFAULT_API).replace(/\/$/,""),
