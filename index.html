@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Rent Tracker Dashboard</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,31 +12,35 @@
   <style>
     :root{
       --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --text:#f1f5f9;
-      --muted:#93a4c4; --brand:#4f8cff; --brand-2:#7aa7ff; --ok:#22c55e;
-      --warn:#f59e0b; --danger:#ef4444; --chip:#1e2a4a; --bd:#1c2546;
+      --muted:#93a4c4; --brand:#4f8cff; --bd:#1c2546; --chip:#1e2a4a;
+      --ok:#22c55e; --danger:#ef4444;
     }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-         background:linear-gradient(180deg,var(--bg),#060a19 60%);color:var(--text)}
-    a{color:var(--brand)}
+    body{
+      margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      background:linear-gradient(180deg,var(--bg),#060a19 60%); color:var(--text)
+    }
+    a{color:#7aa7ff}
+
+    /* Shell */
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
     header{position:sticky;top:0;z-index:5;background:rgba(15,23,48,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
     .bar{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px 20px;max-width:1200px;margin-inline:auto}
     .brand{display:flex;align-items:center;gap:10px}
-    .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),#13b5d1);box-shadow:0 6px 22px rgba(79,140,255,.45)}
+    .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#4f8cff,#13b5d1);box-shadow:0 6px 22px rgba(79,140,255,.45)}
     .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.3px}
     .env{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .env input{width:360px;max-width:50vw;background:var(--panel-2);border:1px solid var(--bd);color:var(--text);padding:8px 10px;border-radius:10px}
-    .btn{background:var(--brand);border:none;color:white;padding:9px 12px;border-radius:10px;font-weight:600;cursor:pointer}
+
+    .btn{background:#4f8cff;border:none;color:white;padding:9px 12px;border-radius:10px;font-weight:600;cursor:pointer}
     .btn.secondary{background:#223260;color:#dbe7ff}
-    .btn.ghost{background:transparent;border:1px solid var(--bd)}
+    .btn.ghost{background:transparent;border:1px solid var(--bd);color:#cfe0ff}
     .btn:disabled{opacity:.6;cursor:not-allowed}
-    .btn-outline{background:transparent}
 
     main{max-width:1200px;margin:18px auto;padding:0 18px;display:grid;grid-template-columns:240px 1fr;gap:18px}
     nav{position:sticky;top:66px;align-self:start;background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:10px}
-    .tab{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--text);text-decoration:none}
+    .tab{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--text);text-decoration:none;cursor:pointer}
     .tab[aria-selected="true"], .tab:hover{background:var(--chip)}
 
     .panel{background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:14px}
@@ -50,314 +54,227 @@
     .bar-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .chip{background:var(--chip);border:1px solid var(--bd);padding:7px 10px;border-radius:999px;color:#cfe0ff}
     .muted{color:var(--muted)}
+    .hidden{display:none!important}
 
+    /* Per-panel scroller with sticky thead */
+    .table-wrap{max-height:60vh;overflow:auto;border-radius:12px}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
-    thead th{font-size:12px;color:#a9b9dc;text-align:left;padding:8px 10px}
+    thead th{position:sticky;top:0;z-index:1;background:var(--panel-2);font-size:12px;color:#a9b9dc;text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd)}
     tbody td{padding:12px 10px;background:var(--panel-2);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)}
     tbody tr td:first-child{border-left:1px solid var(--bd);border-top-left-radius:10px;border-bottom-left-radius:10px}
     tbody tr td:last-child{border-right:1px solid var(--bd);border-top-right-radius:10px;border-bottom-right-radius:10px}
-
     .status{padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--bd)}
     .status.ok{background:rgba(34,197,94,.08);color:#86efac}
     .status.due{background:rgba(239,68,68,.08);color:#fecaca}
 
     .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
     .filters input,.filters select{background:var(--panel-2);border:1px solid var(--bd);color:var(--text);padding:8px 10px;border-radius:10px}
-
     .empty{color:var(--muted);text-align:center;padding:18px;background:var(--panel-2);border:1px dashed var(--bd);border-radius:12px}
 
-    .toast{position:fixed;right:16px;bottom:16px;background:#111936;border:1px solid var(--bd);padding:10px 12px;border-radius:10px;display:none}
-    .footer{color:var(--muted);padding:18px 20px;border-top:1px solid var(--bd);background:#0a1228}
-    .hidden{display:none!important}
+    /* Logs / previews */
+    #dunningLog,#dunningOut{max-height:40vh;overflow:auto;background:#0b1020;color:#e6edf3;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
 
     @media (max-width:980px){ main{grid-template-columns:1fr} nav{position:static} .kpi{grid-column:span 6} }
-    @media (max-width:640px){ .kpi{grid-column:span 12} .env input{max-width:100%;width:220px} }
+    @media (max-width:640px){ .kpi{grid-column:span 12} .env input{max-width:100%;width:220px} .table-wrap{max-height:50vh} }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <header>
-      <div class="bar">
-        <div class="brand">
-          <div class="logo"></div>
-          <h1>Rent Tracker Dashboard</h1>
+<div class="shell">
+  <header>
+    <div class="bar">
+      <div class="brand">
+        <div class="logo"></div>
+        <h1>Rent Tracker Dashboard</h1>
+      </div>
+      <div class="env">
+        <input id="apiBase" placeholder="API base e.g. https://rent-tracker-api-16i0.onrender.com"/>
+        <button class="btn" id="useApi">Use this API</button>
+        <button class="btn secondary" id="openDocs">/docs</button>
+        <button class="btn ghost" id="setAdminTokenBtn" title="Set Admin Token">⚙️ Admin Token</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <nav aria-label="Sections">
+      <a class="tab" data-tab="overview" aria-selected="true">🏠 Overview</a>
+      <a class="tab" data-tab="leases">🔑 Leases</a>
+      <a class="tab" data-tab="payments">💸 Payments</a>
+      <a class="tab" data-tab="rentroll">🧾 Rent Roll</a>
+      <a class="tab" data-tab="balances">📊 Balances</a>
+      <a class="tab" data-tab="whatsapp">📱 WhatsApp</a>
+      <a class="tab" data-tab="settings">⚙️ Settings</a>
+    </nav>
+
+    <section>
+
+      <!-- ===== Invoice Actions / Admin ===== -->
+      <div class="panel" id="invoiceActions" style="margin:0 0 16px;">
+        <h3 style="margin:0 0 8px;">Invoice Actions</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
+                style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
+          <button id="btnMarkSent" class="btn">Mark as sent</button>
+          <button id="btnHealth" class="btn ghost">Auth ping</button>
         </div>
-        <div class="env">
-          <input id="apiBase" placeholder="API base e.g. https://rent-tracker-api-16i0.onrender.com" />
-          <button class="btn" id="useApi">Use this API</button>
-          <button class="btn secondary" id="openDocs">/docs</button>
-          <!-- Admin Token gear lives in the BODY, not HEAD -->
-          <button class="btn ghost" id="setAdminTokenBtn" title="Set Admin Token">⚙️ Admin Token</button>
+        <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
+      </div>
+
+      <!-- ===== Overview ===== -->
+      <div class="panel" id="tab-overview">
+        <h2>Overview</h2>
+        <div class="grid" id="kpis">
+          <div class="kpi"><h3>Total Leases</h3><div class="v" id="kpiLeases">—</div></div>
+          <div class="kpi"><h3>Open Invoices (month)</h3><div class="v" id="kpiOpen">—</div></div>
+          <div class="kpi"><h3>Payments (month)</h3><div class="v" id="kpiPayments">—</div></div>
+          <div class="kpi"><h3>Balance Due (month)</h3><div class="v" id="kpiBalance">—</div></div>
+        </div>
+        <div class="filters">
+          <input id="monthPicker" type="month" />
+          <button id="btnSendAll" class="btn">Send All (This Month)</button>
+          <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
         </div>
       </div>
-    </header>
 
-    <main>
-      <nav aria-label="Sections">
-        <a class="tab" data-tab="overview" aria-selected="true">🏠 Overview</a>
-        <a class="tab" data-tab="leases">🔑 Leases</a>
-        <a class="tab" data-tab="payments">💸 Payments</a>
-        <a class="tab" data-tab="rentroll">🧾 Rent Roll</a>
-        <a class="tab" data-tab="balances">📊 Balances</a>
-        <a class="tab" data-tab="whatsapp">📱 WhatsApp</a>
-        <a class="tab" data-tab="settings">⚙️ Settings</a>
-      </nav>
-/* Per-panel scrollers */
-.table-wrap{
-  max-height: calc(100vh - 320px); /* fits under header/kpis */
-  overflow: auto;
-  border-radius: 12px;
-}
-
-/* Sticky table headers inside scrollers */
-.table-wrap table{ width:100%; border-collapse: collapse; }
-.table-wrap thead th{
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #0f1730;           /* match your theme */
-}
-
-/* Keep long logs/previews contained */
-#dunningLog, #dunningOut{
-  max-height: 40vh;
-  overflow: auto;
-}
-
-      <section>
-        <!-- ===== Invoice Actions (buttons) ===== -->
-        <div class="panel" style="margin: 0 0 16px;">
-          <h3 style="margin:0 0 8px;">Invoice Actions</h3>
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
-                   style="flex:1; min-width:260px; padding:8px; border-radius:8px; border:1px solid #2a345a; background:#0f1730; color:#fff;">
-            <button id="btnMarkSent" class="btn">Mark as sent</button>
-            <button id="btnHealth" class="btn btn-outline">Auth ping</button>
-          </div>
-          <div id="actionMsg" style="margin-top:8px; font-size:14px; color:#93a4c4;"></div>
+      <!-- ===== Leases ===== -->
+      <div class="panel hidden" id="tab-leases">
+        <div class="bar-flex">
+          <h2>Leases</h2><span class="chip" id="leasesCount">—</span>
         </div>
-        <!-- ===== /Invoice Actions ===== -->
-
-        <!-- OVERVIEW -->
-        <div class="panel" id="tab-overview">
-          <h2>Overview</h2>
-          <div class="grid" id="kpis">
-            <div class="kpi"><h3>Total Leases</h3><div class="v" id="kpiLeases">—</div></div>
-            <div class="kpi"><h3>Open Invoices (month)</h3><div class="v" id="kpiOpen">—</div></div>
-            <div class="kpi"><h3>Payments (month)</h3><div class="v" id="kpiPayments">—</div></div>
-            <div class="kpi"><h3>Balance Due (month)</h3><div class="v" id="kpiBalance">—</div></div>
-          </div>
+        <div class="filters">
+          <input id="leaseSearch" placeholder="Search tenant or unit…"/>
+          <button class="btn ghost" id="reloadLeases">Reload</button>
         </div>
-
-        <!-- LEASES -->
-        <div class="panel hidden" id="tab-leases">
-          <div class="bar-flex">
-            <h2>Leases</h2>
-            <span class="chip" id="leasesCount">—</span>
-          </div>
-          <div class="filters">
-            <input id="leaseSearch" placeholder="Search tenant or unit…" />
-            <button class="btn ghost" id="reloadLeases">Reload</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tenant</th><th>Unit</th><th>Rent</th><th>Cycle</th>
-                  <th>Due Day</th><th>Status</th><th>WhatsApp</th>
-                </tr>
-              </thead>
-              <tbody id="leasesBody"></tbody>
-            </table>
-            <div id="leasesEmpty" class="empty hidden">No leases to show yet.</div>
-          </div>
-        </div>
-
-        <!-- PAYMENTS -->
-        <div class="panel hidden" id="tab-payments">
-          <div class="bar-flex">
-            <h2>Payments</h2>
-            <span class="chip" id="paymentsCount">—</span>
-          </div>
-          <div class="filters">
-            <select id="paymentsMonth"></select>
-            <input id="paymentsTenant" placeholder="Tenant contains…" />
-            <select id="paymentsStatus">
-              <option value="">Any status</option>
-              <option value="posted">posted</option>
-              <option value="pending">pending</option>
-              <option value="failed">failed</option>
-            </select>
-            <button class="btn" id="applyPayments">Apply</button>
-            <button class="btn ghost" id="clearPayments">Clear</button>
-          </div>
+        <div class="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Date</th><th>Tenant</th><th>Method</th>
-                <th class="muted">Status</th><th style="text-align:right">Amount</th>
-              </tr>
+              <tr><th>Tenant</th><th>Unit</th><th>Rent</th><th>Cycle</th><th>Due Day</th><th>Status</th><th>WhatsApp</th></tr>
+            </thead>
+            <tbody id="leasesBody"></tbody>
+          </table>
+        </div>
+        <div id="leasesEmpty" class="empty hidden">No leases to show yet.</div>
+      </div>
+
+      <!-- ===== Payments ===== -->
+      <div class="panel hidden" id="tab-payments">
+        <div class="bar-flex">
+          <h2>Payments</h2><span class="chip" id="paymentsCount">—</span>
+        </div>
+        <div class="filters">
+          <select id="paymentsMonth"></select>
+          <input id="paymentsTenant" placeholder="Tenant contains…"/>
+          <select id="paymentsStatus">
+            <option value="">Any status</option>
+            <option value="posted">posted</option>
+            <option value="pending">pending</option>
+            <option value="failed">failed</option>
+          </select>
+          <button class="btn" id="applyPayments">Apply</button>
+          <button class="btn ghost" id="clearPayments">Clear</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Tenant</th><th>Method</th><th class="muted">Status</th><th style="text-align:right">Amount</th></tr>
             </thead>
             <tbody id="paymentsBody"></tbody>
           </table>
-          <div id="paymentsEmpty" class="empty hidden">No payments match your filters.</div>
         </div>
+        <div id="paymentsEmpty" class="empty hidden">No payments match your filters.</div>
+      </div>
 
-        <!-- RENT ROLL -->
-<button id="btnSendAll" class="btn">Send All (This Month)</button>
-<button id="btnMarkSent" class="btn">Mark Selected as Sent</button>
-
-        
-        <!-- in the RENT ROLL table header -->
-<thead>
-  <tr>
-    <th>Property</th><th>Unit</th><th>Tenant</th><th>Period</th>
-    <th>Due</th><th>Status</th><th style="text-align:right">Balance</th>
-    <th>Actions</th> <!-- ← add this -->
-  </tr>
-</thead>
-
-        <div class="panel hidden" id="tab-rentroll">
-          <div class="bar-flex">
-            <h2>Rent Roll</h2>
-            <span class="chip" id="rentrollCount">—</span>
-          </div>
-          <div class="filters">
-            <select id="rentrollMonth"></select>
-            <input id="rentrollTenant" placeholder="Tenant contains…" />
-            <input id="rentrollProperty" placeholder="Property contains…" />
-            <button class="btn" id="applyRentroll">Apply</button>
-            <button class="btn ghost" id="clearRentroll">Clear</button>
-          </div>
+      <!-- ===== Rent Roll ===== -->
+      <div class="panel hidden" id="tab-rentroll">
+        <div class="bar-flex">
+          <h2>Rent Roll</h2><span class="chip" id="rentrollCount">—</span>
+        </div>
+        <div class="filters">
+          <select id="rentrollMonth"></select>
+          <input id="rentrollTenant" placeholder="Tenant contains…"/>
+          <input id="rentrollProperty" placeholder="Property contains…"/>
+          <button class="btn" id="applyRentroll">Apply</button>
+          <button class="btn ghost" id="clearRentroll">Clear</button>
+        </div>
+        <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Property</th><th>Unit</th><th>Tenant</th><th>Period</th>
-                <th>Due</th><th>Status</th><th style="text-align:right">Balance</th>
+                <th>Due</th><th>Status</th><th style="text-align:right">Balance</th><th>Actions</th>
               </tr>
             </thead>
             <tbody id="rentrollBody"></tbody>
           </table>
-          <div id="rentrollEmpty" class="empty hidden">No rent-roll rows match your filters.</div>
         </div>
+        <div id="rentrollEmpty" class="empty hidden">No rent-roll rows match your filters.</div>
+      </div>
 
-        <!-- BALANCES -->
-        <div class="panel hidden" id="tab-balances">
-          <div class="bar-flex">
-            <h2>Balances (This Month)</h2>
-            <button class="btn ghost" id="reloadBalances">Reload</button>
-          </div>
+      <!-- ===== Balances ===== -->
+      <div class="panel hidden" id="tab-balances">
+        <div class="bar-flex">
+          <h2>Balances (This Month)</h2><button class="btn ghost" id="reloadBalances">Reload</button>
+        </div>
+        <div class="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Tenant</th><th>Lease</th><th>Period</th><th>Status</th>
-                <th style="text-align:right">Balance</th>
-              </tr>
+              <tr><th>Tenant</th><th>Lease</th><th>Period</th><th>Status</th><th style="text-align:right">Balance</th></tr>
             </thead>
             <tbody id="balancesBody"></tbody>
           </table>
-          <div id="balancesEmpty" class="empty hidden">No current-month balances.</div>
         </div>
+        <div id="balancesEmpty" class="empty hidden">No current-month balances.</div>
+      </div>
 
-        <!-- WHATSAPP -->
-        <div class="panel hidden" id="tab-whatsapp">
-          <h2>WhatsApp Message</h2>
-          <div class="filters">
-            <input id="waTenant" placeholder="Tenant name (e.g., Legacy Barber Shop)" />
-            <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)" />
-            <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)" />
-            <input id="waBalance" type="number" placeholder="Balance amount (KSh)" />
-            <button class="btn" id="waBuild">Build Link</button>
-          </div>
-          <p class="muted">Use this for ad-hoc messages. For real leases, click the WhatsApp icon in the <b>Leases</b> table.</p>
-          <div id="waResult" class="muted"></div>
+      <!-- ===== WhatsApp (ad-hoc) ===== -->
+      <div class="panel hidden" id="tab-whatsapp">
+        <h2>WhatsApp Message</h2>
+        <div class="filters">
+          <input id="waTenant" placeholder="Tenant name"/>
+          <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
+          <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)"/>
+          <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
+          <button class="btn" id="waBuild">Build Link</button>
         </div>
+        <p class="muted">For real leases, use the WhatsApp button in <b>Leases</b> or the overview “Send All”.</p>
+        <div id="waResult" class="muted"></div>
+      </div>
 
-        <!-- SETTINGS -->
-        <div class="panel hidden" id="tab-settings">
-          <h2>Settings</h2>
-          <p class="muted">These settings are stored only in your browser (localStorage).</p>
-
-          <div class="filters" style="gap:14px; align-items:center; flex-wrap:wrap">
-            <label style="display:flex;gap:8px;align-items:center">
-              API Base
-              <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com" />
-            </label>
-
-            <label style="display:flex;gap:8px;align-items:center">
-              Admin Token
-              <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off" />
-            </label>
-
-            <button class="btn" id="saveSettings">Save</button>
-            <button class="btn ghost" id="resetSettings">Reset</button>
-          </div>
-
-          <p class="muted" style="margin-top:8px">
-            The Admin Token must match the <code>ADMIN_TOKEN</code> configured on the API service in Render.
-            It’s saved only in this browser.
-          </p>
+      <!-- ===== Settings ===== -->
+      <div class="panel hidden" id="tab-settings">
+        <h2>Settings</h2>
+        <p class="muted">Saved only in this browser (localStorage).</p>
+        <div class="filters" style="gap:14px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;gap:8px;align-items:center">API Base
+            <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com"/>
+          </label>
+          <label style="display:flex;gap:8px;align-items:center">Admin Token
+            <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off"/>
+          </label>
+          <button class="btn" id="saveSettings">Save</button>
+          <button class="btn ghost" id="resetSettings">Reset</button>
         </div>
-      </section>
-    </main>
-  </div>
+      </div>
 
-  <!-- ==== Helpers and actions (load AFTER HTML so elements exist) ==== -->
-  <script>
-    const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
+    </section>
+  </main>
+</div>
 
-    function getAdminToken() {
-      let t = localStorage.getItem("admin_token");
-      if (!t) {
-        t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
-        if (t) localStorage.setItem("admin_token", t);
-      }
-      return t || "";
-    }
-    function setAdminToken(t){ localStorage.setItem("admin_token", t); }
+<!-- Small helpers available before app.js -->
+<script>
+  const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
+  function getAdminToken(){
+    let t = localStorage.getItem("admin_token");
+    if(!t){ t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:"); if(t) localStorage.setItem("admin_token", t); }
+    return t || "";
+  }
+  function setAdminToken(t){ localStorage.setItem("admin_token", t); }
+  document.getElementById("setAdminTokenBtn")?.addEventListener("click", ()=>{
+    const t = prompt("Paste ADMIN_TOKEN"); if(t) setAdminToken(t);
+  });
+</script>
 
-    async function markInvoiceSent(invoiceId) {
-      const token = getAdminToken();
-      const r = await fetch(`${API_BASE}/invoices/mark_sent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Token": token
-        },
-        body: JSON.stringify({ invoice_id: invoiceId })
-      });
-      if (!r.ok) {
-        const err = await r.text().catch(()=> "");
-        alert("Failed to mark sent: " + r.status + " " + err);
-        return null;
-      }
-      return r.json();
-    }
-
-    function onWhatsApp(leaseId){
-      window.open(`${API_BASE}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}`, "_blank");
-    }
-
-    async function onMarkSent(btn, invoiceId){
-      btn.disabled = true;
-      const data = await markInvoiceSent(invoiceId);
-      if (data?.invoice) {
-        const row = btn.closest("tr");
-        row?.querySelector(".inv-status")?.replaceChildren(document.createTextNode(data.invoice.status));
-        row?.querySelector(".inv-sent-at")?.replaceChildren(document.createTextNode(data.invoice.sent_at ?? ""));
-      } else {
-        btn.disabled = false;
-      }
-    }
-
-    // Wire the Admin Token gear now that helpers exist
-    document.getElementById('setAdminTokenBtn')?.addEventListener('click', () => {
-      const t = prompt("Paste ADMIN_TOKEN");
-      if (t) setAdminToken(t);
-    });
-  </script>
-
-  <!-- App logic (must be last) -->
-  <script src="./app.js"></script>
+<!-- App logic (must be last) -->
+<script src="./app.js"></script>
 </body>
 </html>
