@@ -230,35 +230,56 @@ async function loadDunningLog(month="", stage=""){
 
 async function callDunning(preview){
   if(!state.adminToken){ toast("Set Admin token in Settings first"); return; }
-  const url = `${state.api}/cron/dunning?dry_run=${preview?1:0}`;
-  const opt = preview
-    ? { method:"GET",  headers:{ "X-Admin-Token": state.adminToken } }
-    : { method:"POST", headers:{ "X-Admin-Token": state.adminToken } };
 
-  const out = $("#actionMsg"); if(out) out.textContent = preview ? "Running…" : "Applying…";
-  const r = await fetch(url, opt);
-  const data = await r.json();
-  if(out) out.textContent = JSON.stringify(data, null, 2);
+  // ensure preview container exists
+  let wrap = document.getElementById("dunningPreview");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "dunningPreview";
+    wrap.style.marginTop = "12px";
+    const anchor = document.getElementById("invoiceActions") || document.body;
+    anchor.insertAdjacentElement("afterend", wrap);
+  }
+  wrap.innerHTML = `<pre id="dunningOut" style="white-space:pre-wrap;background:#0b1020;color:#e6edf3;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px;"></pre>`;
+  const out = document.getElementById("dunningOut");
+  out.textContent = preview ? "Running dunning (preview)..." : "Applying dunning...";
 
-  const wrap = $("#dunningPreview") || (()=>{ const d=document.createElement("div"); d.id="dunningPreview";
-    ($("#btnDunningDry")||$("#invoiceActions")||document.body).insertAdjacentElement("afterend", d); return d; })();
-  const listBlock = (title, arr)=>{
-    if(!arr || !arr.length) return "";
-    const items = arr.map(x=>{
-      const id = (x.invoice_id||"").slice(0,8)+"…";
-      const fee = x.fee ? ` • fee ${Number(x.fee).toLocaleString("en-KE")}` : "";
-      const wa  = x.wa ? ` — <a href="${x.wa}" target="_blank">Open in WhatsApp</a>` : "";
-      return `<li>Inv ${id} • Lease ${String(x.lease_id||"").slice(0,8)}… • Bal ${Number(x.balance||0).toLocaleString("en-KE")}${fee}${wa}</li>`;
-    }).join("");
-    return `<h4 style="margin:.75rem 0">${title}</h4><ul>${items}</ul>`;
-  };
-  wrap.innerHTML =
-    listBlock("Day 5 reminders", data.day5) +
-    listBlock("Day 10 (late fee stage)", data.day10) +
-    listBlock("Overdue (past months)", data.overdue);
+  try {
+    const url = `${state.api}/cron/dunning?dry_run=${preview?1:0}`;
+    const opt = preview
+      ? { method:"GET",  headers:{ "X-Admin-Token": state.adminToken } }
+      : { method:"POST", headers:{ "X-Admin-Token": state.adminToken } };
 
-  toast(preview ? "Dunning preview ready" : "Dunning applied");
-  return data;
+    const r = await fetch(url, opt);
+    const data = await r.json();
+
+    // Render friendly summary + per-item lists
+    const list = (title, arr) => {
+      if (!arr?.length) return `\n${title}: 0`;
+      const items = arr.map(x => {
+        const inv = String(x.invoice_id||"").slice(0,8)+"…";
+        const lea = String(x.lease_id||"").slice(0,8)+"…";
+        const bal = Number(x.balance||0).toLocaleString("en-KE");
+        const fee = x.fee ? ` | fee ${Number(x.fee).toLocaleString("en-KE")}` : "";
+        const wa  = x.wa ? ` | WA: ${x.wa}` : "";
+        return ` • inv ${inv} | lease ${lea} | bal KES ${bal}${fee}${wa}`;
+      }).join("\n");
+      return `\n${title}: ${arr.length}\n${items}`;
+    };
+
+    out.textContent =
+      `Dunning preview ${data.dry_run ? "(dry run)" : "(applied)"}\n` +
+      `Date: ${data.today}\nLate fee: ${data.late_fee_pct} (min KES ${data.late_fee_min_kes})\n` +
+      list("Day 5 reminders", data.day5) +
+      list("Day 10 (late fee stage)", data.day10) +
+      list("Overdue (past months)", data.overdue);
+
+    toast(preview ? "Dunning preview ready" : "Dunning applied");
+  } catch (e) {
+    console.error(e);
+    out.textContent = `Failed to run dunning: ${e}`;
+    toast("Dunning request failed");
+  }
 }
 
 /* =================================================================== */
