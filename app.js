@@ -329,15 +329,16 @@ function wireSettings(){
 /*                        INVOICE ACTIONS (panel)                       */
 /* =================================================================== */
 function wireActions(){
-  // Ensure a <pre id="actionMsg"> exists
+  // Ensure a <pre id="actionMsg"> exists just below the actions panel
   if (!$("#actionMsg")){
     const pre = document.createElement("pre");
     pre.id = "actionMsg";
+    pre.style.whiteSpace = "pre-wrap";
     const anchor = $("#invoiceActions") || $(".panel") || document.body;
     anchor.insertAdjacentElement("afterend", pre);
   }
 
-  // Single "Mark as sent" (by typing UUID)
+  // ---------- Single "Mark as sent" (by typing UUID) ----------
   $("#btnMarkSent")?.addEventListener("click", async ()=>{
     const invoice_id = ($("#invoiceIdInput")?.value || "").trim();
     if (!invoice_id) return toast("Enter an invoice_id first");
@@ -354,6 +355,56 @@ function wireActions(){
       toast("Request failed");
     }
   });
+
+  // ---------- Dunning buttons (ensure & wire) ----------
+  function ensureButton(afterSel, id, label){
+    if ($(id)) return $(id);
+    const anchor = $(afterSel) || $("#invoiceActions") || document.body;
+    const btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.id = id.replace(/^#/, "");
+    btn.textContent = label;
+    anchor.insertAdjacentElement("afterend", btn);
+    return btn;
+  }
+  const bDry   = ensureButton("#btnMarkSent",   "#btnDunningDry",       "Dunning (dry run)");
+  const bApply = ensureButton("#btnDunningDry", "#btnDunningApply",     "Dunning (apply)");
+  const bLogR  = ensureButton("#btnDunningApply","#btnDunningLogRecent","Dunning log (recent)");
+  const bLogM  = ensureButton("#btnDunningLogRecent","#btnDunningLogMonth","Dunning log (this month)");
+
+  bDry?.addEventListener("click",  ()=> callDunning(true));
+  bApply?.addEventListener("click", ()=>{
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
+    if (confirm("Apply late fees and log reminders now?")) callDunning(false);
+  });
+  bLogR?.addEventListener("click", ()=> loadDunningLog());
+  bLogM?.addEventListener("click", ()=> loadDunningLog(yyyymm()));
+
+  // ---------- Auth ping (robust selector) ----------
+  const authBtn =
+    $("#btnHealth") ||
+    Array.from(document.querySelectorAll("button"))
+      .find(b => (b.textContent||"").trim().toLowerCase() === "auth ping");
+
+  authBtn?.addEventListener("click", async ()=>{
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
+    const out = $("#actionMsg"); if (out) out.textContent = "Pinging…";
+    try{
+      const r = await fetch(`${state.api}/admin/ping`, {
+        headers: {
+          "X-Admin-Token": state.adminToken,
+          "Authorization": `Bearer ${state.adminToken}` // also send as Bearer just in case
+        }
+      });
+      const data = await r.json().catch(()=> ({}));
+      if (out) out.textContent = JSON.stringify(data, null, 2);
+      toast(r.ok ? "Admin auth OK" : `Unauthorized (${r.status})`);
+    }catch(e){
+      if (out) out.textContent = String(e);
+      toast("Ping failed");
+    }
+  });
+}
 
   // Dunning buttons
   function ensure(afterSel, id, label){
