@@ -36,27 +36,35 @@ function fmtMonYearFromISO(isoDate) {
     return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
   } catch { return ''; }
 }
-// --- clearer WhatsApp message (total, paid, balance) ---
+
+// --- clear WhatsApp message with full payment options ---
 function buildWhatsAppURL(msisdn, payload) {
   const kes = n => `KES ${Number(n||0).toLocaleString('en-KE')}`;
-  const lines = [
+  const dueDate = payload.due_date || '';
+
+  const msg = [
     `Hello ${payload.tenant_name},`,
     `Rent for ${payload.unit} — ${payload.period}`,
     ``,
     `Total billed:  ${kes(payload.total_due)}`,
     `Paid so far:   ${kes(payload.paid_to_date)}`,
     `Balance due:   ${kes(payload.amount_due)}`,
-    `Due date:      ${payload.due_date || ''}`,
+    `Due date:      ${dueDate}`,
     ``,
-    `Pay via M-Pesa Paybill 522533 (Account 8035949).`,
-    `Alternatively: PesaLink / Bank transfer / Cheque / Cash.`,
-    `After payment, please share the M-Pesa confirmation SMS or transfer slip.`,
+    `PAYMENT OPTIONS (Global Star Investments Limited):`,
+    `1) M-Pesa Paybill 522533  | Account: 8035949`,
+    `2) M-Pesa Agent/Merchant 522522  | KCB A/C: 1285399528`,
+    `3) Bank Transfer / Cheque | KCB, Siaya Branch  | A/C: 1285399528`,
     ``,
-    `Thank you — Global Star Investments.`
+    `CASH: Please deposit at the bank to the KCB account above — do not hand cash to individuals.`,
+    ``,
+    `After payment, kindly share the M-Pesa confirmation SMS or bank slip.`,
+    ``,
+    `Thank you — Global Star Investments Limited.`
   ].join('\n');
 
   const clean = String(msisdn||'').replace(/\D/g,'');
-  return `https://wa.me/${clean}?text=${encodeURIComponent(lines)}`;
+  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 
 /* ---------- API helpers ---------- */
