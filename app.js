@@ -739,21 +739,13 @@ $("#btnMarkSelected")?.addEventListener("click", async () => {
   }
 });
 
-/* Wrap tables in scrollable containers so each panel scrolls independently */
-function ensurePanelScrollWrappers(){
-  const ids = ["leasesBody","paymentsBody","rentrollBody","balancesBody"];
-  ids.forEach(id=>{
+/* ---------- Make each table body scroll (no DOM moves) ---------- */
+function tagScrollingTables(){
+  ["leasesBody","paymentsBody","rentrollBody","balancesBody"].forEach(id=>{
     const tb = document.getElementById(id);
     if(!tb) return;
     const table = tb.closest("table");
-    if(!table) return;
-    const parent = table.parentElement;
-    if(parent && !parent.classList.contains("table-wrap")){
-      const wrap = document.createElement("div");
-      wrap.className = "table-wrap";
-      parent.insertBefore(wrap, table);
-      wrap.appendChild(table);
-    }
+    if(table) table.classList.add("scrolling-table");
   });
 }
 
@@ -764,7 +756,9 @@ function ensurePanelScrollWrappers(){
   setAPI(state.api);
   setAdminToken(state.adminToken);
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
-  wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons(); ensurePanelScrollWrappers();
-// <-- add this line
+
+  wireTabs(); wireHeader(); wireSettings(); wireActions(); ensureExportButtons();
+
+  tagScrollingTables();   // <-- per-table scrollers with sticky headers
   showTab("overview");
 })();
