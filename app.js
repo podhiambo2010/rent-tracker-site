@@ -36,16 +36,27 @@ function fmtMonYearFromISO(isoDate) {
     return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
   } catch { return ''; }
 }
+// --- clearer WhatsApp message (total, paid, balance) ---
 function buildWhatsAppURL(msisdn, payload) {
-  const msg = [
-    `Hello ${payload.tenant_name} — Rent for ${payload.unit} (${payload.period}) is KES ${Number(payload.amount_due||0).toLocaleString()}.`,
-    `Pay via M-Pesa Paybill 522533, Account 8035949.`,
-    `Other options: PesaLink / Bank transfer / Cheque / Cash / M-Pesa agents (Paybill 522522 → KCB acct).`,
-    `After paying, share the KCB SMS ref (Paybill) or transfer slip (others).`,
-    `Due: ${payload.due_date}. Thank you — Global Star Investments.`
+  const kes = n => `KES ${Number(n||0).toLocaleString('en-KE')}`;
+  const lines = [
+    `Hello ${payload.tenant_name},`,
+    `Rent for ${payload.unit} — ${payload.period}`,
+    ``,
+    `Total billed:  ${kes(payload.total_due)}`,
+    `Paid so far:   ${kes(payload.paid_to_date)}`,
+    `Balance due:   ${kes(payload.amount_due)}`,
+    `Due date:      ${payload.due_date || ''}`,
+    ``,
+    `Pay via M-Pesa Paybill 522533 (Account 8035949).`,
+    `Alternatively: PesaLink / Bank transfer / Cheque / Cash.`,
+    `After payment, please share the M-Pesa confirmation SMS or transfer slip.`,
+    ``,
+    `Thank you — Global Star Investments.`
   ].join('\n');
+
   const clean = String(msisdn||'').replace(/\D/g,'');
-  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
+  return `https://wa.me/${clean}?text=${encodeURIComponent(lines)}`;
 }
 
 /* ---------- API helpers ---------- */
@@ -623,14 +634,18 @@ $("#btnSendAll")?.addEventListener("click", async () => {
       const contact = await getContactForLease(r.lease_id);
       const phone = (contact?.phone || '').trim();
       if (!phone) { skippedNoPhone++; continue; }
-
+     // inside #btnSendAll click loop
       const url = buildWhatsAppURL(phone, {
         tenant_name: contact?.tenant || r.tenant || 'Tenant',
         unit: r.unit_code || r.unit || 'Unit',
         period: fmtMonYearFromISO(r.period_start),
+        // numbers for the message:
+        total_due: Number(r.total_due || 0),
+        paid_to_date: Number(r.paid_amount || 0),
         amount_due: Number(r.balance || r.total_due || 0),
-        due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE') : ''
+        due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE', { day:'2-digit', month:'short', year:'numeric' }) : ''
       });
+
       window.open(url, '_blank');
       opened++;
       await new Promise(res => setTimeout(res, 600));
