@@ -2,9 +2,26 @@
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
-// Supabase (read-only) for dashboard tiles
-const SUPABASE_URL = 'https://xeqxxgqbooigowxqhtmf.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648';
+
+// --- Supabase (read-only) for dashboard tile ---
+const SUPA_URL  = 'https://xeqxxgqbooigowxqhtmf.supabase.co';
+const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648'; // anon only
+async function fetchOutstandingRows(){
+  const url = `${SUPA_URL}/rest/v1/outstanding_by_tenant_current_month?select=tenant_name,outstanding&order=outstanding.desc`;
+  const res = await fetch(url, { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } });
+  if(!res.ok) throw new Error(`Supabase ${res.status}`);
+  return res.json();
+}
+function renderOutstanding(rows){
+  const body = document.getElementById('outstandingBody');
+  const empty= document.getElementById('outstandingEmpty');
+  if(!body) return;
+  const r = rows || [];
+  body.innerHTML = r.map(x => `
+    <tr><td>${x.tenant_name||'—'}</td>
+        <td style="text-align:right">Ksh ${Number(x.outstanding||0).toLocaleString('en-KE')}</td></tr>`).join('');
+  empty?.classList.toggle('hidden', r.length>0);
+}
 
 /* ---------- tiny helpers ---------- */
 const $  = (q, el=document) => el.querySelector(q);
@@ -287,7 +304,15 @@ async function loadOverview(){
     const bSum = (B||[]).reduce((s,x)=> s + (Number(x.balance)||0), 0);
     $("#kpiBalance") && ($("#kpiBalance").textContent  = ksh(bSum));
   }catch(e){ console.error(e); toast("Failed to load overview"); }
-}
+      // also load Supabase view → dashboard tile
+    try {
+      const O = await fetchOutstandingRows();
+      renderOutstanding(O);
+    } catch (e) {
+      console.error('Outstanding tile failed', e);
+      renderOutstanding([]);
+    }
+  }
 
 async function loadLeases(){
   try{
