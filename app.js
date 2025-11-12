@@ -228,6 +228,10 @@ function wireHeader(){
   $("#openDocs")?.addEventListener("click", ()=> window.open(`${state.api}/docs`,`_blank`));
 }
 
+document.getElementById('reloadOutstanding')?.addEventListener('click', async ()=>{
+  try { renderOutstanding(await fetchOutstandingRows()); } catch(e){ console.error(e); }
+});
+
 /* ============================= SETTINGS ============================= */
 function wireSettings(){
   $("#saveSettings")?.addEventListener("click", ()=>{ setAPI($("#apiBase2")?.value || DEFAULT_API); setAdminToken($("#adminToken")?.value || ""); toast("Settings saved"); });
