@@ -136,6 +136,20 @@
         </div>
       </div>
 
+      <div class="panel" style="margin-top:12px">
+  <div class="bar-flex">
+    <h3>Outstanding by tenant (this month)</h3>
+    <button class="btn ghost" id="reloadOutstanding">Reload</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Tenant</th><th style="text-align:right">Outstanding</th></tr></thead>
+      <tbody id="outstandingBody"></tbody>
+    </table>
+  </div>
+  <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
+</div>
+
       <!-- ===== Leases ===== -->
       <div class="panel hidden" id="tab-leases">
         <div class="bar-flex">
