@@ -37,6 +37,17 @@ async function getOutstandingByTenantCurrentMonth(){
   if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
+async function fetchOutstandingFromSupabase(){
+  const url = 'https://xeqxxgqbooigowxqhtmf.supabase.co/rest/v1/outstanding_by_tenant_current_month?select=*';
+  const res = await fetch(url, {
+    headers: {
+      apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648',
+      Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648'
+    }
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
 
 /* CSV helpers */
 const csvEscape = (v)=>{ const s=v==null?"":String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
