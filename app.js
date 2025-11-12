@@ -2,6 +2,9 @@
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
+// Supabase (read-only) for dashboard tiles
+const SUPABASE_URL = 'https://xeqxxgqbooigowxqhtmf.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648';
 
 /* ---------- tiny helpers ---------- */
 const $  = (q, el=document) => el.querySelector(q);
@@ -9,6 +12,14 @@ const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
+async function getOutstandingByTenantCurrentMonth(){
+  const url = `${SUPABASE_URL}/rest/v1/outstanding_by_tenant_current_month?select=*`;
+  const r = await fetch(url, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
 
 /* CSV helpers */
 const csvEscape = (v)=>{ const s=v==null?"":String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
@@ -412,23 +423,30 @@ $("#rentrollBody")?.addEventListener("click", async (ev)=>{
 
 async function loadBalances(){
   try{
-    const rows=await jget("/balances"); state.balancesView=rows||[];
+    const rows = await getOutstandingByTenantCurrentMonth();   // ← Supabase view
+    state.balancesView = rows || [];
+
     $("#balancesEmpty")?.classList.toggle("hidden", !!rows?.length);
-    $("#balancesBody").innerHTML=(rows||[]).map(r=>`
+    $("#balancesBody").innerHTML = (rows||[]).map(r=>`
       <tr>
-        <td>${r.tenant ?? "—"}</td>
-        <td>${(r.lease_id||"").slice(0,8)}…</td>
-        <td>${r.period_start ?? "—"} → ${r.period_end ?? "—"}</td>
-        <td>${r.status ?? "—"}</td>
-        <td style="text-align:right">${money(r.balance)}</td>
+        <td>${r.tenant_name ?? "—"}</td>
+        <td>${(r.tenant_id||"").slice(0,8)}…</td>
+        <td>${new Date().toLocaleString('en-KE',{month:'short', year:'numeric'})}</td>
+        <td>${Number(r.outstanding||0) === 0 ? "paid" : "due"}</td>
+        <td style="text-align:right">${money(r.outstanding)}</td>
       </tr>`).join("");
-    const total=(rows||[]).reduce((s,x)=> s+(Number(x.balance)||0),0);
-    const trow=document.createElement("tr"); trow.innerHTML=`<td colspan="4" style="text-align:right;font-weight:600">Total</td>
+
+    const total = (rows||[]).reduce((s,x)=> s + (Number(x.outstanding)||0), 0);
+    const trow = document.createElement("tr");
+    trow.innerHTML = `<td colspan="4" style="text-align:right;font-weight:600">Total</td>
       <td style="text-align:right;font-weight:600">${money(total)}</td>`;
     $("#balancesBody")?.appendChild(trow);
-  }catch(e){ console.error(e); $("#balancesBody").innerHTML=""; $("#balancesEmpty")?.classList.remove("hidden"); }
+  }catch(e){
+    console.error(e);
+    $("#balancesBody").innerHTML = "";
+    $("#balancesEmpty")?.classList.remove("hidden");
+  }
 }
-$("#reloadBalances")?.addEventListener("click", loadBalances);
 
 /* ============================ EXPORTS ============================ */
 function ensureExportButtons(){
