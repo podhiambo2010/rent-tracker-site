@@ -327,6 +327,10 @@ async function loadOverview(){
       console.error('Outstanding tile failed', e);
       renderOutstanding([]);
     }
+  const O = await fetchOutstandingFromSupabase().catch(()=>[]);
+const oSum = (O||[]).reduce((s,x)=> s + Number(x.outstanding||0), 0);
+$("#kpiBalance") && ($("#kpiBalance").textContent = ksh(oSum));
+
   }
 
 async function loadLeases(){
