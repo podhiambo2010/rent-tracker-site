@@ -665,5 +665,9 @@ $("#waBuild")?.addEventListener("click", ()=>{
   setAPI(state.api); setAdminToken(state.adminToken);
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
   wireTabs(); wireHeader(); wireSettings(); wireActions();
+
+  // ⬇️ NEW: load the monthly collection summary
+  loadCollectionSummaryMonth();
+
   showTab("overview");
 })();
