@@ -59,6 +59,33 @@ const formatMoney = (value) => {
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
+
+// Generic API helper that uses the current base URL + admin token
+async function api(path, options = {}) {
+  const base = (window.state?.api || DEFAULT_API).replace(/\/$/, "");
+  const url = base + path;
+
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+
+  // Include admin token if present (for protected endpoints)
+  if (window.state?.adminToken) {
+    headers["X-Admin-Token"] = window.state.adminToken.trim();
+  }
+
+  const res = await fetch(url, { ...options, headers });
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    console.error("API error:", data || res.statusText);
+    throw new Error((data && data.error) || res.statusText);
+  }
+
+  return data;
+}
+
 async function getOutstandingByTenantCurrentMonth(){
   const url = `${SUPABASE_URL}/rest/v1/outstanding_by_tenant_current_month?select=*`;
   const r = await fetch(url, {
@@ -662,12 +689,32 @@ $("#waBuild")?.addEventListener("click", ()=>{
 
 /* ================================ BOOT ================================ */
 (function init(){
-  setAPI(state.api); setAdminToken(state.adminToken);
-  $("#yy") && ($("#yy").textContent = new Date().getFullYear());
-  wireTabs(); wireHeader(); wireSettings(); wireActions();
+  setAPI(state.api); 
+  setAdminToken(state.adminToken);
 
-  // ⬇️ NEW: load the monthly collection summary
-  loadCollectionSummaryMonth();
+  $("#yy") && ($("#yy").textContent = new Date().getFullYear());
+  wireTabs(); 
+  wireHeader(); 
+  wireSettings(); 
+  wireActions();
+
+  // Ensure monthPicker has a default (current month)
+  const mp = document.getElementById("monthPicker");
+  if (mp && !mp.value) {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    mp.value = `${now.getFullYear()}-${mm}`;
+  }
+
+  // Reload summary when month changes
+  if (mp) {
+    mp.addEventListener("change", () => {
+      loadCollectionSummaryMonth().catch(console.error);
+    });
+  }
+
+  // Initial load for the card
+  loadCollectionSummaryMonth().catch(console.error);
 
   showTab("overview");
 })();
