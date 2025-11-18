@@ -3,6 +3,26 @@
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 
+async function api(path, options = {}) {
+  const res = await fetch(DEFAULT_API + path, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    ...options,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error("API error", res.status, text);
+    throw new Error(`API ${res.status}: ${text || res.statusText}`);
+  }
+
+  // If the response is empty, just return null
+  if (res.status === 204) return null;
+
+  return res.json();
+}
+
 // --- Supabase (read-only) for dashboard tile ---
 const SUPA_URL  = 'https://xeqxxgqbooigowxqhtmf.supabase.co';
 const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648'; // anon only
@@ -26,6 +46,16 @@ function renderOutstanding(rows){
 /* ---------- tiny helpers ---------- */
 const $  = (q, el=document) => el.querySelector(q);
 const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
+// Nicely format KES amounts (works with strings or numbers)
+const formatMoney = (value) => {
+  if (value === null || value === undefined) return "0.00";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (Number.isNaN(n)) return String(value);
+  return n.toLocaleString("en-KE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
 const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
 const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
@@ -489,6 +519,44 @@ async function loadBalances(){
     console.error(e);
     $("#balancesBody").innerHTML = "";
     $("#balancesEmpty")?.classList.remove("hidden");
+  }
+}
+
+// ---- COLLECTION SUMMARY (by month) ----
+async function loadCollectionSummaryMonth() {
+  const container = document.querySelector("#collection-summary-month");
+  if (!container) return; // dashboard section not on this page
+
+  try {
+    const rows = await api("/metrics/collection_summary_month");
+
+    if (!rows || !rows.length) {
+      container.textContent = "No collection data yet.";
+      return;
+    }
+
+    // Take the latest month (last row)
+    const latest = rows[rows.length - 1];
+
+    const monthLabel = new Date(latest.month_start).toLocaleDateString(
+      "en-KE",
+      { year: "numeric", month: "short" }
+    );
+
+    const elMonth   = container.querySelector("[data-role='month-label']");
+    const elDue     = container.querySelector("[data-role='rent-due-total']");
+    const elPaid    = container.querySelector("[data-role='amount-paid-total']");
+    const elBal     = container.querySelector("[data-role='balance-total']");
+    const elRate    = container.querySelector("[data-role='collection-rate']");
+
+    if (elMonth) elMonth.textContent = monthLabel;
+    if (elDue)   elDue.textContent   = formatMoney(latest.rent_due_total);
+    if (elPaid)  elPaid.textContent  = formatMoney(latest.amount_paid_total);
+    if (elBal)   elBal.textContent   = formatMoney(latest.balance_total);
+    if (elRate)  elRate.textContent  = `${latest.collection_rate_pct}%`;
+  } catch (err) {
+    console.error("Failed to load collection summary", err);
+    container.textContent = "Error loading collection summary.";
   }
 }
 
