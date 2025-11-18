@@ -139,7 +139,7 @@
         <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
       </div>
 
-      <!-- ===== Overview ===== -->
+            <!-- ===== Overview ===== -->
       <div class="panel" id="tab-overview">
         <h2>Overview</h2>
         <div class="grid" id="kpis">
@@ -165,20 +165,6 @@
           <div>KES <span data-role="balance-total"></span> balance</div>
           <div><span data-role="collection-rate"></span> collection rate</div>
         </div>
-      </div>
-
-      <div class="panel" style="margin-top:12px">
-        <div class="bar-flex">
-          <h3>Outstanding by tenant (this month)</h3>
-          <button class="btn ghost" id="reloadOutstanding">Reload</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Tenant</th><th style="text-align:right">Outstanding</th></tr></thead>
-            <tbody id="outstandingBody"></tbody>
-          </table>
-        </div>
-        <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
       </div>
 
       <!-- ===== Leases ===== -->
@@ -256,20 +242,48 @@
       </div>
 
       <!-- ===== Balances ===== -->
-      <div class="panel hidden" id="tab-balances">
-        <div class="bar-flex">
-          <h2>Balances (This Month)</h2><button class="btn ghost" id="reloadBalances">Reload</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Tenant</th><th>Lease</th><th>Period</th><th>Status</th><th style="text-align:right">Balance</th></tr>
-            </thead>
-            <tbody id="balancesBody"></tbody>
-          </table>
-        </div>
-        <div id="balancesEmpty" class="empty hidden">No current-month balances.</div>
-      </div>
+<div class="panel hidden" id="tab-balances">
+  <div class="bar-flex">
+    <h2>Balances (This Month)</h2>
+    <button class="btn ghost" id="reloadBalances">Reload</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th>Lease</th>
+          <th>Period</th>
+          <th>Status</th>
+          <th style="text-align:right">Balance</th>
+        </tr>
+      </thead>
+      <tbody id="balancesBody"></tbody>
+    </table>
+  </div>
+  <div id="balancesEmpty" class="empty hidden">No current-month balances.</div>
+
+  <!-- Divider -->
+  <hr style="margin:16px 0;border-color:var(--bd);opacity:0.4;">
+
+  <!-- Outstanding by tenant (moved from Overview) -->
+  <div class="bar-flex">
+    <h3>Outstanding by tenant (this month)</h3>
+    <button class="btn ghost" id="reloadOutstanding">Reload</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th style="text-align:right">Outstanding</th>
+        </tr>
+      </thead>
+      <tbody id="outstandingBody"></tbody>
+    </table>
+  </div>
+  <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
+</div>
 
       <!-- ===== WhatsApp (ad-hoc) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
