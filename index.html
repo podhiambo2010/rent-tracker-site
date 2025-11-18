@@ -139,7 +139,7 @@
         <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
       </div>
 
-            <!-- ===== Overview ===== -->
+      <!-- ===== Overview ===== -->
       <div class="panel" id="tab-overview">
         <h2>Overview</h2>
         <div class="grid" id="kpis">
@@ -242,64 +242,6 @@
       </div>
 
       <!-- ===== Balances ===== -->
-<div class="panel hidden" id="tab-balances">
-  <div class="bar-flex">
-    <h2>Balances (This Month)</h2>
-    <button class="btn ghost" id="reloadBalances">Reload</button>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Tenant</th>
-          <th>Lease</th>
-          <th>Period</th>
-          <th>Status</th>
-          <th style="text-align:right">Balance</th>
-        </tr>
-      </thead>
-      <tbody id="balancesBody"></tbody>
-    </table>
-  </div>
-  <div id="balancesEmpty" class="empty hidden">No current-month balances.</div>
-
-  <!-- Divider -->
-  <hr style="margin:16px 0;border-color:var(--bd);opacity:0.4;">
-
-  <!-- Outstanding by tenant (moved from Overview) -->
-  <div class="bar-flex">
-    <h3>Outstanding by tenant (this month)</h3>
-    <button class="btn ghost" id="reloadOutstanding">Reload</button>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Tenant</th>
-          <th style="text-align:right">Outstanding</th>
-        </tr>
-      </thead>
-      <tbody id="outstandingBody"></tbody>
-    </table>
-  </div>
-  <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
-</div>
-
-      <!-- ===== WhatsApp (ad-hoc) ===== -->
-      <div class="panel hidden" id="tab-whatsapp">
-        <h2>WhatsApp Message</h2>
-        <div class="filters">
-          <input id="waTenant" placeholder="Tenant name"/>
-          <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
-          <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)"/>
-          <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
-          <button class="btn" id="waBuild">Build Link</button>
-        </div>
-        <p class="muted">For real leases, use the WhatsApp button in <b>Leases</b> or the overview “Send All”.</p>
-        <div id="waResult" class="muted"></div>
-      </div>
-
-           <!-- ===== Balances ===== -->
       <div class="panel hidden" id="tab-balances">
         <div class="bar-flex">
           <h2>Balances (This Month)</h2>
@@ -326,7 +268,7 @@
 
         <hr style="border:none;border-top:1px solid var(--bd);margin:16px 0" />
 
-        <!-- Outstanding by tenant moved here -->
+        <!-- Outstanding by tenant (moved here from Overview) -->
         <div class="bar-flex">
           <h3>Outstanding by tenant (this month)</h3>
           <button class="btn ghost" id="reloadOutstanding">Reload</button>
@@ -339,9 +281,65 @@
                 <th style="text-align:right">Outstanding</th>
               </tr>
             </thead>
-            <!-- IMPORTANT: leave this tbody EMPTY so JS can fill it -->
             <tbody id="outstandingBody"></tbody>
           </table>
         </div>
         <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
       </div>
+
+      <!-- ===== WhatsApp (ad-hoc) ===== -->
+      <div class="panel hidden" id="tab-whatsapp">
+        <h2>WhatsApp Message</h2>
+        <div class="filters">
+          <input id="waTenant" placeholder="Tenant name"/>
+          <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
+          <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)"/>
+          <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
+          <button class="btn" id="waBuild">Build Link</button>
+        </div>
+        <p class="muted">For real leases, use the WhatsApp button in <b>Leases</b> or the overview “Send All”.</p>
+        <div id="waResult" class="muted"></div>
+      </div>
+
+      <!-- ===== Settings ===== -->
+      <div class="panel hidden" id="tab-settings">
+        <h2>Settings</h2>
+        <p class="muted">Saved only in this browser (localStorage).</p>
+        <div class="filters" style="gap:14px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;gap:8px;align-items:center">API Base
+            <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com"/>
+          </label>
+          <label style="display:flex;gap:8px;align-items:center">Admin Token
+            <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off"/>
+          </label>
+          <button class="btn" id="saveSettings">Save</button>
+          <button class="btn ghost" id="resetSettings">Reset</button>
+        </div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<!-- Small helpers available before app.js -->
+<script>
+  const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
+  function getAdminToken(){
+    let t = localStorage.getItem("admin_token");
+    if(!t){
+      t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
+      if(t) localStorage.setItem("admin_token", t);
+    }
+    return t || "";
+  }
+  function setAdminToken(t){ localStorage.setItem("admin_token", t); }
+  document.getElementById("setAdminTokenBtn")?.addEventListener("click", ()=>{
+    const t = prompt("Paste ADMIN_TOKEN");
+    if(t) setAdminToken(t);
+  });
+</script>
+
+<!-- App logic (must be last) -->
+<script src="./app.js"></script>
+</body>
+</html>
