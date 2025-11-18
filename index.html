@@ -11,7 +11,7 @@
 
   <style>
     :root{
-      --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --text:#f1f5f9;
+      --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --panel-3:#10182f; --text:#f1f5f9;
       --muted:#93a4c4; --brand:#4f8cff; --bd:#1c2546; --chip:#1e2a4a;
       --ok:#22c55e; --danger:#ef4444;
     }
@@ -50,6 +50,25 @@
     .kpi{grid-column:span 3;background:var(--panel-2);border:1px solid var(--bd);border-radius:14px;padding:14px}
     .kpi h3{font-size:12px;color:var(--muted);margin:0}
     .kpi .v{font-size:22px;margin:6px 0 0}
+
+    /* Monthly collection summary layout */
+    #collection-summary-month{
+      margin-top:10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      font-size:14px;
+    }
+    #collection-summary-month > div{
+      background:var(--panel-2);
+      border:1px solid var(--bd);
+      border-radius:10px;
+      padding:8px 10px;
+      min-width:150px;
+    }
+    #collection-summary-month strong{
+      font-size:13px;
+    }
 
     .bar-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .chip{background:var(--chip);border:1px solid var(--bd);padding:7px 10px;border-radius:999px;color:#cfe0ff}
@@ -134,21 +153,33 @@
           <button id="btnSendAll" class="btn">Send All (This Month)</button>
           <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
         </div>
+
+        <!-- Monthly Collection Summary (API-driven) -->
+        <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
+        <div id="collection-summary-month">
+          <div>
+            <strong data-role="month-label"></strong>
+          </div>
+          <div>KES <span data-role="rent-due-total"></span> due</div>
+          <div>KES <span data-role="amount-paid-total"></span> collected</div>
+          <div>KES <span data-role="balance-total"></span> balance</div>
+          <div><span data-role="collection-rate"></span> collection rate</div>
+        </div>
       </div>
 
       <div class="panel" style="margin-top:12px">
-  <div class="bar-flex">
-    <h3>Outstanding by tenant (this month)</h3>
-    <button class="btn ghost" id="reloadOutstanding">Reload</button>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Tenant</th><th style="text-align:right">Outstanding</th></tr></thead>
-      <tbody id="outstandingBody"></tbody>
-    </table>
-  </div>
-  <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
-</div>
+        <div class="bar-flex">
+          <h3>Outstanding by tenant (this month)</h3>
+          <button class="btn ghost" id="reloadOutstanding">Reload</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tenant</th><th style="text-align:right">Outstanding</th></tr></thead>
+            <tbody id="outstandingBody"></tbody>
+          </table>
+        </div>
+        <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
+      </div>
 
       <!-- ===== Leases ===== -->
       <div class="panel hidden" id="tab-leases">
