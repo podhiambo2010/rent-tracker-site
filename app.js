@@ -1,51 +1,12 @@
-/* ==================== Rent Tracker Dashboard — app.js (final) ==================== */
+/* ==================== Rent Tracker Dashboard — app.js (balances polished) ==================== */
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 
-async function api(path, options = {}) {
-  const res = await fetch(DEFAULT_API + path, {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    ...options,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    console.error("API error", res.status, text);
-    throw new Error(`API ${res.status}: ${text || res.statusText}`);
-  }
-
-  // If the response is empty, just return null
-  if (res.status === 204) return null;
-
-  return res.json();
-}
-
-// --- Supabase (read-only) for dashboard tile ---
-const SUPA_URL  = 'https://xeqxxgqbooigowxqhtmf.supabase.co';
-const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648'; // anon only
-async function fetchOutstandingRows(){
-  const url = `${SUPA_URL}/rest/v1/outstanding_by_tenant_current_month?select=tenant_name,outstanding&order=outstanding.desc`;
-  const res = await fetch(url, { headers: { apikey: SUPA_ANON, Authorization: `Bearer ${SUPA_ANON}` } });
-  if(!res.ok) throw new Error(`Supabase ${res.status}`);
-  return res.json();
-}
-function renderOutstanding(rows){
-  const body = document.getElementById('outstandingBody');
-  const empty= document.getElementById('outstandingEmpty');
-  if(!body) return;
-  const r = rows || [];
-  body.innerHTML = r.map(x => `
-    <tr><td>${x.tenant_name||'—'}</td>
-        <td style="text-align:right">Ksh ${Number(x.outstanding||0).toLocaleString('en-KE')}</td></tr>`).join('');
-  empty?.classList.toggle('hidden', r.length>0);
-}
-
 /* ---------- tiny helpers ---------- */
-const $  = (q, el=document) => el.querySelector(q);
-const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
+const $  = (q, el = document) => el.querySelector(q);
+const $$ = (q, el = document) => Array.from(el.querySelectorAll(q));
+
 // Nicely format KES amounts (works with strings or numbers)
 const formatMoney = (value) => {
   if (value === null || value === undefined) return "0.00";
@@ -56,13 +17,33 @@ const formatMoney = (value) => {
     maximumFractionDigits: 2,
   });
 };
-const yyyymm = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-const money  = (n) => (n==null ? "—" : `Ksh ${Number(n||0).toLocaleString("en-KE")}`);
-const ksh    = (n) => Number(n||0).toLocaleString("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0});
 
-// Generic API helper that uses the current base URL + admin token
+const yyyymm = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+const money = (n) =>
+  n == null ? "—" : `Ksh ${Number(n || 0).toLocaleString("en-KE")}`;
+
+const ksh = (n) =>
+  Number(n || 0).toLocaleString("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  });
+
+/* ---------- app state ---------- */
+const state = {
+  api: (localStorage.getItem("api_base") || DEFAULT_API).replace(/\/$/, ""),
+  adminToken: localStorage.getItem("admin_token") || "",
+  leasesView: [],
+  paymentsView: [],
+  rentrollView: [],
+  balancesView: [],
+};
+
+/* ---------- generic API helper (uses current base + admin token) ---------- */
 async function api(path, options = {}) {
-  const base = (window.state?.api || DEFAULT_API).replace(/\/$/, "");
+  const base = (state.api || DEFAULT_API).replace(/\/$/, "");
   const url = base + path;
 
   const headers = {
@@ -70,12 +51,14 @@ async function api(path, options = {}) {
     ...(options.headers || {}),
   };
 
-  // Include admin token if present (for protected endpoints)
-  if (window.state?.adminToken) {
-    headers["X-Admin-Token"] = window.state.adminToken.trim();
+  if (state.adminToken) {
+    headers["X-Admin-Token"] = state.adminToken.trim();
   }
 
   const res = await fetch(url, { ...options, headers });
+
+  if (res.status === 204) return null;
+
   const data = await res.json().catch(() => null);
 
   if (!res.ok) {
@@ -86,50 +69,62 @@ async function api(path, options = {}) {
   return data;
 }
 
-async function getOutstandingByTenantCurrentMonth(){
-  const url = `${SUPABASE_URL}/rest/v1/outstanding_by_tenant_current_month?select=*`;
-  const r = await fetch(url, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-  });
-  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
-async function fetchOutstandingFromSupabase(){
-  const url = 'https://xeqxxgqbooigowxqhtmf.supabase.co/rest/v1/outstanding_by_tenant_current_month?select=*';
-  const res = await fetch(url, {
-    headers: {
-      apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648',
-      Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcXh4Z3Fib29pZ293eHFodG1mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEyMjc1MTcsImV4cCI6MjA3NjgwMzUxN30.JL_EjI4VSNF2fRhhZgNGKu7dGy3CgYnATv6OH_9e648'
-    }
-  });
-  if(!res.ok) throw new Error(await res.text());
-  return res.json();
+/* ---------- CSV helpers ---------- */
+const csvEscape = (v) => {
+  const s = v == null ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+function toCSV(rows, cols) {
+  if (!rows?.length) return "";
+  const head = cols.map((c) => csvEscape(c.label)).join(",");
+  const body = rows
+    .map((r) =>
+      cols
+        .map((c) =>
+          csvEscape(
+            typeof c.value === "function" ? c.value(r) : r[c.value]
+          )
+        )
+        .join(",")
+    )
+    .join("\n");
+  return head + "\n" + body;
 }
 
-/* CSV helpers */
-const csvEscape = (v)=>{ const s=v==null?"":String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s; };
-function toCSV(rows, cols){
-  if(!rows?.length) return "";
-  const head = cols.map(c=>csvEscape(c.label)).join(",");
-  const body = rows.map(r=>cols.map(c=>csvEscape(typeof c.value==="function"?c.value(r):r[c.value])).join(",")).join("\n");
-  return head+"\n"+body;
-}
-function download(filename, text){
-  const blob = new Blob([text], {type:"text/csv;charset=utf-8"});
-  const url  = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href=url; a.download=filename;
-  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },0);
+function download(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 0);
 }
 
-/* Messaging helpers */
-function getSelectedMonth(){ return $("#monthPicker")?.value || new Date().toISOString().slice(0,7); }
-function fmtMonYearFromISO(isoDate){
-  try{ const d = new Date(isoDate); return d.toLocaleString('en-US',{month:'short',year:'numeric'}); } catch { return ''; }
+/* ---------- month + messaging helpers ---------- */
+
+// Shared month for Overview + Balances + metrics
+function getSelectedMonth() {
+  return $("#monthPicker")?.value || new Date().toISOString().slice(0, 7);
+}
+
+function fmtMonYearFromISO(isoDate) {
+  try {
+    const d = new Date(isoDate);
+    return d.toLocaleString("en-US", { month: "short", year: "numeric" });
+  } catch {
+    return "";
+  }
 }
 
 /* WhatsApp message (clear, with KCB details & cash rule) */
-function buildWhatsAppURL(msisdn, payload){
-  const kes = n => `KES ${Number(n||0).toLocaleString('en-KE')}`;
+function buildWhatsAppURL(msisdn, payload) {
+  const kes = (n) => `KES ${Number(n || 0).toLocaleString("en-KE")}`;
   const msg = [
     `Hello ${payload.tenant_name},`,
     `Rent for ${payload.unit} — ${payload.period}`,
@@ -148,73 +143,145 @@ function buildWhatsAppURL(msisdn, payload){
     ``,
     `After payment, kindly share the M-Pesa SMS (Paybill) or bank slip (others).`,
     ``,
-    `Thank you — Global Star Investments Limited.`
+    `Thank you — Global Star Investments Limited.`,
   ].join("\n");
-  const clean = String(msisdn||"").replace(/\D/g,"");
+  const clean = String(msisdn || "").replace(/\D/g, "");
   return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
 }
 
-/* ---------- API helpers ---------- */
-async function jget(path){
+/* ---------- JSON GET/POST helpers (using state.api directly) ---------- */
+async function jget(path) {
   const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const r = await fetch(url, { headers:{Accept:"application/json"} });
-  if(!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json();
 }
-async function jpost(path, body, {admin=false}={}){
+
+async function jpost(path, body, { admin = false } = {}) {
   const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const headers = { "Content-Type":"application/json" };
-  if(admin && state.adminToken) headers["X-Admin-Token"] = state.adminToken;
-  const r = await fetch(url, { method:"POST", headers, body:JSON.stringify(body||{}) });
-  if(!r.ok){ const txt = await r.text().catch(()=> ""); throw new Error(`${r.status} ${r.statusText} — ${txt}`); }
+  const headers = { "Content-Type": "application/json" };
+  if (admin && state.adminToken) headers["X-Admin-Token"] = state.adminToken;
+  const r = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`${r.status} ${r.statusText} — ${txt}`);
+  }
   return r.json();
 }
 
 /* ---------- API consumers ---------- */
-async function getRentRollForMonth(ym){ return jget(`/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`); }
-async function getContactForLease(lease_id){ return jget(`/contact_for_lease?lease_id=${encodeURIComponent(lease_id)}`); }
-async function getInvoiceIdForLeaseMonth(lease_id, ym){
-  const res = await fetch(`${state.api}/invoices/for_lease_month?lease_id=${encodeURIComponent(lease_id)}&month=${encodeURIComponent(ym)}`);
-  if(res.status===404) return null;
+async function getRentRollForMonth(ym) {
+  return jget(`/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`);
+}
+async function getContactForLease(lease_id) {
+  return jget(`/contact_for_lease?lease_id=${encodeURIComponent(lease_id)}`);
+}
+async function getInvoiceIdForLeaseMonth(lease_id, ym) {
+  const res = await fetch(
+    `${state.api}/invoices/for_lease_month?lease_id=${encodeURIComponent(
+      lease_id
+    )}&month=${encodeURIComponent(ym)}`
+  );
+  if (res.status === 404) return null;
   const json = await res.json();
   return json?.invoice?.id || null;
 }
 
-/* ---------- app state ---------- */
-const state = {
-  api:(localStorage.getItem("api_base") || DEFAULT_API).replace(/\/$/,""),
-  adminToken: localStorage.getItem("admin_token") || "",
-  leasesView:[], paymentsView:[], rentrollView:[], balancesView:[]
-};
-
 /* ---------- toast ---------- */
-function toast(msg, ms=2200){
-  const el = $("#actionMsg"); if(!el) return alert(msg);
-  el.textContent = msg; el.style.opacity = 1; setTimeout(()=>{ el.style.opacity = 0; }, ms);
+function toast(msg, ms = 2200) {
+  const el = $("#actionMsg");
+  if (!el) {
+    alert(msg);
+    return;
+  }
+  el.textContent = msg;
+  el.style.opacity = 1;
+  setTimeout(() => {
+    el.style.opacity = 0;
+  }, ms);
 }
 
-/* ---------- environment setters ---------- */
-function setAPI(v){
-  state.api = (v||DEFAULT_API).trim().replace(/\/$/,"");
-  localStorage.setItem("api_base", state.api);
-  $("#apiBase") && ($("#apiBase").value = state.api);
-  $("#apiBase2") && ($("#apiBase2").value = state.api);
+/* ==================== OUTSTANDING BY TENANT (TILE) ==================== */
+
+// Renders the little table under "Outstanding by tenant"
+function renderOutstanding(rows) {
+  const body = document.getElementById("outstandingBody");
+  const empty = document.getElementById("outstandingEmpty");
+  if (!body) return;
+
+  // Positive balances only, sorted DESC
+  const list = (rows || [])
+    .filter(
+      (r) =>
+        Number(
+          r.balance_total ?? r.balance ?? r.outstanding ?? r.amount_due ?? 0
+        ) > 0
+    )
+    .sort(
+      (a, b) =>
+        Number(
+          b.balance_total ?? b.balance ?? b.outstanding ?? b.amount_due ?? 0
+        ) -
+        Number(
+          a.balance_total ?? a.balance ?? a.outstanding ?? a.amount_due ?? 0
+        )
+    );
+
+  body.innerHTML = list
+    .map((x) => {
+      const name = x.tenant || x.tenant_name || x.tenant_name_text || "—";
+      const bal =
+        x.balance_total ?? x.balance ?? x.outstanding ?? x.amount_due ?? 0;
+      return `
+        <tr>
+          <td>${name}</td>
+          <td style="text-align:right">Ksh ${Number(bal || 0).toLocaleString(
+            "en-KE"
+          )}</td>
+        </tr>`;
+    })
+    .join("");
+
+  if (empty) empty.classList.toggle("hidden", list.length > 0);
 }
-function setAdminToken(v){
-  state.adminToken = v || "";
-  localStorage.setItem("admin_token", state.adminToken);
-  $("#adminToken") && ($("#adminToken").value = state.adminToken);
+
+async function loadOutstandingByTenant(month) {
+  const ym = month || getSelectedMonth();
+  try {
+    const rows = await api(
+      `/metrics/collection_by_tenant_month?month=${encodeURIComponent(ym)}`
+    );
+    renderOutstanding(Array.isArray(rows) ? rows : []);
+  } catch (err) {
+    console.error("Failed to load outstanding-by-tenant metrics", err);
+    renderOutstanding([]);
+  }
 }
+
+document
+  .getElementById("reloadOutstanding")
+  ?.addEventListener("click", () => {
+    loadOutstandingByTenant().catch(console.error);
+  });
 
 /* ============================== DUNNING ============================== */
-let _logBusy=false;
-async function loadDunningLog(month="", stage=""){
-  if(_logBusy) return; _logBusy=true;
-  const qs=[]; if(month) qs.push(`month=${encodeURIComponent(month)}`); if(stage) qs.push(`stage=${encodeURIComponent(stage)}`);
+let _logBusy = false;
+async function loadDunningLog(month = "", stage = "") {
+  if (_logBusy) return;
+  _logBusy = true;
+  const qs = [];
+  if (month) qs.push(`month=${encodeURIComponent(month)}`);
+  if (stage) qs.push(`stage=${encodeURIComponent(stage)}`);
   qs.push("limit=200");
-  const url = `${state.api}/reminders/log${qs.length?`?${qs.join("&")}`:""}`;
+  const url = `${state.api}/reminders/log${
+    qs.length ? `?${qs.join("&")}` : ""
+  }`;
   let pre = $("#dunningLog");
-  if(!pre){
+  if (!pre) {
     const wrap = document.createElement("div");
     wrap.id = "dunningLogWrap";
     wrap.innerHTML = `
@@ -224,268 +291,458 @@ async function loadDunningLog(month="", stage=""){
       </div>
       <pre id="dunningLog"></pre>
     `;
-    ($("#invoiceActions") || document.body).insertAdjacentElement("afterend", wrap);
-    $("#logReload")?.addEventListener("click", ()=> loadDunningLog());
+    ($("#invoiceActions") || document.body).insertAdjacentElement(
+      "afterend",
+      wrap
+    );
+    $("#logReload")?.addEventListener("click", () => loadDunningLog());
     pre = $("#dunningLog");
   }
   pre.textContent = "Loading dunning log…";
-  try{
+  try {
     const rows = await jget(url);
-    pre.textContent = (rows?.length? rows.map(r=>{
-      const ts = new Date(r.created_at).toLocaleString("en-KE");
-      const inv = String(r.invoice_id||"").slice(0,8)+"…";
-      const lea = String(r.lease_id||"").slice(0,8)+"…";
-      const amt = Number(r.amount||0).toLocaleString("en-KE");
-      return `${ts} • ${r.stage} • KSh ${amt} • inv ${inv} • lease ${lea}`;
-    }).join("\n") : "No dunning log rows.");
+    pre.textContent = (rows?.length
+      ? rows
+          .map((r) => {
+            const ts = new Date(r.created_at).toLocaleString("en-KE");
+            const inv = String(r.invoice_id || "").slice(0, 8) + "…";
+            const lea = String(r.lease_id || "").slice(0, 8) + "…";
+            const amt = Number(r.amount || 0).toLocaleString("en-KE");
+            return `${ts} • ${r.stage} • KSh ${amt} • inv ${inv} • lease ${lea}`;
+          })
+          .join("\n")
+      : "No dunning log rows.");
     toast("Loaded dunning log");
-  }catch(e){ pre.textContent = `Failed to load: ${e}`; toast("Failed to load dunning log"); }
-  finally{ _logBusy=false; }
+  } catch (e) {
+    pre.textContent = `Failed to load: ${e}`;
+    toast("Failed to load dunning log");
+  } finally {
+    _logBusy = false;
+  }
 }
 
-async function callDunning(preview){
-  if(!state.adminToken){ toast("Set Admin token in Settings first"); return; }
+async function callDunning(preview) {
+  if (!state.adminToken) {
+    toast("Set Admin token in Settings first");
+    return;
+  }
   let pre = $("#dunningOut");
-  if(!pre){
-    const box = document.createElement("pre"); box.id="dunningOut";
-    ($("#invoiceActions") || document.body).insertAdjacentElement("afterend", box);
+  if (!pre) {
+    const box = document.createElement("pre");
+    box.id = "dunningOut";
+    ($("#invoiceActions") || document.body).insertAdjacentElement(
+      "afterend",
+      box
+    );
     pre = box;
   }
-  pre.textContent = preview? "Running dunning (preview)..." : "Applying dunning...";
-  try{
-    const url = `${state.api}/cron/dunning?dry_run=${preview?1:0}`;
-    const opt = preview ? {method:"GET", headers:{"X-Admin-Token":state.adminToken}}
-                        : {method:"POST",headers:{"X-Admin-Token":state.adminToken}};
+  pre.textContent = preview
+    ? "Running dunning (preview)..."
+    : "Applying dunning...";
+  try {
+    const url = `${state.api}/cron/dunning?dry_run=${preview ? 1 : 0}`;
+    const opt = preview
+      ? { method: "GET", headers: { "X-Admin-Token": state.adminToken } }
+      : { method: "POST", headers: { "X-Admin-Token": state.adminToken } };
     const r = await fetch(url, opt);
     const data = await r.json();
-    const list = (title,arr)=> !arr?.length ? `\n${title}: 0`
-      : `\n${title}: ${arr.length}\n` + arr.map(x=>{
-          const inv = String(x.invoice_id||"").slice(0,8)+"…";
-          const lea = String(x.lease_id||"").slice(0,8)+"…";
-          const bal = Number(x.balance||0).toLocaleString("en-KE");
-          const fee = x.fee? ` | fee ${Number(x.fee).toLocaleString("en-KE")}`:"";
-          const wa  = x.wa? ` | WA: ${x.wa}`:"";
-          return ` • inv ${inv} | lease ${lea} | bal KES ${bal}${fee}${wa}`;
-        }).join("\n");
+    const list = (title, arr) =>
+      !arr?.length
+        ? `\n${title}: 0`
+        : `\n${title}: ${arr.length}\n` +
+          arr
+            .map((x) => {
+              const inv = String(x.invoice_id || "").slice(0, 8) + "…";
+              const lea = String(x.lease_id || "").slice(0, 8) + "…";
+              const bal = Number(x.balance || 0).toLocaleString("en-KE");
+              const fee = x.fee
+                ? ` | fee ${Number(x.fee).toLocaleString("en-KE")}`
+                : "";
+              const wa = x.wa ? ` | WA: ${x.wa}` : "";
+              return ` • inv ${inv} | lease ${lea} | bal KES ${bal}${fee}${wa}`;
+            })
+            .join("\n");
     pre.textContent =
-      `Dunning ${data.dry_run?"(dry run)":"(applied)"}\nDate: ${data.today}\nLate fee: ${data.late_fee_pct} (min KES ${data.late_fee_min_kes})` +
+      `Dunning ${data.dry_run ? "(dry run)" : "(applied)"}\nDate: ${
+        data.today
+      }\nLate fee: ${data.late_fee_pct} (min KES ${data.late_fee_min_kes})` +
       list("Day 5 reminders", data.day5) +
       list("Day 10 (late fee stage)", data.day10) +
       list("Overdue (past months)", data.overdue);
-    toast(preview? "Dunning preview ready" : "Dunning applied");
-  }catch(e){ pre.textContent = `Failed: ${e}`; toast("Dunning request failed"); }
+    toast(preview ? "Dunning preview ready" : "Dunning applied");
+  } catch (e) {
+    pre.textContent = `Failed: ${e}`;
+    toast("Dunning request failed");
+  }
 }
 
 /* =============================== TABS =============================== */
-function showTab(name){
-  $$(".tab").forEach(a => a.setAttribute("aria-selected", a.dataset.tab===name ? "true" : "false"));
-  ["overview","leases","payments","rentroll","balances","whatsapp","settings"].forEach(id=>{
-    const p = $(`#tab-${id}`); if(p) p.classList.toggle("hidden", id!==name);
-  });
-  if(name==="overview") loadOverview();
-  if(name==="leases")   loadLeases();
-  if(name==="payments") loadPayments();
-  if(name==="rentroll") loadRentroll();
-  if(name==="balances") loadBalances();
+function showTab(name) {
+  $$(".tab").forEach((a) =>
+    a.setAttribute("aria-selected", a.dataset.tab === name ? "true" : "false")
+  );
+  ["overview", "leases", "payments", "rentroll", "balances", "whatsapp", "settings"].forEach(
+    (id) => {
+      const p = $(`#tab-${id}`);
+      if (p) p.classList.toggle("hidden", id !== name);
+    }
+  );
+  if (name === "overview") loadOverview().catch(console.error);
+  if (name === "leases") loadLeases();
+  if (name === "payments") loadPayments();
+  if (name === "rentroll") loadRentroll();
+  if (name === "balances") loadBalances().catch(console.error);
 }
-function wireTabs(){ $$(".tab").forEach(a => a.addEventListener("click", e=>{ e.preventDefault(); showTab(a.dataset.tab); })); }
+function wireTabs() {
+  $$(".tab").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      showTab(a.dataset.tab);
+    })
+  );
+}
 
 /* ============================== HEADER ============================== */
-function wireHeader(){
-  $("#useApi")?.addEventListener("click", ()=>{ setAPI($("#apiBase")?.value || DEFAULT_API); toast("API saved"); });
-  $("#openDocs")?.addEventListener("click", ()=> window.open(`${state.api}/docs`,`_blank`));
+function setAPI(v) {
+  state.api = (v || DEFAULT_API).trim().replace(/\/$/, "");
+  localStorage.setItem("api_base", state.api);
+  $("#apiBase") && ($("#apiBase").value = state.api);
+  $("#apiBase2") && ($("#apiBase2").value = state.api);
+}
+function setAdminToken(v) {
+  state.adminToken = v || "";
+  localStorage.setItem("admin_token", state.adminToken);
+  $("#adminToken") && ($("#adminToken").value = state.adminToken);
 }
 
-document.getElementById('reloadOutstanding')?.addEventListener('click', async ()=>{
-  try { renderOutstanding(await fetchOutstandingRows()); } catch(e){ console.error(e); }
-});
+function wireHeader() {
+  $("#useApi")?.addEventListener("click", () => {
+    setAPI($("#apiBase")?.value || DEFAULT_API);
+    toast("API saved");
+  });
+  $("#openDocs")?.addEventListener("click", () =>
+    window.open(`${state.api}/docs`, `_blank`)
+  );
+}
 
 /* ============================= SETTINGS ============================= */
-function wireSettings(){
-  $("#saveSettings")?.addEventListener("click", ()=>{ setAPI($("#apiBase2")?.value || DEFAULT_API); setAdminToken($("#adminToken")?.value || ""); toast("Settings saved"); });
-  $("#resetSettings")?.addEventListener("click", ()=>{ setAPI(DEFAULT_API); setAdminToken(""); toast("Reset to defaults"); });
+function wireSettings() {
+  $("#saveSettings")?.addEventListener("click", () => {
+    setAPI($("#apiBase2")?.value || DEFAULT_API);
+    setAdminToken($("#adminToken")?.value || "");
+    toast("Settings saved");
+  });
+  $("#resetSettings")?.addEventListener("click", () => {
+    setAPI(DEFAULT_API);
+    setAdminToken("");
+    toast("Reset to defaults");
+  });
 }
 
 /* ========================== INVOICE ACTIONS ========================= */
-function wireActions(){
-  if(!$("#actionMsg")){
-    const pre = document.createElement("pre"); pre.id="actionMsg"; pre.style.whiteSpace="pre-wrap";
-    ($("#invoiceActions") || document.body).insertAdjacentElement("afterend", pre);
+function wireActions() {
+  if (!$("#actionMsg")) {
+    const pre = document.createElement("pre");
+    pre.id = "actionMsg";
+    pre.style.whiteSpace = "pre-wrap";
+    ($("#invoiceActions") || document.body).insertAdjacentElement(
+      "afterend",
+      pre
+    );
   }
   // Single "Mark as sent"
-  $("#btnMarkSent")?.addEventListener("click", async ()=>{
+  $("#btnMarkSent")?.addEventListener("click", async () => {
     const invoice_id = ($("#invoiceIdInput")?.value || "").trim();
-    if(!invoice_id) return toast("Enter an invoice_id first");
-    if(!state.adminToken) return toast("Set Admin token in Settings first");
+    if (!invoice_id) return toast("Enter an invoice_id first");
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
     $("#actionMsg").textContent = "Marking as sent…";
-    try{
-      const data = await jpost("/invoices/mark_sent",{invoice_id},{admin:true});
-      $("#actionMsg").textContent = JSON.stringify(data,null,2);
+    try {
+      const data = await jpost(
+        "/invoices/mark_sent",
+        { invoice_id },
+        { admin: true }
+      );
+      $("#actionMsg").textContent = JSON.stringify(data, null, 2);
       toast("Stamped as sent");
-    }catch(e){ $("#actionMsg").textContent = String(e); toast("Request failed"); }
+    } catch (e) {
+      $("#actionMsg").textContent = String(e);
+      toast("Request failed");
+    }
   });
 
   // Dunning buttons
-  function ensure(afterSel, id, label){
-    if($(id)) return $(id);
+  function ensure(afterSel, id, label) {
+    if ($(id)) return $(id);
     const anchor = $(afterSel) || $("#invoiceActions") || document.body;
     const btn = document.createElement("button");
-    btn.className="btn ghost"; btn.id=id.slice(1); btn.textContent=label;
+    btn.className = "btn ghost";
+    btn.id = id.slice(1);
+    btn.textContent = label;
     anchor.insertAdjacentElement("afterend", btn);
     return btn;
   }
-  const bDry   = ensure("#btnMarkSent","#btnDunningDry","Dunning (dry run)");
-  const bApply = ensure("#btnDunningDry","#btnDunningApply","Dunning (apply)");
-  const bLogR  = ensure("#btnDunningApply","#btnDunningLogRecent","Dunning log (recent)");
-  const bLogM  = ensure("#btnDunningLogRecent","#btnDunningLogMonth","Dunning log (this month)");
+  const bDry = ensure("#btnMarkSent", "#btnDunningDry", "Dunning (dry run)");
+  const bApply = ensure("#btnDunningDry", "#btnDunningApply", "Dunning (apply)");
+  const bLogR = ensure(
+    "#btnDunningApply",
+    "#btnDunningLogRecent",
+    "Dunning log (recent)"
+  );
+  const bLogM = ensure(
+    "#btnDunningLogRecent",
+    "#btnDunningLogMonth",
+    "Dunning log (this month)"
+  );
 
-  bDry?.addEventListener("click", ()=> callDunning(true));
-  bApply?.addEventListener("click", ()=>{ if(!state.adminToken) return toast("Set Admin token in Settings first"); if(confirm("Apply late fees and log reminders now?")) callDunning(false); });
-  bLogR?.addEventListener("click", ()=> loadDunningLog());
-  bLogM?.addEventListener("click", ()=> loadDunningLog(yyyymm()));
+  bDry?.addEventListener("click", () => callDunning(true));
+  bApply?.addEventListener("click", () => {
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
+    if (confirm("Apply late fees and log reminders now?"))
+      callDunning(false);
+  });
+  bLogR?.addEventListener("click", () => loadDunningLog());
+  bLogM?.addEventListener("click", () => loadDunningLog(yyyymm()));
 
   // Auth ping
-  const authBtn = $("#btnHealth") ||
-    Array.from(document.querySelectorAll("button")).find(b => (b.textContent||"").trim().toLowerCase()==="auth ping");
-  authBtn?.addEventListener("click", async ()=>{
-    if(!state.adminToken) return toast("Set Admin token in Settings first");
-    const out = $("#actionMsg"); if(out) out.textContent = "Pinging…";
-    try{
-      const r = await fetch(`${state.api}/admin/ping`, { headers:{ "X-Admin-Token":state.adminToken, "Authorization":`Bearer ${state.adminToken}` } });
-      const data = await r.json().catch(()=> ({}));
-      if(out) out.textContent = JSON.stringify(data,null,2);
-      toast(r.ok? "Admin auth OK" : `Unauthorized (${r.status})`);
-    }catch(e){ if(out) out.textContent = String(e); toast("Ping failed"); }
+  const authBtn =
+    $("#btnHealth") ||
+    Array.from(document.querySelectorAll("button")).find(
+      (b) => (b.textContent || "").trim().toLowerCase() === "auth ping"
+    );
+  authBtn?.addEventListener("click", async () => {
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
+    const out = $("#actionMsg");
+    if (out) out.textContent = "Pinging…";
+    try {
+      const r = await fetch(`${state.api}/admin/ping`, {
+        headers: {
+          "X-Admin-Token": state.adminToken,
+          Authorization: `Bearer ${state.adminToken}`,
+        },
+      });
+      const data = await r.json().catch(() => ({}));
+      if (out) out.textContent = JSON.stringify(data, null, 2);
+      toast(r.ok ? "Admin auth OK" : `Unauthorized (${r.status})`);
+    } catch (e) {
+      if (out) out.textContent = String(e);
+      toast("Ping failed");
+    }
   });
 }
 
-/* =============================== DATA =============================== */
-async function loadOverview(){
-  try{
-    const month = yyyymm();
-    const [L,P,RR,B] = await Promise.all([
-      jget("/leases?limit=1000").catch(()=>[]),
-      jget(`/payments?month=${month}`).catch(()=>[]),
-      jget(`/rent-roll?month=${month}`).catch(()=>[]),
-      jget("/balances").catch(()=>[])
+/* =============================== DATA LOADERS =============================== */
+
+async function loadOverview() {
+  const month = getSelectedMonth();
+  try {
+    const [L, P, RR, summary, byTenant] = await Promise.all([
+      jget("/leases?limit=1000").catch(() => []),
+      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
+      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
+      api(
+        `/metrics/collection_summary_month?month=${encodeURIComponent(month)}`
+      ).catch(() => null),
+      api(
+        `/metrics/collection_by_tenant_month?month=${encodeURIComponent(month)}`
+      ).catch(() => []),
     ]);
-    $("#kpiLeases")  && ($("#kpiLeases").textContent = (L||[]).length);
-    $("#kpiOpen")    && ($("#kpiOpen").textContent   = (RR||[]).filter(r => String(r.status||"").toLowerCase()!=="paid").length);
-    const pSum = (P||[]).reduce((s,x)=> s + (Number(x.amount)||0), 0);
-    $("#kpiPayments")&& ($("#kpiPayments").textContent = pSum>0 ? pSum.toLocaleString("en-KE") : (P||[]).length);
-    const bSum = (B||[]).reduce((s,x)=> s + (Number(x.balance)||0), 0);
-    $("#kpiBalance") && ($("#kpiBalance").textContent  = ksh(bSum));
-  }catch(e){ console.error(e); toast("Failed to load overview"); }
-      // also load Supabase view → dashboard tile
-    try {
-      const O = await fetchOutstandingRows();
-      renderOutstanding(O);
-    } catch (e) {
-      console.error('Outstanding tile failed', e);
-      renderOutstanding([]);
+
+    $("#kpiLeases") && ($("#kpiLeases").textContent = (L || []).length);
+
+    $("#kpiOpen") &&
+      ($("#kpiOpen").textContent = (RR || []).filter(
+        (r) => String(r.status || "").toLowerCase() !== "paid"
+      ).length);
+
+    const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    $("#kpiPayments") &&
+      ($("#kpiPayments").textContent =
+        pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length);
+
+    if (summary) {
+      const row = Array.isArray(summary) ? summary[0] || null : summary;
+      if (row && $("#kpiBalance")) {
+        $("#kpiBalance").textContent = ksh(
+          row.balance_total ?? row.balance ?? 0
+        );
+      }
     }
-  const O = await fetchOutstandingFromSupabase().catch(()=>[]);
-const oSum = (O||[]).reduce((s,x)=> s + Number(x.outstanding||0), 0);
-$("#kpiBalance") && ($("#kpiBalance").textContent = ksh(oSum));
 
+    renderOutstanding(Array.isArray(byTenant) ? byTenant : []);
+  } catch (e) {
+    console.error(e);
+    toast("Failed to load overview");
   }
+}
 
-async function loadLeases(){
-  try{
+async function loadLeases() {
+  try {
     const rows = await jget("/leases?limit=1000");
     const q = ($("#leaseSearch")?.value || "").toLowerCase().trim();
-    const filtered = q ? (rows||[]).filter(r =>
-      String(r.tenant||"").toLowerCase().includes(q) || String(r.unit||"").toLowerCase().includes(q)
-    ) : (rows||[]);
+    const filtered = q
+      ? (rows || []).filter(
+          (r) =>
+            String(r.tenant || "")
+              .toLowerCase()
+              .includes(q) ||
+            String(r.unit || "")
+              .toLowerCase()
+              .includes(q)
+        )
+      : rows || [];
     state.leasesView = filtered;
     $("#leasesCount") && ($("#leasesCount").textContent = filtered.length);
-    $("#leasesEmpty")?.classList.toggle("hidden", filtered.length>0);
-    $("#leasesBody").innerHTML = filtered.map(r=>{
-      const tenant = r.tenant ?? "—";
-      const unit   = r.unit ?? "—";
-      const rent   = r.rent_amount ?? r.rent ?? "—";
-      const cycle  = r.billing_cycle ?? r.cycle ?? "monthly";
-      const dueDay = r.due_day ?? "—";
-      const status = r.lease_status ?? r.status ?? "Active";
-      const leaseId = r.lease_id || r.id || "";
-      const waHref  = leaseId ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}` : null;
-      return `<tr>
-        <td>${tenant}</td><td>${unit}</td><td>${money(rent)}</td><td>${cycle}</td><td>${dueDay}</td>
-        <td><span class="status ${String(status).toLowerCase()==="active"?"ok":"due"}">${status}</span></td>
+    $("#leasesEmpty")?.classList.toggle("hidden", filtered.length > 0);
+    $("#leasesBody").innerHTML = filtered
+      .map((r) => {
+        const tenant = r.tenant ?? "—";
+        const unit = r.unit ?? "—";
+        const rent = r.rent_amount ?? r.rent ?? "—";
+        const cycle = r.billing_cycle ?? r.cycle ?? "monthly";
+        const dueDay = r.due_day ?? "—";
+        const status = r.lease_status ?? r.status ?? "Active";
+        const leaseId = r.lease_id || r.id || "";
+        const waHref = leaseId
+          ? `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(
+              leaseId
+            )}`
+          : null;
+        return `<tr>
+        <td>${tenant}</td>
+        <td>${unit}</td>
+        <td>${money(rent)}</td>
+        <td>${cycle}</td>
+        <td>${dueDay}</td>
+        <td><span class="status ${
+          String(status).toLowerCase() === "active" ? "ok" : "due"
+        }">${status}</span></td>
         <td>${waHref ? `<a href="${waHref}" target="_blank">Open</a>` : "—"}</td>
       </tr>`;
-    }).join("");
-  }catch(e){ console.error(e); $("#leasesBody").innerHTML=""; $("#leasesEmpty")?.classList.remove("hidden"); }
+      })
+      .join("");
+  } catch (e) {
+    console.error(e);
+    $("#leasesBody").innerHTML = "";
+    $("#leasesEmpty")?.classList.remove("hidden");
+  }
 }
 $("#reloadLeases")?.addEventListener("click", loadLeases);
 
-function ensurePaymentsMonthOptions(){
-  const sel=$("#paymentsMonth"); if(!sel || sel.options.length) return;
-  const now=new Date();
-  for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1);
-    const opt=document.createElement("option"); opt.value=yyyymm(d);
-    opt.textContent=d.toLocaleString("en-KE",{month:"short",year:"numeric"}); if(i===0) opt.selected=true; sel.appendChild(opt);
+/* --------- Payments --------- */
+function ensurePaymentsMonthOptions() {
+  const sel = $("#paymentsMonth");
+  if (!sel || sel.options.length) return;
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const opt = document.createElement("option");
+    opt.value = yyyymm(d);
+    opt.textContent = d.toLocaleString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
   }
 }
 ensurePaymentsMonthOptions();
 
-async function loadPayments(){
-  try{
-    const month=$("#paymentsMonth")?.value || yyyymm();
-    const tQ=($("#paymentsTenant")?.value || "").toLowerCase().trim();
-    const sQ=$("#paymentsStatus")?.value || "";
-    const rows=await jget(`/payments?month=${month}`);
-    const filtered=(rows||[]).filter(r=>{
-      const okT=tQ?String(r.tenant||"").toLowerCase().includes(tQ):true;
-      const okS=sQ?String(r.status||"")===sQ:true; return okT && okS;
+async function loadPayments() {
+  try {
+    const month = $("#paymentsMonth")?.value || yyyymm();
+    const tQ = ($("#paymentsTenant")?.value || "").toLowerCase().trim();
+    const sQ = $("#paymentsStatus")?.value || "";
+    const rows = await jget(`/payments?month=${month}`);
+    const filtered = (rows || []).filter((r) => {
+      const okT = tQ
+        ? String(r.tenant || "").toLowerCase().includes(tQ)
+        : true;
+      const okS = sQ ? String(r.status || "") === sQ : true;
+      return okT && okS;
     });
-    state.paymentsView=filtered;
-    $("#paymentsCount") && ($("#paymentsCount").textContent=filtered.length);
-    $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length>0);
-    $("#paymentsBody").innerHTML=filtered.map(r=>`
+    state.paymentsView = filtered;
+    $("#paymentsCount") && ($("#paymentsCount").textContent = filtered.length);
+    $("#paymentsEmpty")?.classList.toggle("hidden", filtered.length > 0);
+    $("#paymentsBody").innerHTML = filtered
+      .map(
+        (r) => `
       <tr>
-        <td>${r.paid_at || r.created_at ? new Date(r.paid_at || r.created_at).toLocaleDateString("en-KE") : "—"}</td>
+        <td>${
+          r.paid_at || r.created_at
+            ? new Date(r.paid_at || r.created_at).toLocaleDateString("en-KE")
+            : "—"
+        }</td>
         <td>${r.tenant ?? "—"}</td>
         <td>${r.method ?? "—"}</td>
         <td class="muted">${r.status ?? "posted"}</td>
         <td style="text-align:right">${money(r.amount)}</td>
-      </tr>`).join("");
-    const total=filtered.reduce((s,x)=> s+(Number(x.amount)||0),0);
-    const trow=document.createElement("tr"); trow.innerHTML=`<td colspan="4" style="text-align:right;font-weight:600">Total</td>
+      </tr>`
+      )
+      .join("");
+    const total = filtered.reduce(
+      (s, x) => s + (Number(x.amount) || 0),
+      0
+    );
+    const trow = document.createElement("tr");
+    trow.innerHTML = `<td colspan="4" style="text-align:right;font-weight:600">Total</td>
       <td style="text-align:right;font-weight:600">${money(total)}</td>`;
     $("#paymentsBody")?.appendChild(trow);
-  }catch(e){ console.error(e); $("#paymentsBody").innerHTML=""; $("#paymentsEmpty")?.classList.remove("hidden"); }
+  } catch (e) {
+    console.error(e);
+    $("#paymentsBody").innerHTML = "";
+    $("#paymentsEmpty")?.classList.remove("hidden");
+  }
 }
 $("#applyPayments")?.addEventListener("click", loadPayments);
-$("#clearPayments")?.addEventListener("click", ()=>{ $("#paymentsTenant").value=""; $("#paymentsStatus").value=""; loadPayments(); });
+$("#clearPayments")?.addEventListener("click", () => {
+  $("#paymentsTenant").value = "";
+  $("#paymentsStatus").value = "";
+  loadPayments();
+});
 $("#paymentsMonth")?.addEventListener("change", loadPayments);
 
-function ensureRentrollMonthOptions(){
-  const sel=$("#rentrollMonth"); if(!sel || sel.options.length) return;
-  const now=new Date();
-  for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1);
-    const opt=document.createElement("option"); opt.value=yyyymm(d);
-    opt.textContent=d.toLocaleString("en-KE",{month:"short",year:"numeric"}); if(i===0) opt.selected=true; sel.appendChild(opt);
+/* --------- Rent Roll --------- */
+function ensureRentrollMonthOptions() {
+  const sel = $("#rentrollMonth");
+  if (!sel || sel.options.length) return;
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const opt = document.createElement("option");
+    opt.value = yyyymm(d);
+    opt.textContent = d.toLocaleString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+    if (i === 0) opt.selected = true;
+    sel.appendChild(opt);
   }
 }
 ensureRentrollMonthOptions();
 
-async function loadRentroll(){
-  try{
+async function loadRentroll() {
+  try {
     const month = $("#rentrollMonth")?.value || yyyymm();
     const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
     const rows = await jget(`/rent-roll?month=${month}`);
-    const filtered = (rows||[]).filter(r =>
-      (tQ ? String(r.tenant||"").toLowerCase().includes(tQ) : true) &&
-      (pQ ? String(r.property_name||r.property||"").toLowerCase().includes(pQ) : true)
+    const filtered = (rows || []).filter(
+      (r) =>
+        (tQ ? String(r.tenant || "").toLowerCase().includes(tQ) : true) &&
+        (pQ
+          ? String(r.property_name || r.property || "")
+              .toLowerCase()
+              .includes(pQ)
+          : true)
     );
     state.rentrollView = filtered;
     $("#rentrollCount") && ($("#rentrollCount").textContent = filtered.length);
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length > 0);
-    $("#rentrollBody").innerHTML = filtered.map(r=>{
-      const periodLabel = r.period ?? `${r.period_start||"—"} → ${r.period_end||"—"}`;
-      return `<tr>
+    $("#rentrollBody").innerHTML = filtered
+      .map((r) => {
+        const periodLabel =
+          r.period ?? `${r.period_start || "—"} → ${r.period_end || "—"}`;
+        return `<tr>
         <td>${r.property_name ?? r.property ?? "—"}</td>
         <td>${r.unit_code ?? r.unit ?? "—"}</td>
         <td>${r.tenant ?? "—"}</td>
@@ -495,92 +752,197 @@ async function loadRentroll(){
         <td style="text-align:right">${money(r.balance)}</td>
         <td>
           <button class="btn ghost" data-action="wa"   data-lease="${r.lease_id}">WhatsApp</button>
-          <button class="btn ghost" data-action="mark" data-lease="${r.lease_id}" data-month="${month}">Mark sent</button>
+          <button class="btn ghost" data-action="mark" data-lease="${
+            r.lease_id
+          }" data-month="${month}">Mark sent</button>
         </td>
       </tr>`;
-    }).join("");
-  }catch(e){ console.error(e); $("#rentrollBody").innerHTML=""; $("#rentrollEmpty")?.classList.remove("hidden"); }
+      })
+      .join("");
+  } catch (e) {
+    console.error(e);
+    $("#rentrollBody").innerHTML = "";
+    $("#rentrollEmpty")?.classList.remove("hidden");
+  }
 }
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
-$("#clearRentroll")?.addEventListener("click", ()=>{ $("#rentrollTenant").value=""; $("#rentrollProperty").value=""; loadRentroll(); });
+$("#clearRentroll")?.addEventListener("click", () => {
+  $("#rentrollTenant").value = "";
+  $("#rentrollProperty").value = "";
+  loadRentroll();
+});
 
-$("#rentrollBody")?.addEventListener("click", async (ev)=>{
-  const btn = ev.target.closest("button[data-action]"); if(!btn) return;
-  const action = btn.dataset.action, leaseId = btn.dataset.lease, month = btn.dataset.month;
-  if(action==="wa"){ window.open(`${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}`,"_blank"); return; }
-  if(action==="mark"){
-    if(!state.adminToken) return toast("Set Admin token in Settings first");
-    btn.disabled=true; const prev=btn.textContent; btn.textContent="…";
-    try{
+$("#rentrollBody")?.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action,
+    leaseId = btn.dataset.lease,
+    month = btn.dataset.month;
+  if (action === "wa") {
+    window.open(
+      `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(
+        leaseId
+      )}`,
+      "_blank"
+    );
+    return;
+  }
+  if (action === "mark") {
+    if (!state.adminToken) return toast("Set Admin token in Settings first");
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = "…";
+    try {
       const invoiceId = await getInvoiceIdForLeaseMonth(leaseId, month);
-      if(!invoiceId){ toast("No invoice found for that lease/month"); return; }
-      const res = await jpost("/invoices/mark_sent",{invoice_id:invoiceId},{admin:true});
-      btn.closest("tr")?.querySelector(".status-cell")?.replaceChildren(document.createTextNode(res?.invoice?.status || "sent"));
+      if (!invoiceId) {
+        toast("No invoice found for that lease/month");
+        return;
+      }
+      const res = await jpost(
+        "/invoices/mark_sent",
+        { invoice_id: invoiceId },
+        { admin: true }
+      );
+      btn
+        .closest("tr")
+        ?.querySelector(".status-cell")
+        ?.replaceChildren(
+          document.createTextNode(res?.invoice?.status || "sent")
+        );
       toast("Marked sent");
-    }catch(e){ toast(`Failed: ${e.message||e}`); }
-    finally{ btn.disabled=false; btn.textContent=prev; }
+    } catch (e) {
+      toast(`Failed: ${e.message || e}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
   }
 });
 
-async function loadBalances(){
-  try{
-    const rows = await getOutstandingByTenantCurrentMonth();   // ← Supabase view
-    state.balancesView = rows || [];
+/* --------- Balances (This Month, by tenant metrics) --------- */
+async function loadBalances() {
+  const month = getSelectedMonth();
+  try {
+    const rows = await api(
+      `/metrics/collection_by_tenant_month?month=${encodeURIComponent(month)}`
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    state.balancesView = list;
 
-    $("#balancesEmpty")?.classList.toggle("hidden", !!rows?.length);
-    $("#balancesBody").innerHTML = (rows||[]).map(r=>`
-      <tr>
-        <td>${r.tenant_name ?? "—"}</td>
-        <td>${(r.tenant_id||"").slice(0,8)}…</td>
-        <td>${new Date().toLocaleString('en-KE',{month:'short', year:'numeric'})}</td>
-        <td>${Number(r.outstanding||0) === 0 ? "paid" : "due"}</td>
-        <td style="text-align:right">${money(r.outstanding)}</td>
-      </tr>`).join("");
+    $("#balancesEmpty")?.classList.toggle("hidden", list.length > 0);
 
-    const total = (rows||[]).reduce((s,x)=> s + (Number(x.outstanding)||0), 0);
+    const monthLabel = new Date(`${month}-01`).toLocaleString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+
+    $("#balancesBody").innerHTML = list
+      .map((r) => {
+        const name = r.tenant || r.tenant_name || "—";
+        const due = Number(r.rent_due_total ?? r.total_due ?? 0);
+        const paid = Number(r.amount_paid_total ?? r.paid_amount ?? 0);
+        const bal = Number(r.balance_total ?? r.balance ?? due - paid);
+        const status = bal <= 0 ? "paid" : "due";
+        const ratePct =
+          r.collection_rate_pct != null
+            ? `${r.collection_rate_pct}%`
+            : due > 0
+            ? `${Math.round((paid / due) * 100)}%`
+            : "—";
+
+        return `
+        <tr>
+          <td>${name}</td>
+          <td>${monthLabel}</td>
+          <td style="text-align:right">${money(due)}</td>
+          <td style="text-align:right">${money(paid)}</td>
+          <td style="text-align:right">${money(bal)}</td>
+          <td class="muted">${ratePct}</td>
+          <td><span class="status ${
+            status === "paid" ? "ok" : "due"
+          }">${status}</span></td>
+        </tr>`;
+      })
+      .join("");
+
+    const totalDue = list.reduce(
+      (s, x) => s + Number(x.rent_due_total ?? x.total_due ?? 0),
+      0
+    );
+    const totalPaid = list.reduce(
+      (s, x) => s + Number(x.amount_paid_total ?? x.paid_amount ?? 0),
+      0
+    );
+    const totalBal = list.reduce(
+      (s, x) => s + Number(x.balance_total ?? x.balance ?? 0),
+      0
+    );
+
     const trow = document.createElement("tr");
-    trow.innerHTML = `<td colspan="4" style="text-align:right;font-weight:600">Total</td>
-      <td style="text-align:right;font-weight:600">${money(total)}</td>`;
+    trow.innerHTML = `
+      <td colspan="2" style="text-align:right;font-weight:600">Total</td>
+      <td style="text-align:right;font-weight:600">${money(totalDue)}</td>
+      <td style="text-align:right;font-weight:600">${money(totalPaid)}</td>
+      <td style="text-align:right;font-weight:600">${money(totalBal)}</td>
+      <td colspan="2"></td>`;
     $("#balancesBody")?.appendChild(trow);
-  }catch(e){
+  } catch (e) {
     console.error(e);
     $("#balancesBody").innerHTML = "";
     $("#balancesEmpty")?.classList.remove("hidden");
   }
 }
+$("#reloadBalances")?.addEventListener("click", () =>
+  loadBalances().catch(console.error)
+);
 
-// ---- COLLECTION SUMMARY (by month) ----
+/* --------- COLLECTION SUMMARY (metrics card) --------- */
 async function loadCollectionSummaryMonth() {
   const container = document.querySelector("#collection-summary-month");
-  if (!container) return; // dashboard section not on this page
+  if (!container) return;
+
+  const month = getSelectedMonth();
 
   try {
-    const rows = await api("/metrics/collection_summary_month");
+    const res = await api(
+      `/metrics/collection_summary_month?month=${encodeURIComponent(month)}`
+    );
+    const row = Array.isArray(res) ? res[0] || null : res;
 
-    if (!rows || !rows.length) {
+    if (!row) {
       container.textContent = "No collection data yet.";
       return;
     }
 
-    // Take the latest month (last row)
-    const latest = rows[rows.length - 1];
+    const monthLabel = row.month_start
+      ? new Date(row.month_start).toLocaleDateString("en-KE", {
+          year: "numeric",
+          month: "short",
+        })
+      : new Date(`${month}-01`).toLocaleDateString("en-KE", {
+          year: "numeric",
+          month: "short",
+        });
 
-    const monthLabel = new Date(latest.month_start).toLocaleDateString(
-      "en-KE",
-      { year: "numeric", month: "short" }
-    );
-
-    const elMonth   = container.querySelector("[data-role='month-label']");
-    const elDue     = container.querySelector("[data-role='rent-due-total']");
-    const elPaid    = container.querySelector("[data-role='amount-paid-total']");
-    const elBal     = container.querySelector("[data-role='balance-total']");
-    const elRate    = container.querySelector("[data-role='collection-rate']");
+    const elMonth = container.querySelector("[data-role='month-label']");
+    const elDue = container.querySelector("[data-role='rent-due-total']");
+    const elPaid = container.querySelector("[data-role='amount-paid-total']");
+    const elBal = container.querySelector("[data-role='balance-total']");
+    const elRate = container.querySelector("[data-role='collection-rate']");
 
     if (elMonth) elMonth.textContent = monthLabel;
-    if (elDue)   elDue.textContent   = formatMoney(latest.rent_due_total);
-    if (elPaid)  elPaid.textContent  = formatMoney(latest.amount_paid_total);
-    if (elBal)   elBal.textContent   = formatMoney(latest.balance_total);
-    if (elRate)  elRate.textContent  = `${latest.collection_rate_pct}%`;
+    if (elDue)
+      elDue.textContent = formatMoney(
+        row.rent_due_total ?? row.total_due ?? 0
+      );
+    if (elPaid)
+      elPaid.textContent = formatMoney(
+        row.amount_paid_total ?? row.paid_amount ?? 0
+      );
+    if (elBal)
+      elBal.textContent = formatMoney(row.balance_total ?? row.balance ?? 0);
+    if (elRate)
+      elRate.textContent = `${row.collection_rate_pct ?? 0}%`;
   } catch (err) {
     console.error("Failed to load collection summary", err);
     container.textContent = "Error loading collection summary.";
@@ -588,114 +950,228 @@ async function loadCollectionSummaryMonth() {
 }
 
 /* ============================ EXPORTS ============================ */
-function ensureExportButtons(){
-  function addAfter(anchorSel,id,label){
-    if($(id)) return null;
-    const anchor=$(anchorSel); if(!anchor) return null;
-    const btn=document.createElement("button"); btn.className="btn ghost"; btn.id=id.slice(1); btn.textContent=label;
-    anchor.insertAdjacentElement("afterend", btn); return btn;
+function ensureExportButtons() {
+  function addAfter(anchorSel, id, label) {
+    if ($(id)) return null;
+    const anchor = $(anchorSel);
+    if (!anchor) return null;
+    const btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.id = id.slice(1);
+    btn.textContent = label;
+    anchor.insertAdjacentElement("afterend", btn);
+    return btn;
   }
-  addAfter("#reloadLeases","#exportLeases","Export CSV");
-  addAfter("#applyPayments","#exportPayments","Export CSV");
-  addAfter("#applyRentroll","#exportRentroll","Export CSV");
-  addAfter("#reloadBalances","#exportBalances","Export CSV");
+  addAfter("#reloadLeases", "#exportLeases", "Export CSV");
+  addAfter("#applyPayments", "#exportPayments", "Export CSV");
+  addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
+  addAfter("#reloadBalances", "#exportBalances", "Export CSV");
 
-  $("#exportLeases")?.addEventListener("click", ()=>{
-    const cols=[{label:"Tenant",value:r=>r.tenant},{label:"Unit",value:r=>r.unit},{label:"Rent",value:r=>r.rent_amount ?? r.rent},
-      {label:"Cycle",value:r=>r.billing_cycle ?? r.cycle},{label:"Due Day",value:r=>r.due_day},{label:"Status",value:r=>r.lease_status ?? r.status},
-      {label:"Lease ID",value:r=>r.lease_id || r.id}];
-    download(`leases_${yyyymm()}.csv`, toCSV(state.leasesView, cols));
+  $("#exportLeases")?.addEventListener("click", () => {
+    const cols = [
+      { label: "Tenant", value: (r) => r.tenant },
+      { label: "Unit", value: (r) => r.unit },
+      { label: "Rent", value: (r) => r.rent_amount ?? r.rent },
+      { label: "Cycle", value: (r) => r.billing_cycle ?? r.cycle },
+      { label: "Due Day", value: (r) => r.due_day },
+      { label: "Status", value: (r) => r.lease_status ?? r.status },
+      { label: "Lease ID", value: (r) => r.lease_id || r.id },
+    ];
+    download(
+      `leases_${yyyymm()}.csv`,
+      toCSV(state.leasesView, cols)
+    );
   });
-  $("#exportPayments")?.addEventListener("click", ()=>{
-    const cols=[{label:"Date",value:r=>r.paid_at || r.created_at},{label:"Tenant",value:r=>r.tenant},{label:"Method",value:r=>r.method},
-      {label:"Status",value:r=>r.status ?? "posted"},{label:"Amount",value:r=>r.amount},{label:"Invoice ID",value:r=>r.invoice_id},{label:"Payment ID",value:r=>r.id}];
-    download(`payments_${($("#paymentsMonth")?.value || yyyymm())}.csv`, toCSV(state.paymentsView, cols));
+
+  $("#exportPayments")?.addEventListener("click", () => {
+    const cols = [
+      { label: "Date", value: (r) => r.paid_at || r.created_at },
+      { label: "Tenant", value: (r) => r.tenant },
+      { label: "Method", value: (r) => r.method },
+      { label: "Status", value: (r) => r.status ?? "posted" },
+      { label: "Amount", value: (r) => r.amount },
+      { label: "Invoice ID", value: (r) => r.invoice_id },
+      { label: "Payment ID", value: (r) => r.id },
+    ];
+    download(
+      `payments_${$("#paymentsMonth")?.value || yyyymm()}.csv`,
+      toCSV(state.paymentsView, cols)
+    );
   });
-  $("#exportRentroll")?.addEventListener("click", ()=>{
-    const cols=[{label:"Property",value:r=>r.property_name ?? r.property},{label:"Unit",value:r=>r.unit_code ?? r.unit},{label:"Tenant",value:r=>r.tenant},
-      {label:"Period",value:r=>r.period ?? `${r.period_start||""} → ${r.period_end||""}`},{label:"Total Due",value:r=>r.total_due},
-      {label:"Status",value:r=>r.status},{label:"Balance",value:r=>r.balance}];
-    download(`rent_roll_${($("#rentrollMonth")?.value || yyyymm())}.csv`, toCSV(state.rentrollView, cols));
+
+  $("#exportRentroll")?.addEventListener("click", () => {
+    const cols = [
+      { label: "Property", value: (r) => r.property_name ?? r.property },
+      { label: "Unit", value: (r) => r.unit_code ?? r.unit },
+      { label: "Tenant", value: (r) => r.tenant },
+      {
+        label: "Period",
+        value: (r) =>
+          r.period || `${r.period_start || ""} → ${r.period_end || ""}`,
+      },
+      { label: "Total Due", value: (r) => r.total_due },
+      { label: "Status", value: (r) => r.status },
+      { label: "Balance", value: (r) => r.balance },
+    ];
+    download(
+      `rent_roll_${$("#rentrollMonth")?.value || yyyymm()}.csv`,
+      toCSV(state.rentrollView, cols)
+    );
   });
-  $("#exportBalances")?.addEventListener("click", ()=>{
-    const cols=[{label:"Tenant",value:r=>r.tenant},{label:"Lease ID",value:r=>r.lease_id},{label:"Period Start",value:r=>r.period_start},
-      {label:"Period End",value:r=>r.period_end},{label:"Status",value:r=>r.status},{label:"Total Due",value:r=>r.total_due},
-      {label:"Paid",value:r=>r.paid_amount},{label:"Balance",value:r=>r.balance}];
-    download(`balances_${yyyymm()}.csv`, toCSV(state.balancesView, cols));
+
+  // NEW: metrics-based balances CSV
+  $("#exportBalances")?.addEventListener("click", () => {
+    const month = getSelectedMonth();
+    const cols = [
+      { label: "Tenant", value: (r) => r.tenant || r.tenant_name },
+      { label: "Month", value: () => month },
+      {
+        label: "Rent Due",
+        value: (r) => r.rent_due_total ?? r.total_due,
+      },
+      {
+        label: "Paid",
+        value: (r) => r.amount_paid_total ?? r.paid_amount,
+      },
+      {
+        label: "Balance",
+        value: (r) => r.balance_total ?? r.balance,
+      },
+      {
+        label: "Collection Rate %",
+        value: (r) => r.collection_rate_pct,
+      },
+    ];
+    download(
+      `balances_${month}.csv`,
+      toCSV(state.balancesView, cols)
+    );
   });
 }
 ensureExportButtons();
 
 /* ======================= OVERVIEW BIG BUTTONS ====================== */
-$("#btnSendAll")?.addEventListener("click", async ()=>{
+$("#btnSendAll")?.addEventListener("click", async () => {
   const ym = getSelectedMonth();
-  try{
+  try {
     const rows = await getRentRollForMonth(ym);
-    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
-    if(!dueRows.length){ alert('Nothing to send for ' + ym); return; }
-    let opened=0, skippedNoPhone=0;
-    for(const r of dueRows){
+    const dueRows = rows.filter((r) => Number(r.balance || 0) > 0);
+    if (!dueRows.length) {
+      alert("Nothing to send for " + ym);
+      return;
+    }
+    let opened = 0,
+      skippedNoPhone = 0;
+    for (const r of dueRows) {
       const contact = await getContactForLease(r.lease_id);
       const phone = (contact?.phone || "").trim();
-      if(!phone){ skippedNoPhone++; continue; }
+      if (!phone) {
+        skippedNoPhone++;
+        continue;
+      }
       const url = buildWhatsAppURL(phone, {
-        tenant_name: contact?.tenant || r.tenant || 'Tenant',
-        unit: r.unit_code || r.unit || 'Unit',
+        tenant_name: contact?.tenant || r.tenant || "Tenant",
+        unit: r.unit_code || r.unit || "Unit",
         period: fmtMonYearFromISO(r.period_start),
         total_due: Number(r.total_due || 0),
         paid_to_date: Number(r.paid_amount || 0),
         amount_due: Number(r.balance || r.total_due || 0),
-        due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-KE',{day:'2-digit',month:'short',year:'numeric'}) : ''
+        due_date: r.due_date
+          ? new Date(r.due_date).toLocaleDateString("en-KE", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+          : "",
       });
-      window.open(url,'_blank'); opened++;
-      await new Promise(res => setTimeout(res, 600));
+      window.open(url, "_blank");
+      opened++;
+      await new Promise((res) => setTimeout(res, 600));
     }
-    alert(`Opened ${opened} WhatsApp chats. Skipped ${skippedNoPhone} (no phone).`);
-  }catch(e){ console.error(e); alert('Send All failed: ' + e.message); }
+    alert(
+      `Opened ${opened} WhatsApp chats. Skipped ${skippedNoPhone} (no phone).`
+    );
+  } catch (e) {
+    console.error(e);
+    alert("Send All failed: " + e.message);
+  }
 });
 
-$("#btnMarkSelected")?.addEventListener("click", async ()=>{
+$("#btnMarkSelected")?.addEventListener("click", async () => {
   const ym = getSelectedMonth();
-  try{
+  try {
     const rows = await getRentRollForMonth(ym);
-    const dueRows = rows.filter(r => Number(r.balance || 0) > 0);
-    const invoiceIds=[];
-    for(const r of dueRows){
+    const dueRows = rows.filter((r) => Number(r.balance || 0) > 0);
+    const invoiceIds = [];
+    for (const r of dueRows) {
       const id = await getInvoiceIdForLeaseMonth(r.lease_id, ym);
-      if(id) invoiceIds.push(id);
-      await new Promise(res => setTimeout(res, 120));
+      if (id) invoiceIds.push(id);
+      await new Promise((res) => setTimeout(res, 120));
     }
-    if(!invoiceIds.length){ alert('No invoices found to mark for ' + ym); return; }
-    const res = await fetch(`${state.api}/invoices/mark_sent`,{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ invoice_ids:invoiceIds, sent_via:'whatsapp', sent_to:'tenant', sent_at:new Date().toISOString() })
+    if (!invoiceIds.length) {
+      alert("No invoices found to mark for " + ym);
+      return;
+    }
+    const res = await fetch(`${state.api}/invoices/mark_sent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invoice_ids: invoiceIds,
+        sent_via: "whatsapp",
+        sent_to: "tenant",
+        sent_at: new Date().toISOString(),
+      }),
     });
-    if(!res.ok) throw new Error('API returned ' + res.status);
+    if (!res.ok) throw new Error("API returned " + res.status);
     const out = await res.json();
     alert(`Marked as sent: ${out.updated?.length || 0} invoices.`);
-  }catch(e){ console.error(e); alert('Mark Sent failed: ' + e.message); }
+  } catch (e) {
+    console.error(e);
+    alert("Mark Sent failed: " + e.message);
+  }
 });
 
 /* ============================ WHATSAPP DIY ============================ */
-$("#waBuild")?.addEventListener("click", ()=>{
-  const name   = ($("#waTenant")?.value || "").trim() || "Tenant";
-  const phone  = ($("#waPhone")?.value  || "").trim();
-  const period = ($("#waPeriod")?.value || "").trim() || new Date().toLocaleString('en-KE',{month:'short',year:'numeric'});
-  const bal    = Number($("#waBalance")?.value || 0);
-  if(!phone){ alert("Enter a recipient phone number"); return; }
-  const url = buildWhatsAppURL(phone,{ tenant_name:name, unit:"your unit", period, total_due:bal, paid_to_date:0, amount_due:bal, due_date:"" });
-  const out=$("#waResult"); if(out){ out.innerHTML=`Link ready: <a href="${url}" target="_blank">Open WhatsApp</a>`; } else { window.open(url,"_blank"); }
+$("#waBuild")?.addEventListener("click", () => {
+  const name = ($("#waTenant")?.value || "").trim() || "Tenant";
+  const phone = ($("#waPhone")?.value || "").trim();
+  const period =
+    ($("#waPeriod")?.value || "").trim() ||
+    new Date().toLocaleString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+  const bal = Number($("#waBalance")?.value || 0);
+  if (!phone) {
+    alert("Enter a recipient phone number");
+    return;
+  }
+  const url = buildWhatsAppURL(phone, {
+    tenant_name: name,
+    unit: "your unit",
+    period,
+    total_due: bal,
+    paid_to_date: 0,
+    amount_due: bal,
+    due_date: "",
+  });
+  const out = $("#waResult");
+  if (out) {
+    out.innerHTML = `Link ready: <a href="${url}" target="_blank">Open WhatsApp</a>`;
+  } else {
+    window.open(url, "_blank");
+  }
 });
 
 /* ================================ BOOT ================================ */
-(function init(){
-  setAPI(state.api); 
+(function init() {
+  setAPI(state.api);
   setAdminToken(state.adminToken);
 
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
-  wireTabs(); 
-  wireHeader(); 
-  wireSettings(); 
+  wireTabs();
+  wireHeader();
+  wireSettings();
   wireActions();
 
   // Ensure monthPicker has a default (current month)
@@ -706,15 +1182,19 @@ $("#waBuild")?.addEventListener("click", ()=>{
     mp.value = `${now.getFullYear()}-${mm}`;
   }
 
-  // Reload summary when month changes
+  // When month changes: keep Overview, metrics card, balances, and tile in sync
   if (mp) {
     mp.addEventListener("change", () => {
       loadCollectionSummaryMonth().catch(console.error);
+      loadOverview().catch(console.error);
+      loadBalances().catch(console.error);
+      loadOutstandingByTenant().catch(console.error);
     });
   }
 
-  // Initial load for the card
+  // Initial load for the summary card
   loadCollectionSummaryMonth().catch(console.error);
 
+  // Default tab
   showTab("overview");
 })();
