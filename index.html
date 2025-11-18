@@ -299,41 +299,49 @@
         <div id="waResult" class="muted"></div>
       </div>
 
-      <!-- ===== Settings ===== -->
-      <div class="panel hidden" id="tab-settings">
-        <h2>Settings</h2>
-        <p class="muted">Saved only in this browser (localStorage).</p>
-        <div class="filters" style="gap:14px;align-items:center;flex-wrap:wrap">
-          <label style="display:flex;gap:8px;align-items:center">API Base
-            <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com"/>
-          </label>
-          <label style="display:flex;gap:8px;align-items:center">Admin Token
-            <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off"/>
-          </label>
-          <button class="btn" id="saveSettings">Save</button>
-          <button class="btn ghost" id="resetSettings">Reset</button>
+           <!-- ===== Balances ===== -->
+      <div class="panel hidden" id="tab-balances">
+        <div class="bar-flex">
+          <h2>Balances (This Month)</h2>
+          <button class="btn ghost" id="reloadBalances">Reload</button>
+          <button class="btn ghost" id="exportBalancesCsv">Export CSV</button>
         </div>
+
+        <!-- Current-month balances table -->
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th>Lease / Unit</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th style="text-align:right">Balance</th>
+              </tr>
+            </thead>
+            <tbody id="balancesBody"></tbody>
+          </table>
+        </div>
+        <div id="balancesEmpty" class="empty hidden">No current-month balances.</div>
+
+        <hr style="border:none;border-top:1px solid var(--bd);margin:16px 0" />
+
+        <!-- Outstanding by tenant moved here -->
+        <div class="bar-flex">
+          <h3>Outstanding by tenant (this month)</h3>
+          <button class="btn ghost" id="reloadOutstanding">Reload</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th style="text-align:right">Outstanding</th>
+              </tr>
+            </thead>
+            <!-- IMPORTANT: leave this tbody EMPTY so JS can fill it -->
+            <tbody id="outstandingBody"></tbody>
+          </table>
+        </div>
+        <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
       </div>
-
-    </section>
-  </main>
-</div>
-
-<!-- Small helpers available before app.js -->
-<script>
-  const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
-  function getAdminToken(){
-    let t = localStorage.getItem("admin_token");
-    if(!t){ t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:"); if(t) localStorage.setItem("admin_token", t); }
-    return t || "";
-  }
-  function setAdminToken(t){ localStorage.setItem("admin_token", t); }
-  document.getElementById("setAdminTokenBtn")?.addEventListener("click", ()=>{
-    const t = prompt("Paste ADMIN_TOKEN"); if(t) setAdminToken(t);
-  });
-</script>
-
-<!-- App logic (must be last) -->
-<script src="./app.js"></script>
-</body>
-</html>
