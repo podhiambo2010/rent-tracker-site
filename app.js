@@ -533,40 +533,47 @@ function wireActions() {
 async function loadOverview() {
   const month = getSelectedMonth();
   try {
-    // Only use month-aware endpoints here
-    const [L, P, RR, outstandingRows] = await Promise.all([
+    const [L, P, RR, perTenant] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
       jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-      fetchOutstandingRows(month),
+      fetchOutstandingRows().catch(() => []),
     ]);
 
-    // Total leases (all time)
+    // Total leases (lifetime)
     $("#kpiLeases") && ($("#kpiLeases").textContent = (L || []).length);
 
-    // Open invoices for selected month
+    // Open invoices for that month (rent-roll rows that are not fully paid)
     $("#kpiOpen") &&
       ($("#kpiOpen").textContent = (RR || []).filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
       ).length);
 
-    // Payments for selected month
+    // Payments KPI – show amount if >0, otherwise count
     const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     $("#kpiPayments") &&
       ($("#kpiPayments").textContent =
         pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length);
 
-    // Balance due for selected month = sum of balances from rent-roll
-    const balanceTotal = (RR || []).reduce(
-      (s, x) => s + (Number(x.balance ?? x.total_due ?? 0) || 0),
-      0
-    );
+    // Balance KPI – sum per-tenant outstanding (or fall back to rent-roll)
+    let balanceTotal = 0;
+    if (Array.isArray(perTenant) && perTenant.length) {
+      balanceTotal = perTenant.reduce(
+        (s, r) => s + (Number(r.outstanding) || 0),
+        0
+      );
+    } else {
+      balanceTotal = (RR || []).reduce(
+        (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
+        0
+      );
+    }
     if ($("#kpiBalance")) {
       $("#kpiBalance").textContent = ksh(balanceTotal);
     }
 
-    // Refresh the small "Outstanding by tenant" tile
-    renderOutstanding(outstandingRows || []);
+    // Feed the small “Outstanding by tenant” tile
+    renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
   } catch (e) {
     console.error(e);
     toast("Failed to load overview");
