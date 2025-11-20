@@ -819,41 +819,65 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
   }
 });
 
-// --- Balances tab ---
+// --- Balances tab (uses /rent-roll & aggregates per tenant) ---
 async function loadBalances() {
   try {
-    // 🔹 Use the same helper as the Overview tile
-    const rows = await fetchOutstandingRows();   // current-month outstanding per tenant
-    state.balancesView = rows || [];
-
+    const month = getSelectedMonth();
     const body  = $("#balancesBody");
     const empty = $("#balancesEmpty");
-
     if (!body) return;
 
-    if (!rows || !rows.length) {
+    // 1) Get rent-roll for the selected month
+    const rows = await jget(
+      `/rent-roll?month=${encodeURIComponent(month)}&limit=1000`
+    );
+
+    // Only show invoices that still have something outstanding
+    const dueRows = (rows || []).filter(
+      (r) => Number(r.balance || 0) > 0
+    );
+
+    // Store for CSV export
+    state.balancesView = dueRows;
+
+    if (!dueRows.length) {
       body.innerHTML = "";
       empty?.classList.remove("hidden");
-      // also clear the small “Outstanding by tenant” table
+      // Also clear the small “Outstanding by tenant” table
       renderOutstanding([]);
       return;
     }
 
     empty?.classList.add("hidden");
 
-    // 🔹 Main "Balances (This Month)" table – one row per tenant
-    body.innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.tenant_name ?? "—"}</td>
-        <td>${(r.tenant_id || "").slice(0,8)}…</td>
-        <td>${new Date().toLocaleString('en-KE', { month: 'short', year: 'numeric' })}</td>
-        <td>${Number(r.outstanding || 0) === 0 ? "paid" : "due"}</td>
-        <td style="text-align:right">${money(r.outstanding)}</td>
-      </tr>
-    `).join("");
+    // Main "Balances (This Month)" table – one row per invoice/lease
+    body.innerHTML = dueRows
+      .map((r) => {
+        const periodLabel =
+          r.period ||
+          `${r.period_start || "—"} → ${r.period_end || "—"}`;
+        const leaseLabel =
+          r.unit_code ||
+          r.unit ||
+          (r.lease_id ? String(r.lease_id).slice(0, 8) + "…" : "—");
+        const statusLabel = r.status || "due";
 
-    // 🔹 Add total row at the bottom
-    const total = rows.reduce((s, x) => s + (Number(x.outstanding) || 0), 0);
+        return `
+          <tr>
+            <td>${r.tenant ?? "—"}</td>
+            <td>${leaseLabel}</td>
+            <td>${periodLabel}</td>
+            <td>${statusLabel}</td>
+            <td style="text-align:right">${money(r.balance)}</td>
+          </tr>`;
+      })
+      .join("");
+
+    // Total row at the bottom
+    const total = dueRows.reduce(
+      (sum, r) => sum + (Number(r.balance) || 0),
+      0
+    );
     const trow = document.createElement("tr");
     trow.innerHTML = `
       <td colspan="4" style="text-align:right;font-weight:600">Total</td>
@@ -861,15 +885,28 @@ async function loadBalances() {
     `;
     body.appendChild(trow);
 
-    // 🔹 Re-use the same data for the lower “Outstanding by tenant (this month)” section
-    renderOutstanding(rows);
+    // 2) Aggregate per tenant for the lower “Outstanding by tenant (this month)” list
+    const perTenant = {};
+    for (const r of dueRows) {
+      const key = r.tenant || "—";
+      perTenant[key] = (perTenant[key] || 0) + (Number(r.balance) || 0);
+    }
+
+    const tenantRows = Object.entries(perTenant).map(
+      ([tenant_name, balance]) => ({ tenant_name, balance })
+    );
+
+    renderOutstanding(tenantRows);
   } catch (e) {
-    console.error(e);
-    $("#balancesBody").innerHTML = "";
-    $("#balancesEmpty")?.classList.remove("hidden");
+    console.error("loadBalances failed", e);
+    const body  = $("#balancesBody");
+    const empty = $("#balancesEmpty");
+    if (body) body.innerHTML = "";
+    empty?.classList.remove("hidden");
     renderOutstanding([]);
   }
 }
+
 $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
