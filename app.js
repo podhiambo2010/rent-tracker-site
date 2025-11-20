@@ -819,77 +819,55 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
   }
 });
 
-/* --------- Balances (This Month, by tenant metrics) --------- */
+// --- Balances tab ---
 async function loadBalances() {
-  const month = getSelectedMonth();
   try {
-    const rows = await api(
-      `/metrics/collection_by_tenant_month?month=${encodeURIComponent(month)}`
-    );
-    const list = Array.isArray(rows) ? rows : [];
-    state.balancesView = list;
+    // 🔹 Use the same helper as the Overview tile
+    const rows = await fetchOutstandingRows();   // current-month outstanding per tenant
+    state.balancesView = rows || [];
 
-    $("#balancesEmpty")?.classList.toggle("hidden", list.length > 0);
+    const body  = $("#balancesBody");
+    const empty = $("#balancesEmpty");
 
-    const monthLabel = new Date(`${month}-01`).toLocaleString("en-KE", {
-      month: "short",
-      year: "numeric",
-    });
+    if (!body) return;
 
-    $("#balancesBody").innerHTML = list
-      .map((r) => {
-        const name = r.tenant || r.tenant_name || "—";
-        const due = Number(r.rent_due_total ?? r.total_due ?? 0);
-        const paid = Number(r.amount_paid_total ?? r.paid_amount ?? 0);
-        const bal = Number(r.balance_total ?? r.balance ?? due - paid);
-        const status = bal <= 0 ? "paid" : "due";
-        const ratePct =
-          r.collection_rate_pct != null
-            ? `${r.collection_rate_pct}%`
-            : due > 0
-            ? `${Math.round((paid / due) * 100)}%`
-            : "—";
+    if (!rows || !rows.length) {
+      body.innerHTML = "";
+      empty?.classList.remove("hidden");
+      // also clear the small “Outstanding by tenant” table
+      renderOutstanding([]);
+      return;
+    }
 
-        return `
-        <tr>
-          <td>${name}</td>
-          <td>${monthLabel}</td>
-          <td style="text-align:right">${money(due)}</td>
-          <td style="text-align:right">${money(paid)}</td>
-          <td style="text-align:right">${money(bal)}</td>
-          <td class="muted">${ratePct}</td>
-          <td><span class="status ${
-            status === "paid" ? "ok" : "due"
-          }">${status}</span></td>
-        </tr>`;
-      })
-      .join("");
+    empty?.classList.add("hidden");
 
-    const totalDue = list.reduce(
-      (s, x) => s + Number(x.rent_due_total ?? x.total_due ?? 0),
-      0
-    );
-    const totalPaid = list.reduce(
-      (s, x) => s + Number(x.amount_paid_total ?? x.paid_amount ?? 0),
-      0
-    );
-    const totalBal = list.reduce(
-      (s, x) => s + Number(x.balance_total ?? x.balance ?? 0),
-      0
-    );
+    // 🔹 Main "Balances (This Month)" table – one row per tenant
+    body.innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.tenant_name ?? "—"}</td>
+        <td>${(r.tenant_id || "").slice(0,8)}…</td>
+        <td>${new Date().toLocaleString('en-KE', { month: 'short', year: 'numeric' })}</td>
+        <td>${Number(r.outstanding || 0) === 0 ? "paid" : "due"}</td>
+        <td style="text-align:right">${money(r.outstanding)}</td>
+      </tr>
+    `).join("");
 
+    // 🔹 Add total row at the bottom
+    const total = rows.reduce((s, x) => s + (Number(x.outstanding) || 0), 0);
     const trow = document.createElement("tr");
     trow.innerHTML = `
-      <td colspan="2" style="text-align:right;font-weight:600">Total</td>
-      <td style="text-align:right;font-weight:600">${money(totalDue)}</td>
-      <td style="text-align:right;font-weight:600">${money(totalPaid)}</td>
-      <td style="text-align:right;font-weight:600">${money(totalBal)}</td>
-      <td colspan="2"></td>`;
-    $("#balancesBody")?.appendChild(trow);
+      <td colspan="4" style="text-align:right;font-weight:600">Total</td>
+      <td style="text-align:right;font-weight:600">${money(total)}</td>
+    `;
+    body.appendChild(trow);
+
+    // 🔹 Re-use the same data for the lower “Outstanding by tenant (this month)” section
+    renderOutstanding(rows);
   } catch (e) {
     console.error(e);
     $("#balancesBody").innerHTML = "";
     $("#balancesEmpty")?.classList.remove("hidden");
+    renderOutstanding([]);
   }
 }
 $("#reloadBalances")?.addEventListener("click", () =>
