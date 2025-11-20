@@ -916,18 +916,34 @@ async function loadCollectionSummaryMonth() {
   const container = document.querySelector("#collection-summary-month");
   if (!container) return;
 
-  const month = getSelectedMonth();
+  const month = getSelectedMonth(); // YYYY-MM that the picker is on
 
   try {
-    const res = await api(
-      `/metrics/collection_summary_month?month=${encodeURIComponent(month)}`
-    );
-    const row = Array.isArray(res) ? res[0] || null : res;
+    // Get all months and pick the one that matches the picker
+    const res = await api("/metrics/collection_summary_month");
+    const rows = Array.isArray(res) ? res : (res ? [res] : []);
 
-    if (!row) {
+    if (!rows.length) {
       container.textContent = "No collection data yet.";
       return;
     }
+
+    const targetYm = month;
+
+    let row =
+      rows.find((r) => {
+        if (r.month_ym) return r.month_ym === targetYm;
+        if (r.month_start) {
+          try {
+            return (
+              new Date(r.month_start).toISOString().slice(0, 7) === targetYm
+            );
+          } catch {
+            return false;
+          }
+        }
+        return false;
+      }) || rows[rows.length - 1]; // fallback: latest row
 
     const monthLabel = row.month_start
       ? new Date(row.month_start).toLocaleDateString("en-KE", {
