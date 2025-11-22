@@ -745,26 +745,39 @@ async function loadRentroll() {
     $("#rentrollCount") && ($("#rentrollCount").textContent = filtered.length);
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length > 0);
     $("#rentrollBody").innerHTML = filtered
-      .map((r) => {
-        const periodLabel =
-          r.period ?? `${r.period_start || "—"} → ${r.period_end || "—"}`;
-        return `<tr>
-        <td>${r.property_name ?? r.property ?? "—"}</td>
-        <td>${r.unit_code ?? r.unit ?? "—"}</td>
-        <td>${r.tenant ?? "—"}</td>
-        <td>${periodLabel}</td>
-        <td>${money(r.total_due)}</td>
-        <td class="status-cell">${r.status ?? "—"}</td>
-        <td style="text-align:right">${money(r.balance)}</td>
-        <td>
-          <button class="btn ghost" data-action="wa"   data-lease="${r.lease_id}">WhatsApp</button>
-          <button class="btn ghost" data-action="mark" data-lease="${
-            r.lease_id
-          }" data-month="${month}">Mark sent</button>
-        </td>
-      </tr>`;
-      })
-      .join("");
+  .map((r) => {
+    const periodLabel =
+      r.period ?? `${r.period_start || "—"} → ${r.period_end || "—"}`;
+
+    // Base rent (from mv_rent_roll.subtotal_rent if present)
+    const baseRent = Number(r.subtotal_rent ?? r.rent ?? r.total_due ?? 0);
+
+    // Late fees (from mv_rent_roll.late_fees if present)
+    const lateFees = Number(r.late_fees ?? 0);
+
+    // Balance already comes from mv_rent_roll (total_due - paid_amount)
+    const balance = Number(r.balance ?? 0);
+
+    return `<tr>
+      <td>${r.property_name ?? r.property ?? "—"}</td>
+      <td>${r.unit_code ?? r.unit ?? "—"}</td>
+      <td>${r.tenant ?? "—"}</td>
+      <td>${periodLabel}</td>
+      <!-- Base rent only -->
+      <td>${money(baseRent)}</td>
+      <!-- Late fees (dash if none) -->
+      <td>${lateFees ? money(lateFees) : "—"}</td>
+      <td class="status-cell">${r.status ?? "—"}</td>
+      <td style="text-align:right">${money(balance)}</td>
+      <td>
+        <button class="btn ghost" data-action="wa"   data-lease="${r.lease_id}">WhatsApp</button>
+        <button class="btn ghost" data-action="mark"
+                data-lease="${r.lease_id}"
+                data-month="${month}">Mark sent</button>
+      </td>
+    </tr>`;
+  })
+  .join("");
   } catch (e) {
     console.error(e);
     $("#rentrollBody").innerHTML = "";
