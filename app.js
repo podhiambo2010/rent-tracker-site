@@ -122,31 +122,37 @@ function fmtMonYearFromISO(isoDate) {
   }
 }
 
-/* WhatsApp message (clear, with KCB details & cash rule) */
-function buildWhatsAppURL(msisdn, payload) {
-  const kes = (n) => `KES ${Number(n || 0).toLocaleString("en-KE")}`;
-  const msg = [
-    `Hello ${payload.tenant_name},`,
-    `Rent for ${payload.unit} — ${payload.period}`,
+function fmtKes(n) {
+  const num = Number(n || 0);
+  return num.toLocaleString("en-KE", { maximumFractionDigits: 0 });
+}
+
+function buildWhatsAppUrlFromRow(row) {
+  const rent      = Number(row.subtotal_rent ?? 0);
+  const late      = Number(row.late_fees ?? 0);
+  const totalDue  = Number(row.total_due ?? (rent + late));
+  const balance   = Number(row.balance ?? totalDue);
+
+  const period    = row.period_label || row.period_start || "";
+  const unit      = row.unit_label || row.unit_name || "";
+  const tenant    = row.tenant_name || "";
+  const phone     = row.whatsapp_msisdn || row.phone_e164 || row.phone || "";
+
+  const lines = [
+    `Hello ${tenant},`,
     ``,
-    `Total billed:  ${kes(payload.total_due)}`,
-    `Paid so far:   ${kes(payload.paid_to_date)}`,
-    `Balance due:   ${kes(payload.amount_due)}`,
-    `Due date:      ${payload.due_date || ""}`,
+    `Rent invoice for ${period} (${unit})`,
     ``,
-    `PAYMENT OPTIONS (Global Star Investments Limited):`,
-    `1) M-Pesa Paybill 522533  | Account: 8035949`,
-    `2) M-Pesa Merchant 522522 | KCB A/C: 1285399528`,
-    `3) Bank Transfer / Cheque | KCB Siaya | A/C: 1285399528`,
+    `Base rent: KES ${fmtKes(rent)}`,
+    `Late fees: KES ${fmtKes(late)}`,
+    `Total for this month: KES ${fmtKes(totalDue)}`,
+    `Balance outstanding: KES ${fmtKes(balance)}`,
     ``,
-    `CASH: Deposit to the KCB account above — do NOT hand cash to individuals.`,
-    ``,
-    `After payment, kindly share the M-Pesa SMS (Paybill) or bank slip (others).`,
-    ``,
-    `Thank you — Global Star Investments Limited.`,
-  ].join("\n");
-  const clean = String(msisdn || "").replace(/\D/g, "");
-  return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
+    `Kindly clear your balance as soon as possible. Thank you.`,
+  ];
+
+  const text = encodeURIComponent(lines.join("\n"));
+  return `https://wa.me/${phone}?text=${text}`;
 }
 
 /* ---------- JSON GET/POST helpers (using state.api directly) ---------- */
