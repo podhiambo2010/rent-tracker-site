@@ -47,60 +47,60 @@
     .panel h2{margin:4px 6px 12px;font-size:16px}
 
     .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
-    .kpi{grid-column:span 3;background:var(--panel-2);border:1px solid var(--bd);border-radius:14px;padding:14px}
+    .kpi{
+      grid-column:span 3;
+      background:var(--panel-2);
+      border:1px solid var(--bd);
+      border-radius:14px;
+      padding:14px
+    }
     .kpi h3{font-size:12px;color:var(--muted);margin:0}
-    .kpi .v{font-size:22px;margin:6px 0 0}
+    .kpi .v{
+      font-size:20px;           /* slightly smaller to avoid crowding */
+      margin:6px 0 0;
+      line-height:1.25;
+      white-space:nowrap;       /* keep “KES …” on one line */
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
 
     /* ---------- Tighter layout for summary cards ---------- */
     .summary-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-    
-    .summary-card {
-      min-width: 210px;
-      flex: 1 1 0;
-    }
-    
-    .summary-card-label {
-      font-size: 0.8rem;
-      line-height: 1.1;
-      opacity: 0.8;
-    }
-    
-    .summary-card-value {
-      font-size: 1.05rem;   /* was bigger before */
-      line-height: 1.25;
-      white-space: nowrap;  /* keeps KES 447,969.00 on one line */
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* Monthly collection summary layout */
-    #collection-summary-month{
-      margin-top:10px;
       display:flex;
       flex-wrap:wrap;
-      gap:10px;
-      font-size:14px;
+      gap:0.75rem;
     }
-    #collection-summary-month > div{
-      background:var(--panel-2);
-      border:1px solid var(--bd);
-      border-radius:10px;
-      padding:8px 10px;
-      min-width:150px;
+    .summary-card {
+      min-width:210px;
+      flex:1 1 0;
     }
-    #collection-summary-month strong{
-      font-size:13px;
+    .summary-card-label {
+      font-size:0.8rem;
+      line-height:1.1;
+      opacity:0.8;
+    }
+    .summary-card-value {
+      font-size:1.05rem;
+      line-height:1.25;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    /* Overview – month picker */
+    #monthPicker{
+      min-width:130px;
+      max-width:170px;
+    }
+    #monthPicker::-webkit-calendar-picker-indicator{
+      filter:invert(1); /* keeps icon visible on dark background */
     }
 
     .bar-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .chip{background:var(--chip);border:1px solid var(--bd);padding:7px 10px;border-radius:999px;color:#cfe0ff}
     .muted{color:var(--muted)}
     .hidden{display:none!important}
-  
+
     /* Per-panel scroller with sticky thead */
     .table-wrap{max-height:60vh;overflow:auto;border-radius:12px}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
@@ -113,14 +113,62 @@
     .status.due{background:rgba(239,68,68,.08);color:#fecaca}
 
     .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
-    .filters input,.filters select{background:var(--panel-2);border:1px solid var(--bd);color:var(--text);padding:8px 10px;border-radius:10px}
+    .filters input,.filters select{
+      background:var(--panel-2);
+      border:1px solid var(--bd);
+      color:var(--text);
+      padding:8px 10px;
+      border-radius:10px
+    }
     .empty{color:var(--muted);text-align:center;padding:18px;background:var(--panel-2);border:1px dashed var(--bd);border-radius:12px}
 
-    /* Logs / previews */
-    #dunningLog,#dunningOut{max-height:40vh;overflow:auto;background:#0b1020;color:#e6edf3;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
+    /* Monthly collection summary layout – prevent overlap */
+    #collection-summary-month{
+      margin-top:10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      font-size:13px;
+    }
+    #collection-summary-month > div{
+      background:var(--panel-2);
+      border:1px solid var(--bd);
+      border-radius:10px;
+      padding:6px 10px;
+      min-width:180px;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #collection-summary-month strong{
+      font-size:13px;
+      font-weight:600;
+    }
 
-    @media (max-width:980px){ main{grid-template-columns:1fr} nav{position:static} .kpi{grid-column:span 6} }
-    @media (max-width:640px){ .kpi{grid-column:span 12} .env input{max-width:100%;width:220px} .table-wrap{max-height:50vh} }
+    /* Logs / previews */
+    #dunningLog,#dunningOut{
+      max-height:40vh;
+      overflow:auto;
+      background:#0b1020;
+      color:#e6edf3;
+      border:1px solid rgba(255,255,255,.18);
+      border-radius:12px;
+      padding:12px
+    }
+
+    @media (max-width:980px){
+      main{grid-template-columns:1fr}
+      nav{position:static}
+      .kpi{grid-column:span 6}
+    }
+    @media (max-width:640px){
+      .kpi{grid-column:span 12}
+      .env input{max-width:100%;width:220px}
+      .table-wrap{max-height:50vh}
+    }
   </style>
 </head>
 <body>
@@ -158,7 +206,7 @@
         <h3 style="margin:0 0 8px;">Invoice Actions</h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
-                style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
+                 style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
           <button id="btnMarkSent" class="btn">Mark as sent</button>
           <button id="btnHealth" class="btn ghost">Auth ping</button>
         </div>
