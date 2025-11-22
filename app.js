@@ -127,32 +127,70 @@ function fmtKes(n) {
   return num.toLocaleString("en-KE", { maximumFractionDigits: 0 });
 }
 
-function buildWhatsAppUrlFromRow(row) {
-  const rent      = Number(row.subtotal_rent ?? 0);
-  const late      = Number(row.late_fees ?? 0);
-  const totalDue  = Number(row.total_due ?? (rent + late));
-  const balance   = Number(row.balance ?? totalDue);
+// General WhatsApp link builder used by:
+// - Rent Roll "WhatsApp" buttons
+// - Overview "Send All" button
+// - DIY WhatsApp tab
+function buildWhatsAppURL(phone, ctx = {}) {
+  const msisdn = String(phone || "").replace(/[^\d]/g, "");
+  if (!msisdn) return "";
 
-  const period    = row.period_label || row.period_start || "";
-  const unit      = row.unit_label || row.unit_name || "";
-  const tenant    = row.tenant_name || "";
-  const phone     = row.whatsapp_msisdn || row.phone_e164 || row.phone || "";
+  const tenant = ctx.tenant_name || "Tenant";
+  const unit   = ctx.unit || "your unit";
+  const period = ctx.period || "";
+
+  const rent = Number(
+    ctx.rent ??
+    ctx.subtotal_rent ??
+    0
+  );
+  const late = Number(
+    ctx.late_fees ??
+    ctx.late ??
+    0
+  );
+
+  // Single source of truth for the monthly invoice total
+  const total = Number(
+    ctx.total_due ??
+    (rent + late)
+  );
+
+  const paid = Number(ctx.paid_to_date ?? 0);
+
+  // Overall outstanding (for that month or overall, depending on ctx)
+  const balance = Number(
+    ctx.amount_due ??
+    ctx.balance ??
+    (total - paid)
+  );
+
+  const dueDate = ctx.due_date || "";
 
   const lines = [
     `Hello ${tenant},`,
-    ``,
-    `Rent invoice for ${period} (${unit})`,
-    ``,
+    "",
+    `Rent invoice for ${period || "(no period)"} (${unit})`,
+    "",
     `Base rent: KES ${fmtKes(rent)}`,
     `Late fees: KES ${fmtKes(late)}`,
-    `Total for this month: KES ${fmtKes(totalDue)}`,
-    `Balance outstanding: KES ${fmtKes(balance)}`,
-    ``,
-    `Kindly clear your balance as soon as possible. Thank you.`,
+    `Total for this month: KES ${fmtKes(total)}`,
   ];
 
+  if (paid) {
+    lines.push(`Paid to date: KES ${fmtKes(paid)}`);
+  }
+
+  lines.push(`Balance outstanding: KES ${fmtKes(balance)}`);
+
+  if (dueDate) {
+    lines.push(`Due date: ${dueDate}`);
+  }
+
+  lines.push("", "Kindly clear your balance as soon as possible. Thank you.");
+
   const text = encodeURIComponent(lines.join("\n"));
-  return `https://wa.me/${phone}?text=${text}`;
+  return `https://wa.me/${msisdn}?text=${text}`;
 }
 
 /* ---------- JSON GET/POST helpers (using state.api directly) ---------- */
@@ -846,15 +884,63 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
   const action = btn.dataset.action,
     leaseId = btn.dataset.lease,
     month = btn.dataset.month;
+
+  // WhatsApp button in the Rent Roll table
   if (action === "wa") {
-    window.open(
-      `${state.api}/wa_for_lease_redirect?lease_id=${encodeURIComponent(
-        leaseId
-      )}`,
-      "_blank"
-    );
+    try {
+      const ym = $("#rentrollMonth")?.value || yyyymm();
+      const leaseKey = String(leaseId);
+
+      // Find the matching rent-roll row for this lease/month
+      const row = (state.rentrollView || []).find(
+        (r) => String(r.lease_id ?? r.id ?? "") === leaseKey
+      );
+
+      // Get contact (phone + display tenant name)
+      const contact = await getContactForLease(leaseId);
+      const phoneRaw = (contact?.phone || contact?.phone_e164 || "").trim();
+      if (!phoneRaw) {
+        toast("No phone number on file for this lease");
+        return;
+      }
+
+      const ctx = {
+        tenant_name:
+          contact?.tenant ||
+          row?.tenant ||
+          row?.tenant_name ||
+          "Tenant",
+        unit: row?.unit_code || row?.unit || "Unit",
+        period:
+          row?.period ||
+          fmtMonYearFromISO(row?.period_start || `${ym}-01`),
+        rent: Number(row?.subtotal_rent ?? row?.rent ?? 0),
+        late_fees: Number(row?.late_fees ?? 0),
+        total_due: Number(row?.total_due ?? 0),
+        paid_to_date: Number(row?.paid_amount ?? 0),
+        amount_due: Number(row?.balance ?? row?.total_due ?? 0),
+        due_date: row?.due_date
+          ? new Date(row.due_date).toLocaleDateString("en-KE", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+          : "",
+      };
+
+      const url = buildWhatsAppURL(phoneRaw, ctx);
+      if (!url) {
+        toast("Could not build WhatsApp link");
+        return;
+      }
+      window.open(url, "_blank");
+    } catch (err) {
+      console.error("Failed to open WhatsApp for rent roll row", err);
+      toast("Failed to open WhatsApp");
+    }
     return;
   }
+
   if (action === "mark") {
     if (!state.adminToken) return toast("Set Admin token in Settings first");
     btn.disabled = true;
@@ -1250,6 +1336,8 @@ $("#btnSendAll")?.addEventListener("click", async () => {
         tenant_name: contact?.tenant || r.tenant || "Tenant",
         unit: r.unit_code || r.unit || "Unit",
         period: fmtMonYearFromISO(r.period_start),
+        rent: Number(r.subtotal_rent || r.rent || 0),
+        late_fees: Number(r.late_fees || 0),
         total_due: Number(r.total_due || 0),
         paid_to_date: Number(r.paid_amount || 0),
         amount_due: Number(r.balance || r.total_due || 0),
@@ -1327,6 +1415,8 @@ $("#waBuild")?.addEventListener("click", () => {
     tenant_name: name,
     unit: "your unit",
     period,
+    rent: bal,
+    late_fees: 0,
     total_due: bal,
     paid_to_date: 0,
     amount_due: bal,
