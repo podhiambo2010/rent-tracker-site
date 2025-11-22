@@ -729,52 +729,67 @@ ensureRentrollMonthOptions();
 // --- Rent Roll tab ---
 async function loadRentroll() {
   try {
-    const month = $("#rentrollMonth")?.value || yyyymm();
+    // 1) Month + simple text filters
+    const monthSelect = $("#rentrollMonth");
+    if (monthSelect && !monthSelect.value) {
+      monthSelect.value = yyyymm(); // default to current YYYY-MM
+    }
+    const month = monthSelect ? monthSelect.value : yyyymm();
+
     const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
 
-    const rows = await jget(`/rent_roll?month=${month}`);
+    // 2) Fetch rows from API
+    const rows = (await jget(`/rent-roll?month=${encodeURIComponent(month)}`)) || [];
 
-    // Text filters
-    const filtered = (rows || []).filter((r) => {
+    // 3) Client-side filters (tenant / property)
+    const filtered = rows.filter((r) => {
       const okT = tQ
         ? String(r.tenant || "").toLowerCase().includes(tQ)
         : true;
-      const okP = pQ
-        ? String(r.property_name || r.property || "")
-            .toLowerCase()
-            .includes(pQ)
-        : true;
+
+      const propName = String(r.property_name || r.property || "");
+      const okP = pQ ? propName.toLowerCase().includes(pQ) : true;
+
       return okT && okP;
     });
 
     state.rentrollView = filtered;
+
+    // 4) KPI badge + empty state
     if ($("#rentrollCount")) {
       $("#rentrollCount").textContent = filtered.length;
     }
     $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length > 0);
 
-    // Render table rows
-    $("#rentrollBody").innerHTML = filtered
+    const body = $("#rentrollBody");
+    if (!body) return;
+
+    if (!filtered.length) {
+      body.innerHTML = "";
+      return;
+    }
+
+    // 5) Render table rows
+    body.innerHTML = filtered
       .map((r) => {
         const periodLabel =
           r.period ??
-          `${r.period_start || "—"} → ${r.period_end || "—"}`;
+          `${r.period_start ?? "—"} → ${r.period_end ?? "—"}`;
 
-        // Use invoice total as truth
-        const totalDue = Number(r.total_due ?? 0) || 0;
-        const rawLate  = Number(r.late_fees ?? 0) || 0;
+        // base rent from mv_rent_roll.subtotal_rent (or fallbacks)
+        const baseRent = Number(
+          r.subtotal_rent ??
+          r.rent ??
+          r.total_due ??
+          0
+        );
 
-        // Cap late fees at 2,000 per month
-        const cappedLate = Math.min(rawLate, 2000);
+        // late fees (already capped in Supabase)
+        const lateFees = Number(r.late_fees ?? 0);
 
-        // Derive base rent from invoice total
-        const rent = totalDue - cappedLate;
-
-        const paid   = Number(r.paid_amount ?? 0) || 0;
-        const balance = totalDue - paid;
-
-        const status = balance > 0.01 ? "Due" : "OK";
+        // balance from mv_rent_roll (total_due - paid_amount)
+        const balance = Number(r.balance ?? 0);
 
         return `
           <tr>
@@ -782,23 +797,27 @@ async function loadRentroll() {
             <td>${r.unit_code ?? r.unit ?? "—"}</td>
             <td>${r.tenant ?? "—"}</td>
             <td>${periodLabel}</td>
-            <td>${money(rent)}</td>
-            <td>${money(cappedLate)}</td>
-            <td class="status-cell">${status}</td>
+            <td>${money(baseRent)}</td>
+            <td>${lateFees ? money(lateFees) : "—"}</td>
+            <td class="status-cell">${r.status ?? "—"}</td>
             <td style="text-align:right">${money(balance)}</td>
             <td>
-              <button class="btn ghost" data-action="wa"   data-lease="${r.lease_id}">WhatsApp</button>
-              <button class="btn ghost" data-action="mark" data-lease="${
-                r.lease_id
-              }" data-month="${month}">Mark sent</button>
+              <button class="btn ghost"
+                      data-action="wa"
+                      data-lease="${r.lease_id}">WhatsApp</button>
+              <button class="btn ghost"
+                      data-action="mark"
+                      data-lease="${r.lease_id}"
+                      data-month="${month}">Mark sent</button>
             </td>
           </tr>
         `;
       })
       .join("");
   } catch (e) {
-    console.error(e);
-    $("#rentrollBody").innerHTML = "";
+    console.error("loadRentroll failed", e);
+    const body = $("#rentrollBody");
+    if (body) body.innerHTML = "";
     $("#rentrollEmpty")?.classList.remove("hidden");
   }
 }
