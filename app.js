@@ -726,26 +726,23 @@ function ensureRentrollMonthOptions() {
 }
 ensureRentrollMonthOptions();
 
-// --- Rent Roll tab ---
+// --- Rent roll tab ---
 async function loadRentroll() {
   try {
     const month = $("#rentrollMonth")?.value || yyyymm();
     const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
 
-    // Ask the API for that month
+    // Pull rows for the selected month from the API
     const rows = await jget(`/rent-roll?month=${month}`);
 
-    // Apply filters (tenant / property text)
+    // Apply simple text filters (tenant / property)
     const filtered = (rows || []).filter((r) => {
       const okTenant = tQ
         ? String(r.tenant || "").toLowerCase().includes(tQ)
         : true;
-      const okProp = pQ
-        ? String(r.property_name || r.property || "")
-            .toLowerCase()
-            .includes(pQ)
-        : true;
+      const propName = String(r.property_name || r.property || "");
+      const okProp = pQ ? propName.toLowerCase().includes(pQ) : true;
       return okTenant && okProp;
     });
 
@@ -753,39 +750,37 @@ async function loadRentroll() {
     if ($("#rentrollCount")) {
       $("#rentrollCount").textContent = filtered.length;
     }
-    $("#rentrollEmpty")?.classList.toggle("hidden", filtered.length > 0);
 
-    // Build table rows
+    const empty = $("#rentrollEmpty");
+    empty?.classList.toggle("hidden", filtered.length > 0);
+
+    // Render table rows
     $("#rentrollBody").innerHTML = filtered
       .map((r) => {
         const periodLabel =
           r.period ?? `${r.period_start || "—"} → ${r.period_end || "—"}`;
 
-        // 1) Base rent (from invoices)
-        const rent = Number(
-          r.subtotal_rent ?? r.rent ?? r.base_rent ?? 0
+        // Base rent from view (or fallback)
+        const baseRent = Number(
+          r.subtotal_rent ?? r.rent ?? r.total_due ?? 0
         );
 
-        // 2) Credits (if any)
+        // Late fees (already capped per invoice in Supabase)
+        const lateFees = Number(r.late_fees ?? 0);
+
+        // Credits if you ever use them (defaults to 0)
         const credits = Number(r.credits ?? 0);
 
-        // 3) Total due for the invoice/month (already includes capped late fees)
-        const totalDue = Number(r.total_due ?? 0);
+        // **Authoritative monthly invoice total** for this lease/period:
+        // prefer total_due coming from Supabase; if it’s missing, recompute.
+        const totalDueRaw =
+          r.total_due != null ? Number(r.total_due) : NaN;
+        const totalDue = Number.isFinite(totalDueRaw)
+          ? totalDueRaw
+          : baseRent + lateFees - credits;
 
-        // 4) Derive late fees = totalDue - rent + credits
-        //    (credits reduce what the tenant pays, so add them back
-        //     to isolate the penalty portion)
-        let lateFees = totalDue - rent + credits;
-
-        if (!Number.isFinite(lateFees) || lateFees < 0) {
-          lateFees = 0;
-        }
-
-        // Safety: visually cap at 2,000 even if something in data slips
-        if (lateFees > 2000) lateFees = 2000;
-
-        // 5) Balance comes straight from the view (already total_due - paid)
-        const balance = Number(r.balance ?? totalDue) || 0;
+        // This is what we show in the "Balance" column
+        const displayBalance = totalDue;
 
         return `
           <tr>
@@ -793,22 +788,25 @@ async function loadRentroll() {
             <td>${r.unit_code ?? r.unit ?? "—"}</td>
             <td>${r.tenant ?? "—"}</td>
             <td>${periodLabel}</td>
-            <td>${money(rent)}</td>
+
+            <!-- Rent (base) -->
+            <td>${money(baseRent)}</td>
+
+            <!-- Late fees (dash if zero) -->
             <td>${lateFees ? money(lateFees) : "—"}</td>
+
+            <!-- Status from view -->
             <td class="status-cell">${r.status ?? "—"}</td>
-            <td style="text-align:right">${money(balance)}</td>
+
+            <!-- Total invoice amount for the period -->
+            <td style="text-align:right">${money(displayBalance)}</td>
+
             <td>
-              <button class="btn ghost"
-                      data-action="wa"
-                      data-lease="${r.lease_id}">
-                WhatsApp
-              </button>
-              <button class="btn ghost"
-                      data-action="mark"
+              <button class="btn ghost" data-action="wa"
+                      data-lease="${r.lease_id}">WhatsApp</button>
+              <button class="btn ghost" data-action="mark"
                       data-lease="${r.lease_id}"
-                      data-month="${month}">
-                Mark sent
-              </button>
+                      data-month="${month}">Mark sent</button>
             </td>
           </tr>
         `;
@@ -820,6 +818,14 @@ async function loadRentroll() {
     $("#rentrollEmpty")?.classList.remove("hidden");
   }
 }
+
+// Keep these listeners as they were
+$("#applyRentroll")?.addEventListener("click", loadRentroll);
+$("#clearRentroll")?.addEventListener("click", () => {
+  $("#rentrollTenant").value = "";
+  $("#rentrollProperty").value = "";
+  loadRentroll();
+});
 
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
 $("#clearRentroll")?.addEventListener("click", () => {
