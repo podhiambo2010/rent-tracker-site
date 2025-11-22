@@ -23,6 +23,14 @@
     }
     a{color:#7aa7ff}
 
+     /* Month picker – keep it neat and visible */
+    #monthPicker{
+      min-width:140px;
+      max-width:170px;
+      padding-right:28px;       /* makes space for the calendar icon */
+      font-size:14px;
+    }
+
     /* Shell */
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
     header{position:sticky;top:0;z-index:5;background:rgba(15,23,48,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
@@ -51,14 +59,6 @@
     .kpi h3{font-size:12px;color:var(--muted);margin:0}
     .kpi .v{font-size:22px;margin:6px 0 0}
    
-    /* Month picker – keep it neat and visible */
-    #monthPicker{
-      min-width:140px;
-      max-width:170px;
-      padding-right:28px;       /* makes space for the calendar icon */
-      font-size:14px;
-    }
-
     /* ---------- Tighter layout for summary cards ---------- */
     .summary-row {
       display: flex;
