@@ -825,6 +825,9 @@ async function loadRentroll() {
 
         // This is what we show in the "Balance" column
         const displayBalance = totalDue;
+        <td>${lateFees ? money(lateFees) : "—"}</td>
+        <td class="status-cell">${r.status ?? "—"}</td>
+        <td style="text-align:right">${money(displayBalance)}</td>
 
         return `
           <tr>
