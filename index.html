@@ -50,7 +50,7 @@
     .kpi{grid-column:span 3;background:var(--panel-2);border:1px solid var(--bd);border-radius:14px;padding:14px}
     .kpi h3{font-size:12px;color:var(--muted);margin:0}
     .kpi .v{font-size:22px;margin:6px 0 0}
-   
+
     /* ---------- Tighter layout for summary cards ---------- */
     .summary-row {
       display: flex;
@@ -97,80 +97,71 @@
     .chip{background:var(--chip);border:1px solid var(--bd);padding:7px 10px;border-radius:999px;color:#cfe0ff}
     .muted{color:var(--muted)}
     .hidden{display:none!important}
-  
-    /* Per-panel scroller with sticky thead */
+
+    /* Tables */
     .table-wrap{max-height:60vh;overflow:auto;border-radius:12px}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
-    thead th{position:sticky;top:0;z-index:1;background:var(--panel-2);font-size:12px;color:#a9b9dc;text-align:left;padding:8px 10px;border-bottom:1px solid var(--bd)}
-    tbody td{padding:12px 10px;background:var(--panel-2);border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)}
-    tbody tr td:first-child{border-left:1px solid var(--bd);border-top-left-radius:10px;border-bottom-left-radius:10px}
-    tbody tr td:last-child{border-right:1px solid var(--bd);border-top-right-radius:10px;border-bottom-right-radius:10px}
+    thead th{
+      position:sticky;top:0;z-index:1;
+      background:var(--panel-2);
+      font-size:12px;color:#a9b9dc;text-align:left;
+      padding:8px 10px;
+      border-bottom:1px solid var(--bd)
+    }
+    tbody td{
+      padding:10px 10px;
+      background:var(--panel-2);
+      border-top:1px solid var(--bd);
+      border-bottom:1px solid var(--bd);
+      font-size:13px;
+    }
+    tbody tr td:first-child{
+      border-left:1px solid var(--bd);
+      border-top-left-radius:10px;border-bottom-left-radius:10px
+    }
+    tbody tr td:last-child{
+      border-right:1px solid var(--bd);
+      border-top-right-radius:10px;border-bottom-right-radius:10px
+    }
     .status{padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--bd)}
     .status.ok{background:rgba(34,197,94,.08);color:#86efac}
     .status.due{background:rgba(239,68,68,.08);color:#fecaca}
 
     .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
     .filters input,.filters select{
-      background:var(--panel-2);
-      border:1px solid var(--bd);
-      color:var(--text);
-      padding:8px 10px;
-      border-radius:10px;
+      background:var(--panel-2);border:1px solid var(--bd);color:var(--text);
+      padding:8px 10px;border-radius:10px
     }
-
-    /* --- Overview month picker wrapper --- */
-    .overview-filters .month-chip{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:6px 10px;
-      border-radius:999px;
-      background:var(--panel-2);
-      border:1px solid var(--bd);
-    }
-    .overview-filters .month-chip input[type="month"]{
-      background:transparent;
-      border:none;
-      color:var(--text);
-      font:inherit;
-      padding:0;
-      min-width:130px;
-      cursor:pointer;
-    }
-    .overview-filters .month-chip input[type="month"]::-webkit-calendar-picker-indicator{
-      cursor:pointer;
-    }
-
     .empty{color:var(--muted);text-align:center;padding:18px;background:var(--panel-2);border:1px dashed var(--bd);border-radius:12px}
 
-    /* Logs / previews */
-    #dunningLog,#dunningOut{max-height:40vh;overflow:auto;background:#0b1020;color:#e6edf3;border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:12px}
-
-    /* ===== Rent Roll table tweaks (stop overlapping) ===== */
-    #tab-rentroll tbody td{
-      padding:10px 8px;          /* slightly tighter rows */
+    /* Overview month picker – always visible */
+    .month-wrapper{
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .month-wrapper span{
       font-size:13px;
-      line-height:1.3;
+      color:var(--muted);
     }
-    #tab-rentroll thead th{
-      font-size:12px;
-      white-space:nowrap;
+    #monthPicker{
+      background:var(--panel-2);
+      border:1px solid var(--bd);
+      color:var(--text);
+      padding:6px 10px;
+      border-radius:10px;
+      min-width:150px;
     }
-    /* Keep Period, Due and Balance on single lines */
-    #tab-rentroll tbody td:nth-child(4),
-    #tab-rentroll tbody td:nth-child(5),
-    #tab-rentroll tbody td:nth-child(7){
-      white-space:nowrap;
+    #monthPicker::-webkit-calendar-picker-indicator{
+      filter:invert(1);
     }
-    /* Align money columns to the right for clarity */
-    #tab-rentroll tbody td:nth-child(7),
-    #tab-rentroll thead th:nth-child(7){
-      text-align:right;
-    }
-    /* Give Property / Tenant a bit more room so text doesn't collide */
-    #tab-rentroll tbody td:nth-child(1),
-    #tab-rentroll tbody td:nth-child(3){
-      max-width:220px;
+
+    /* Logs / previews */
+    #dunningLog,#dunningOut{
+      max-height:40vh;overflow:auto;
+      background:#0b1020;color:#e6edf3;
+      border:1px solid rgba(255,255,255,.18);
+      border-radius:12px;padding:12px
     }
 
     @media (max-width:980px){
@@ -220,7 +211,7 @@
         <h3 style="margin:0 0 8px;">Invoice Actions</h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
-                 style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
+                style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
           <button id="btnMarkSent" class="btn">Mark as sent</button>
           <button id="btnHealth" class="btn ghost">Auth ping</button>
         </div>
@@ -236,11 +227,14 @@
           <div class="kpi"><h3>Payments (month)</h3><div class="v" id="kpiPayments">—</div></div>
           <div class="kpi"><h3>Balance Due (month)</h3><div class="v" id="kpiBalance">—</div></div>
         </div>
-          <div class="filters">
-    <input id="monthPicker" type="month" />
-    <button id="btnSendAll" class="btn">Send All (This Month)</button>
-    <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
-  </div>
+        <div class="filters">
+          <div class="month-wrapper">
+            <span>Month</span>
+            <input id="monthPicker" type="month" />
+          </div>
+          <button id="btnSendAll" class="btn">Send All (This Month)</button>
+          <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
+        </div>
 
         <!-- Monthly Collection Summary (API-driven) -->
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
@@ -356,7 +350,7 @@
 
         <hr style="border:none;border-top:1px solid var(--bd);margin:16px 0" />
 
-        <!-- Outstanding by tenant (this month) -->
+        <!-- Outstanding by tenant -->
         <div class="bar-flex">
           <h3>Outstanding by tenant (this month)</h3>
           <button class="btn ghost" id="reloadOutstanding">Reload</button>
