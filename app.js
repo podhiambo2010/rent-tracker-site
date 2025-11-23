@@ -771,6 +771,7 @@ function ensureRentrollMonthOptions() {
 ensureRentrollMonthOptions();
 
 // --- Rent roll tab ---
+// --- Rent roll tab ---
 async function loadRentroll() {
   try {
     const month = $("#rentrollMonth")?.value || yyyymm();
@@ -825,9 +826,6 @@ async function loadRentroll() {
 
         // This is what we show in the "Balance" column
         const displayBalance = totalDue;
-        <td>${lateFees ? money(lateFees) : "—"}</td>
-        <td class="status-cell">${r.status ?? "—"}</td>
-        <td style="text-align:right">${money(displayBalance)}</td>
 
         return `
           <tr>
