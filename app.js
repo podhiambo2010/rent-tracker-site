@@ -984,17 +984,22 @@ async function fetchOutstandingRows(month) {
       `/metrics/collection_by_tenant_month?month=${encodeURIComponent(ym)}`
     );
     if (!Array.isArray(res)) return [];
+
     return res.map((r) => {
-      const rentDue = Number(r.rent_due_total ?? r.total_due ?? 0) || 0;
-      const paid = Number(r.amount_paid_total ?? r.paid_amount ?? 0) || 0;
+      const rentDue =
+        Number(r.rent_due_total ?? r.rent_due ?? r.total_due ?? 0) || 0;
+      const paid =
+        Number(r.amount_paid_total ?? r.amount_paid ?? r.paid_amount ?? 0) || 0;
       const balance =
         Number(r.balance_total ?? r.balance ?? rentDue - paid) || 0;
+
       const pct =
         r.collection_rate_pct != null
           ? Number(r.collection_rate_pct)
           : rentDue > 0
           ? Math.round((paid / rentDue) * 100)
           : 0;
+
       return {
         tenant_id: r.tenant_id || r.id || null,
         tenant_name: r.tenant || r.tenant_name || r.tenant_name_text || "—",
@@ -1016,101 +1021,7 @@ async function loadBalances() {
     const rows = await fetchOutstandingRows(); // current-month outstanding per tenant
     state.balancesView = rows || [];
 
-    const body  = $("#balancesBody");
-    const empty = $("#balancesEmpty");
-
-    if (!body) return;
-
-    if (!rows || !rows.length) {
-      body.innerHTML = "";
-      empty?.classList.remove("hidden");
-      // also clear the small “Outstanding by tenant” table
-      renderOutstanding([]);
-      return;
-    }
-
-    empty?.classList.add("hidden");
-
-    // Main "Balances (This Month)" table – one row per tenant
-    body.innerHTML = rows.map(r => `
-      <tr>
-        <td>${r.tenant_name ?? "—"}</td>
-        <td>${(r.tenant_id || "").slice(0,8)}…</td>
-        <td>${new Date().toLocaleString('en-KE', { month: 'short', year: 'numeric' })}</td>
-        <td>${Number(r.outstanding || 0) === 0 ? "paid" : "due"}</td>
-        <td style="text-align:right">${money(r.outstanding)}</td>
-      </tr>
-    `).join("");
-
-    // Add total row at the bottom
-    const total = rows.reduce((s, x) => s + (Number(x.outstanding) || 0), 0);
-    const trow = document.createElement("tr");
-    trow.innerHTML = `
-      <td colspan="4" style="text-align:right;font-weight:600">Total</td>
-      <td style="text-align:right;font-weight:600">${money(total)}</td>
-    `;
-    body.appendChild(trow);
-
-    // Re-use the same data for the lower “Outstanding by tenant (this month)” section
-    renderOutstanding(rows);
-  } catch (e) {
-    console.error(e);
-    $("#balancesBody").innerHTML = "";
-    $("#balancesEmpty")?.classList.remove("hidden");
-    renderOutstanding([]);
-  }
-}
-// --- Balances tab ---
-// Helper: compute per-tenant outstanding using the rent roll
-async function fetchOutstandingRows() {
-  const month = getSelectedMonth();
-  try {
-    const rows = await jget(`/rent-roll?month=${encodeURIComponent(month)}`);
-    if (!Array.isArray(rows) || !rows.length) return [];
-
-    const byTenant = new Map();
-
-    for (const r of rows) {
-      const tenantName =
-        r.tenant ||
-        r.tenant_name ||
-        r.tenant_name_text ||
-        "Tenant";
-
-      // Try to get a stable key; fall back to name
-      const key =
-        r.tenant_id ||
-        r.tenant_uuid ||
-        r.lease_id ||
-        tenantName;
-
-      const existing = byTenant.get(key) || {
-        tenant_id: key,
-        tenant_name: tenantName,
-        outstanding: 0,
-      };
-
-      const bal = Number(r.balance ?? r.total_due ?? 0) || 0;
-      existing.outstanding += bal;
-      byTenant.set(key, existing);
-    }
-
-    // Drop very tiny rounding leftovers
-    return Array.from(byTenant.values()).filter(
-      (t) => Math.abs(t.outstanding) > 1e-2
-    );
-  } catch (err) {
-    console.error("Failed to compute outstanding rows", err);
-    return [];
-  }
-}
-
-async function loadBalances() {
-  try {
-    const rows = await fetchOutstandingRows();
-    state.balancesView = rows || [];
-
-    const body  = $("#balancesBody");
+    const body = $("#balancesBody");
     const empty = $("#balancesEmpty");
     if (!body) return;
 
@@ -1127,7 +1038,7 @@ async function loadBalances() {
       `${getSelectedMonth()}-01`
     ).toLocaleString("en-KE", { month: "short", year: "numeric" });
 
-    // Main table: one row per tenant
+    // Main "Balances (This Month)" table – one row per tenant
     body.innerHTML = rows
       .map(
         (r) => `
@@ -1141,7 +1052,7 @@ async function loadBalances() {
       )
       .join("");
 
-    // Total row
+    // Total row at the bottom
     const total = rows.reduce(
       (sum, x) => sum + (Number(x.outstanding) || 0),
       0
@@ -1153,7 +1064,7 @@ async function loadBalances() {
     `;
     body.appendChild(trow);
 
-    // Lower “Outstanding by tenant (this month)” section uses the same data
+    // Re-use the same data for the lower “Outstanding by tenant (this month)” section
     renderOutstanding(rows);
   } catch (e) {
     console.error(e);
@@ -1166,6 +1077,7 @@ async function loadBalances() {
 $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
+
 
 /* --------- COLLECTION SUMMARY (metrics card) --------- */
 async function loadCollectionSummaryMonth() {
