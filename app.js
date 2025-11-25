@@ -1087,21 +1087,15 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth();
 
   try {
-    const [rentRoll, payments] = await Promise.all([
-      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-    ]);
+    // Get all months from the metrics view
+    const rows = await api("/metrics/collection_summary_month");
 
-    const totalDue = (rentRoll || []).reduce(
-      (sum, r) => sum + (Number(r.total_due) || 0),
-      0
+    const list = Array.isArray(rows) ? rows : [];
+
+    // Find the row whose month_start matches the selected YYYY-MM
+    const row = list.find(
+      (r) => String(r.month_start || "").slice(0, 7) === month
     );
-    const paid = (payments || []).reduce(
-      (sum, p) => sum + (Number(p.amount) || 0),
-      0
-    );
-    const balance = totalDue - paid;
-    const collectionRate = totalDue > 0 ? (paid / totalDue) * 100 : 0;
 
     const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
       year: "numeric",
@@ -1115,15 +1109,36 @@ async function loadCollectionSummaryMonth() {
     const elRate  = container.querySelector("[data-role='collection-rate']");
 
     if (elMonth) elMonth.textContent = monthLabel;
-    if (elDue)   elDue.textContent   = formatMoney(totalDue);
-    if (elPaid)  elPaid.textContent  = formatMoney(paid);
-    if (elBal)   elBal.textContent   = formatMoney(balance);
-    if (elRate)  elRate.textContent  = `${collectionRate.toFixed(1)}%`;
+
+    if (!row) {
+      // If there is no data for that month, show zeros
+      if (elDue)  elDue.textContent  = "0.00";
+      if (elPaid) elPaid.textContent = "0.00";
+      if (elBal)  elBal.textContent  = "0.00";
+      if (elRate) elRate.textContent = "0.0%";
+      return;
+    }
+
+    const totalDue  = Number(row.rent_due_total ?? 0);
+    const paid      = Number(row.amount_paid_total ?? 0);
+    const balance   = Number(row.balance_total ?? totalDue - paid);
+    const rate      =
+      row.collection_rate_pct != null
+        ? Number(row.collection_rate_pct)
+        : totalDue > 0
+        ? (paid / totalDue) * 100
+        : 0;
+
+    if (elDue)  elDue.textContent  = formatMoney(totalDue);
+    if (elPaid) elPaid.textContent = formatMoney(paid);
+    if (elBal)  elBal.textContent  = formatMoney(balance);
+    if (elRate) elRate.textContent = `${rate.toFixed(1)}%`;
   } catch (err) {
-    console.error("Failed to compute collection summary", err);
+    console.error("Failed to load collection summary", err);
     container.textContent = "Error loading collection summary.";
   }
 }
+
 
 /* ============================ EXPORTS ============================ */
 function ensureExportButtons() {
