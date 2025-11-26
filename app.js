@@ -602,47 +602,60 @@ function summarizeRentRoll(rows) {
 
 /* ---- Overview KPIs & tile ---- */
 async function loadOverview() {
-  const month = getSelectedMonth();
+  const month = getSelectedMonth(); // YYYY-MM
 
   try {
-    const [L, RR, perTenant] = await Promise.all([
+    const [leases, rentRoll, perTenant, summaryRows] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
       fetchOutstandingRows(month).catch(() => []),
+      jget("/metrics/collection_summary_month").catch(() => []),
     ]);
 
     // Total leases (lifetime)
     if ($("#kpiLeases")) {
-      $("#kpiLeases").textContent = (L || []).length;
+      $("#kpiLeases").textContent = (leases || []).length;
     }
 
-    // Open invoices for that month (rent-roll rows not fully paid)
+    // Open invoices for that month (from rent-roll rows that are not fully paid)
     if ($("#kpiOpen")) {
-      $("#kpiOpen").textContent = (RR || []).filter(
+      $("#kpiOpen").textContent = (rentRoll || []).filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
       ).length;
     }
 
-    // Use rent-roll as the single source of truth for the collections math
-    const summary = summarizeRentRoll(RR);
+    // Pick the summary row that matches the selected month (fallback = latest)
+    let row = null;
+    const list = Array.isArray(summaryRows) ? summaryRows : [];
+    if (list.length) {
+      row =
+        list.find(
+          (r) => String(r.month_start || "").slice(0, 7) === month
+        ) || list[list.length - 1];
+    }
 
-    // Payments (month) – amount collected for that month's invoices
+    const totalDue = row ? Number(row.rent_due_total || 0) : 0;
+    const paid     = row ? Number(row.amount_paid_total || 0) : 0;
+    const balance  = row
+      ? Number(row.balance_total || (totalDue - paid))
+      : 0;
+
+    // Payments KPI – now driven by the same summary as the card
     if ($("#kpiPayments")) {
-      $("#kpiPayments").textContent =
-        summary.amountPaidTotal > 0
-          ? summary.amountPaidTotal.toLocaleString("en-KE")
-          : "0";
+      $("#kpiPayments").textContent = paid
+        ? paid.toLocaleString("en-KE")
+        : "0";
     }
 
-    // Balance Due (month) – total outstanding for that month
+    // Balance KPI – also driven by the same summary
     if ($("#kpiBalance")) {
-      $("#kpiBalance").textContent = ksh(summary.balanceTotal);
+      $("#kpiBalance").textContent = ksh(balance);
     }
 
-    // Feed the small “Outstanding by tenant” tile from the metrics view
+    // Feed the small “Outstanding by tenant” tile from the per-tenant metrics
     renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
   } catch (e) {
-    console.error(e);
+    console.error("loadOverview failed", e);
     toast("Failed to load overview");
   }
 }
