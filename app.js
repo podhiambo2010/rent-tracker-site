@@ -959,8 +959,9 @@ async function fetchOutstandingRows(month) {
   const ym = month || getSelectedMonth(); // "YYYY-MM"
   try {
     const rows = await jget(
-      `/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`
+      `/rent-roll?month=${encodeURIComponent(ym)}`
     );
+
     if (!Array.isArray(rows)) return [];
 
     const byTenant = new Map();
