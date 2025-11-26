@@ -976,37 +976,28 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
 
 /* --------- Balances helpers & tab --------- */
 
-// Normalise metrics/collection_by_tenant_month result
+// Normalise metrics/monthly_tenant_payment_reconciliation result
 async function fetchOutstandingRows(month) {
-  const ym = month || getSelectedMonth();
+  const ym = month || getSelectedMonth(); // YYYY-MM
   try {
-    const res = await api(
-      `/metrics/collection_by_tenant_month?month=${encodeURIComponent(ym)}`
+    const res = await jget(
+      `/metrics/monthly_tenant_payment_reconciliation?month=${encodeURIComponent(ym)}`
     );
     if (!Array.isArray(res)) return [];
 
     return res.map((r) => {
-      const rentDue =
-        Number(r.rent_due_total ?? r.rent_due ?? r.total_due ?? 0) || 0;
-      const paid =
-        Number(r.amount_paid_total ?? r.amount_paid ?? r.paid_amount ?? 0) || 0;
-      const balance =
-        Number(r.balance_total ?? r.balance ?? rentDue - paid) || 0;
-
-      const pct =
-        r.collection_rate_pct != null
-          ? Number(r.collection_rate_pct)
-          : rentDue > 0
-          ? Math.round((paid / rentDue) * 100)
-          : 0;
+      const rentDue = Number(r.rent_due_total || 0) || 0;
+      const paid    = Number(r.amount_paid_total || 0) || 0;
+      const balance = Number(r.balance_total || (rentDue - paid)) || 0;
 
       return {
-        tenant_id: r.tenant_id || r.id || null,
-        tenant_name: r.tenant || r.tenant_name || r.tenant_name_text || "—",
+        tenant_id: null, // view doesn’t return IDs yet – we can add later if needed
+        tenant_name: r.tenant_name || "—",
         rent_due: rentDue,
         paid,
         outstanding: balance,
-        collection_rate_pct: pct,
+        collection_rate_pct:
+          rentDue > 0 ? Math.round((paid / rentDue) * 100) : 0,
       };
     });
   } catch (e) {
