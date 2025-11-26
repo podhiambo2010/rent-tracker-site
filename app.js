@@ -1,4 +1,4 @@
-/* ==================== Rent Tracker Dashboard — app.js (metrics + balances fixed) ==================== */
+/* ==================== Rent Tracker Dashboard — app.js (overview & balances unified) ==================== */
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
@@ -259,27 +259,17 @@ function renderOutstanding(rows) {
 
   // Positive balances only, sorted DESC
   const list = (rows || [])
-    .filter(
-      (r) =>
-        Number(
-          r.balance_total ?? r.balance ?? r.outstanding ?? r.amount_due ?? 0
-        ) > 0
-    )
+    .filter((r) => Number(r.outstanding || r.balance || 0) > 0)
     .sort(
       (a, b) =>
-        Number(
-          b.balance_total ?? b.balance ?? b.outstanding ?? b.amount_due ?? 0
-        ) -
-        Number(
-          a.balance_total ?? a.balance ?? a.outstanding ?? a.amount_due ?? 0
-        )
+        Number(b.outstanding || b.balance || 0) -
+        Number(a.outstanding || a.balance || 0)
     );
 
   body.innerHTML = list
     .map((x) => {
       const name = x.tenant || x.tenant_name || x.tenant_name_text || "—";
-      const bal =
-        x.balance_total ?? x.balance ?? x.outstanding ?? x.amount_due ?? 0;
+      const bal = x.outstanding ?? x.balance ?? 0;
       return `
         <tr>
           <td>${name}</td>
@@ -491,7 +481,7 @@ function wireActions() {
       pre
     );
   }
-  // Single "Mark as sent" (NOTE: backend expects invoice_ids array now)
+  // Single "Mark as sent"
   $("#btnMarkSent")?.addEventListener("click", async () => {
     const invoice_id = ($("#invoiceIdInput")?.value || "").trim();
     if (!invoice_id) return toast("Enter an invoice_id first");
@@ -500,7 +490,7 @@ function wireActions() {
     try {
       const data = await jpost(
         "/invoices/mark_sent",
-        { invoice_ids: [invoice_id], sent_via: "manual", sent_to: "tenant" },
+        { invoice_id },
         { admin: true }
       );
       $("#actionMsg").textContent = JSON.stringify(data, null, 2);
@@ -573,6 +563,35 @@ function wireActions() {
 
 /* =============================== DATA LOADERS =============================== */
 
+/* --- helper to update Monthly collection summary card --- */
+function updateCollectionSummaryCard(month, rentDueTotal, paidTotal, balanceTotal) {
+  const container = document.querySelector("#collection-summary-month");
+  if (!container) return;
+
+  const monthLabelEl = container.querySelector("[data-role='month-label']");
+  const dueEl   = container.querySelector("[data-role='rent-due-total']");
+  const paidEl  = container.querySelector("[data-role='amount-paid-total']");
+  const balEl   = container.querySelector("[data-role='balance-total']");
+  const rateEl  = container.querySelector("[data-role='collection-rate']");
+
+  // Month label
+  const d = month ? new Date(`${month}-01`) : new Date();
+  const monthLabel = d.toLocaleDateString("en-KE", {
+    month: "short",
+    year: "numeric",
+  });
+
+  if (monthLabelEl) monthLabelEl.textContent = monthLabel;
+  if (dueEl)  dueEl.textContent  = formatMoney(rentDueTotal || 0);
+  if (paidEl) paidEl.textContent = formatMoney(paidTotal || 0);
+  if (balEl)  balEl.textContent  = formatMoney(balanceTotal || 0);
+
+  const rate = rentDueTotal > 0 ? (paidTotal / rentDueTotal) * 100 : 0;
+  if (rateEl) {
+    rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+  }
+}
+
 /* ---- Overview KPIs & tile ---- */
 async function loadOverview() {
   const month = getSelectedMonth();
@@ -581,43 +600,48 @@ async function loadOverview() {
       jget("/leases?limit=1000").catch(() => []),
       jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-      fetchOutstandingRows().catch(() => []),
+      fetchOutstandingRows(month).catch(() => []),
     ]);
 
+    const leases = Array.isArray(L) ? L : [];
+    const payments = Array.isArray(P) ? P : [];
+    const rentroll = Array.isArray(RR) ? RR : [];
+
     // Total leases (lifetime)
-    $("#kpiLeases") && ($("#kpiLeases").textContent = (L || []).length);
+    $("#kpiLeases") && ($("#kpiLeases").textContent = leases.length);
 
     // Open invoices for that month (rent-roll rows that are not fully paid)
     $("#kpiOpen") &&
-      ($("#kpiOpen").textContent = (RR || []).filter(
+      ($("#kpiOpen").textContent = rentroll.filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
       ).length);
 
-    // Payments KPI – show amount if >0, otherwise count
-    const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    // Payments KPI – show sum amount if >0, otherwise count
+    const pSum = payments.reduce((s, x) => s + (Number(x.amount) || 0), 0);
     $("#kpiPayments") &&
       ($("#kpiPayments").textContent =
-        pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length);
+        pSum > 0 ? pSum.toLocaleString("en-KE") : payments.length);
 
-    // Balance KPI – sum per-tenant outstanding (or fall back to rent-roll)
-    let balanceTotal = 0;
-    if (Array.isArray(perTenant) && perTenant.length) {
-      balanceTotal = perTenant.reduce(
-        (s, r) => s + (Number(r.outstanding) || 0),
-        0
-      );
-    } else {
-      balanceTotal = (RR || []).reduce(
-        (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
-        0
-      );
-    }
+    // Rent due, paid & balance for this month, based on rent-roll + payments
+    const rentDueTotal = rentroll.reduce(
+      (s, r) =>
+        s +
+        (Number(
+          r.total_due ?? r.subtotal_rent ?? r.rent ?? r.subtotal_rent ?? 0
+        ) || 0),
+      0
+    );
+    const balanceTotal = rentDueTotal - pSum;
+
     if ($("#kpiBalance")) {
       $("#kpiBalance").textContent = ksh(balanceTotal);
     }
 
     // Feed the small “Outstanding by tenant” tile
     renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
+
+    // Update Monthly collection summary card so it ALWAYS matches KPIs
+    updateCollectionSummaryCard(month, rentDueTotal, pSum, balanceTotal);
   } catch (e) {
     console.error(e);
     toast("Failed to load overview");
@@ -815,15 +839,13 @@ async function loadRentroll() {
         // Credits if you ever use them (defaults to 0)
         const credits = Number(r.credits ?? 0);
 
-        // **Authoritative monthly invoice total** for this lease/period:
-        // prefer total_due coming from Supabase; if it’s missing, recompute.
+        // Authoritative monthly invoice total for this lease/period
         const totalDueRaw =
           r.total_due != null ? Number(r.total_due) : NaN;
         const totalDue = Number.isFinite(totalDueRaw)
           ? totalDueRaw
           : baseRent + lateFees - credits;
 
-        // This is what we show in the "Balance" column
         const displayBalance = totalDue;
 
         return `
@@ -833,16 +855,9 @@ async function loadRentroll() {
             <td>${r.tenant ?? "—"}</td>
             <td>${periodLabel}</td>
 
-            <!-- Rent (base) -->
             <td>${money(baseRent)}</td>
-
-            <!-- Late fees (dash if zero) -->
             <td>${lateFees ? money(lateFees) : "—"}</td>
-
-            <!-- Status from view -->
             <td class="status-cell">${r.status ?? "—"}</td>
-
-            <!-- Total invoice amount for the period -->
             <td style="text-align:right">${money(displayBalance)}</td>
 
             <td>
@@ -863,7 +878,6 @@ async function loadRentroll() {
   }
 }
 
-// Keep these listeners as they were
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
 $("#clearRentroll")?.addEventListener("click", () => {
   $("#rentrollTenant").value = "";
@@ -954,11 +968,9 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
         .closest("tr")
         ?.querySelector(".status-cell")
         ?.replaceChildren(
-          document.createTextNode(
-            (res?.updated?.length ? "sent" : "open")
-          )
+          document.createTextNode("sent")
         );
-      toast("Marked sent");
+      toast(`Marked sent (${(res.updated || []).length} invoice)`);
     } catch (e) {
       toast(`Failed: ${e.message || e}`);
     } finally {
@@ -970,84 +982,104 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
 
 /* --------- Balances helpers & tab --------- */
 
-// Normalise metrics/monthly_tenant_payment_reconciliation result
+/**
+ * Build per-tenant outstanding for the selected month
+ * PURELY from /rent-roll?month=…, so it doesn’t depend on /metrics/*.
+ */
 async function fetchOutstandingRows(month) {
   const ym = month || getSelectedMonth(); // YYYY-MM
   try {
-    const res = await jget(
-      `/metrics/monthly_tenant_payment_reconciliation?month=${encodeURIComponent(ym)}`
-    );
-    if (!Array.isArray(res)) return [];
+    const rows = await getRentRollForMonth(ym);
+    if (!Array.isArray(rows)) return [];
 
-    return res.map((r) => {
-      const rentDue = Number(r.rent_due_total || 0) || 0;
-      const paid    = Number(r.amount_paid_total || 0) || 0;
-      const balance = Number(r.balance_total || (rentDue - paid)) || 0;
+    const byTenant = new Map();
+    for (const r of rows) {
+      const name = r.tenant || r.tenant_name || "—";
+      const due = Number(
+        r.total_due ?? r.subtotal_rent ?? r.rent ?? 0
+      ) || 0;
+      const paid = Number(r.paid_amount ?? 0) || 0;
+      const bal  = Number(r.balance ?? (due - paid)) || 0;
 
-      return {
-        tenant_id: null, // view doesn’t return IDs yet – we can add later if needed
-        tenant_name: r.tenant_name || "—",
-        rent_due: rentDue,
-        paid,
-        outstanding: balance,
-        collection_rate_pct:
-          rentDue > 0 ? Math.round((paid / rentDue) * 100) : 0,
-      };
-    });
+      if (!byTenant.has(name)) {
+        byTenant.set(name, {
+          tenant_name: name,
+          rent_due: 0,
+          paid: 0,
+          outstanding: 0,
+        });
+      }
+      const acc = byTenant.get(name);
+      acc.rent_due += due;
+      acc.paid += paid;
+      acc.outstanding += bal;
+    }
+
+    return Array.from(byTenant.values()).map((r) => ({
+      ...r,
+      collection_rate_pct:
+        r.rent_due > 0 ? (r.paid / r.rent_due) * 100 : 0,
+    }));
   } catch (e) {
     console.error("fetchOutstandingRows failed", e);
     return [];
   }
 }
 
-// Fill the Balances tab (table + small totals)
 async function loadBalances() {
   const month = getSelectedMonth();
+  const body = $("#balancesBody");
+  const empty = $("#balancesEmpty");
+
   try {
     const rows = await fetchOutstandingRows(month);
     state.balancesView = rows;
 
-    const body  = $("#balancesBody");
-    const empty = $("#balancesEmpty");
-    const count = $("#balancesCount");
+    if (!body) return;
 
-    if (count) count.textContent = rows.length;
-
-    if (body) {
-      body.innerHTML = rows
-        .map((r) => {
-          return `
-            <tr>
-              <td>${r.tenant_name}</td>
-              <td style="text-align:right">${money(r.rent_due)}</td>
-              <td style="text-align:right">${money(r.paid)}</td>
-              <td style="text-align:right">${money(r.outstanding)}</td>
-              <td style="text-align:right">${r.collection_rate_pct.toFixed(0)}%</td>
-            </tr>
-          `;
-        })
-        .join("");
+    if (!rows.length) {
+      body.innerHTML = "";
+      empty?.classList.remove("hidden");
+      $("#balancesTotalDue") && ($("#balancesTotalDue").textContent = money(0));
+      $("#balancesTotalPaid") && ($("#balancesTotalPaid").textContent = money(0));
+      $("#balancesTotalBal") && ($("#balancesTotalBal").textContent = money(0));
+      return;
     }
-    if (empty) empty.classList.toggle("hidden", rows.length > 0);
 
-    // Simple totals row for this tab
-    const totalDue = rows.reduce((s, r) => s + (r.rent_due || 0), 0);
-    const totalPaid = rows.reduce((s, r) => s + (r.paid || 0), 0);
-    const totalBal = rows.reduce((s, r) => s + (r.outstanding || 0), 0);
+    empty?.classList.add("hidden");
 
-    const lab  = $("#balancesMonthLabel");
-    const elDue = $("#balancesTotalDue");
-    const elPaid = $("#balancesTotalPaid");
-    const elBal  = $("#balancesTotalBalance");
+    let totalDue = 0;
+    let totalPaid = 0;
+    let totalBal = 0;
 
-    if (lab)  lab.textContent = month;
-    if (elDue) elDue.textContent = formatMoney(totalDue);
-    if (elPaid) elPaid.textContent = formatMoney(totalPaid);
-    if (elBal)  elBal.textContent = formatMoney(totalBal);
+    body.innerHTML = rows
+      .map((r) => {
+        totalDue += r.rent_due;
+        totalPaid += r.paid;
+        totalBal += r.outstanding;
+        const pct = r.collection_rate_pct || 0;
+        return `<tr>
+          <td>${r.tenant_name}</td>
+          <td style="text-align:right">${money(r.rent_due)}</td>
+          <td style="text-align:right">${money(r.paid)}</td>
+          <td style="text-align:right">${money(r.outstanding)}</td>
+          <td style="text-align:right">${pct.toFixed
+            ? pct.toFixed(1)
+            : pct.toString()}%</td>
+        </tr>`;
+      })
+      .join("");
+
+    $("#balancesTotalDue") &&
+      ($("#balancesTotalDue").textContent = money(totalDue));
+    $("#balancesTotalPaid") &&
+      ($("#balancesTotalPaid").textContent = money(totalPaid));
+    $("#balancesTotalBal") &&
+      ($("#balancesTotalBal").textContent = money(totalBal));
   } catch (e) {
-    console.error("loadBalances failed", e);
-    if ($("#balancesBody")) $("#balancesBody").innerHTML = "";
-    if ($("#balancesEmpty")) $("#balancesEmpty").classList.remove("hidden");
+    console.error("Failed to load balances", e);
+    if (body) body.innerHTML = "";
+    empty?.classList.remove("hidden");
   }
 }
 
@@ -1055,60 +1087,7 @@ $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
 
-
-/* --------- COLLECTION SUMMARY (metrics card) --------- */
-async function loadCollectionSummaryMonth() {
-  const container = document.querySelector("#collection-summary-month");
-  if (!container) return;
-
-  const month = getSelectedMonth(); // YYYY-MM like "2025-11"
-
-  try {
-    // Ask backend for precomputed monthly metrics
-    const rows = await jget("/metrics/collection_summary_month").catch(() => []);
-    const list = Array.isArray(rows) ? rows : [];
-
-    if (!list.length) {
-      container.textContent = "No collection data yet.";
-      return;
-    }
-
-    // Try to match the selected month, fall back to the latest row
-    const row =
-      list.find((r) => String(r.month_start || "").slice(0, 7) === month) ||
-      list[list.length - 1];
-
-    const totalDue = Number(row.rent_due_total || 0);
-    const paid     = Number(row.amount_paid_total || 0);
-    const balance  = Number(row.balance_total || (totalDue - paid));
-    const rateRaw  = row.collection_rate_pct;
-    const collectionRate =
-      rateRaw != null ? Number(rateRaw) : (totalDue > 0 ? (paid / totalDue) * 100 : 0);
-
-    const monthLabel = new Date(row.month_start).toLocaleDateString("en-KE", {
-      year: "numeric",
-      month: "short",
-    });
-
-    const elMonth = container.querySelector("[data-role='month-label']");
-    const elDue   = container.querySelector("[data-role='rent-due-total']");
-    const elPaid  = container.querySelector("[data-role='amount-paid-total']");
-    const elBal   = container.querySelector("[data-role='balance-total']");
-    const elRate  = container.querySelector("[data-role='collection-rate']");
-
-    if (elMonth) elMonth.textContent = monthLabel;
-    if (elDue)   elDue.textContent   = formatMoney(totalDue);
-    if (elPaid)  elPaid.textContent  = formatMoney(paid);
-    if (elBal)   elBal.textContent   = formatMoney(balance);
-    if (elRate)  elRate.textContent  = `${collectionRate.toFixed(1)}%`;
-  } catch (err) {
-    console.error("Failed to load collection summary metrics", err);
-    container.textContent = "Error loading collection summary.";
-  }
-}
-
-
-/* ============================ EXPORTS ============================ */
+/* --------- COLLECTION SUMMARY EXPORTS & OTHER EXPORTS --------- */
 function ensureExportButtons() {
   function addAfter(anchorSel, id, label) {
     if ($(id)) return null;
@@ -1178,7 +1157,6 @@ function ensureExportButtons() {
     );
   });
 
-  // Metrics-based balances CSV
   $("#exportBalances")?.addEventListener("click", () => {
     const month = getSelectedMonth();
     const cols = [
@@ -1345,20 +1323,17 @@ $("#waBuild")?.addEventListener("click", () => {
     mp.value = `${now.getFullYear()}-${mm}`;
   }
 
-  // When month changes: keep Overview, metrics card, balances, and tile in sync
+  // When month changes: keep Overview, balances, and outstanding tile in sync
   if (mp) {
     mp.addEventListener("change", () => {
-      loadCollectionSummaryMonth().catch(console.error);
       loadOverview().catch(console.error);
       loadBalances().catch(console.error);
       loadOutstandingByTenant().catch(console.error);
     });
   }
 
-  // Initial load for the summary card + overview + balances
-  loadCollectionSummaryMonth().catch(console.error);
-  loadOutstandingByTenant().catch(console.error);
-  loadBalances().catch(console.error);
+  // Initial load for overview (this also updates the summary card)
+  loadOverview().catch(console.error);
 
   // Default tab
   showTab("overview");
