@@ -427,6 +427,11 @@
     if(t) setAdminToken(t);
   });
 </script>
+
+<!-- App logic (must be last) -->
+<script src="./app.js"></script>
+</body>
+</html>
 // ================== Monthly collection summary sync (patch) ==================
 (function () {
   // Safely parse a "KES 345,000" style string into a number
@@ -501,8 +506,3 @@
   // Expose for debugging if needed
   window.rtUpdateCollectionSummaryFromKpis = rtUpdateCollectionSummaryFromKpis;
 })();
-
-<!-- App logic (must be last) -->
-<script src="./app.js"></script>
-</body>
-</html>
