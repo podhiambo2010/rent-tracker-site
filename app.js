@@ -1093,50 +1093,6 @@ $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
 
-    // Totals for the little "Balances (this month)" summary line/card
-    const totalRent = list.reduce(
-      (s, r) => s + (Number(r.rent_due) || 0),
-      0
-    );
-    const totalPaid = list.reduce(
-      (s, r) => s + (Number(r.paid) || 0),
-      0
-    );
-    const totalOutstanding = list.reduce(
-      (s, r) => s + (Number(r.outstanding) || 0),
-      0
-    );
-
-    const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
-      month: "short",
-      year: "numeric",
-    });
-
-    // These IDs are optional; if they exist in your HTML they’ll be populated.
-    const lbl = $("#balancesMonthLabel");
-    if (lbl) lbl.textContent = monthLabel;
-
-    const rentEl = $("#balancesTotalRent");
-    if (rentEl) rentEl.textContent = ksh(totalRent);
-
-    const paidEl = $("#balancesTotalPaid");
-    if (paidEl) paidEl.textContent = ksh(totalPaid);
-
-    const outEl = $("#balancesTotalOutstanding");
-    if (outEl) outEl.textContent = ksh(totalOutstanding);
-  } catch (e) {
-    console.error("loadBalances failed", e);
-    const tbody = $("#balancesBody");
-    const empty = $("#balancesEmpty");
-    if (tbody) tbody.innerHTML = "";
-    if (empty) empty.classList.remove("hidden");
-  }
-}
-
-$("#reloadBalances")?.addEventListener("click", () =>
-  loadBalances().catch(console.error)
-);
-
 
 /* --------- COLLECTION SUMMARY (metrics card) --------- */
 async function loadCollectionSummaryMonth() {
