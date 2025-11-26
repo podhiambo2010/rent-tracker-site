@@ -1068,34 +1068,35 @@ async function loadCollectionSummaryMonth() {
   const container = document.querySelector("#collection-summary-month");
   if (!container) return;
 
-  const month = getSelectedMonth(); // YYYY-MM like "2025-11"
+  const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // Ask backend for precomputed monthly metrics
-    const rows = await jget("/metrics/collection_summary_month").catch(() => []);
-    const list = Array.isArray(rows) ? rows : [];
+    const rows = await fetchOutstandingRows(month);
+    let totalDue = 0;
+    let paid = 0;
+    let balance = 0;
 
-    if (!list.length) {
-      container.textContent = "No collection data yet.";
-      return;
+    if (Array.isArray(rows) && rows.length) {
+      for (const r of rows) {
+        totalDue += Number(r.rent_due) || 0;
+        paid     += Number(r.paid) || 0;
+        balance  += Number(r.outstanding) || 0;
+      }
     }
 
-    // Try to match the selected month, fall back to the latest row
-    const row =
-      list.find((r) => String(r.month_start || "").slice(0, 7) === month) ||
-      list[list.length - 1];
-
-    const totalDue = Number(row.rent_due_total || 0);
-    const paid     = Number(row.amount_paid_total || 0);
-    const balance  = Number(row.balance_total || (totalDue - paid));
-    const rateRaw  = row.collection_rate_pct;
     const collectionRate =
-      rateRaw != null ? Number(rateRaw) : (totalDue > 0 ? (paid / totalDue) * 100 : 0);
+      totalDue > 0 ? (paid / totalDue) * 100 : 0;
 
-    const monthLabel = new Date(row.month_start).toLocaleDateString("en-KE", {
-      year: "numeric",
-      month: "short",
-    });
+    // Month label based on picker value
+    let monthLabel = month;
+    const parts = month.split("-");
+    if (parts.length === 2) {
+      const [yy, mm] = parts;
+      monthLabel = new Date(Number(yy), Number(mm) - 1, 1).toLocaleDateString(
+        "en-KE",
+        { year: "numeric", month: "short" }
+      );
+    }
 
     const elMonth = container.querySelector("[data-role='month-label']");
     const elDue   = container.querySelector("[data-role='rent-due-total']");
@@ -1109,8 +1110,8 @@ async function loadCollectionSummaryMonth() {
     if (elBal)   elBal.textContent   = formatMoney(balance);
     if (elRate)  elRate.textContent  = `${collectionRate.toFixed(1)}%`;
   } catch (err) {
-    console.error("Failed to load collection summary metrics", err);
-    container.textContent = "Error loading collection summary.";
+    console.error("Failed to load collection summary", err);
+    // optional: you can set the fields to 0 or leave last good values
   }
 }
 
