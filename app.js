@@ -571,52 +571,75 @@ function wireActions() {
   });
 }
 
+// Summarise a month's rent-roll into totals
+function summarizeRentRoll(rows) {
+  const arr = Array.isArray(rows) ? rows : [];
+  let rentDueTotal = 0;
+  let amountPaidTotal = 0;
+  let balanceTotal = 0;
+
+  for (const r of arr) {
+    const dueRow =
+      Number(r.total_due ?? r.subtotal_rent ?? 0) || 0;
+    const paidRow = Number(r.paid_amount ?? 0) || 0;
+    const balRow =
+      r.balance != null
+        ? Number(r.balance) || 0
+        : dueRow - paidRow;
+
+    rentDueTotal += dueRow;
+    amountPaidTotal += paidRow;
+    balanceTotal += balRow;
+  }
+
+  const collectionRate =
+    rentDueTotal > 0 ? (amountPaidTotal / rentDueTotal) * 100 : 0;
+
+  return { rentDueTotal, amountPaidTotal, balanceTotal, collectionRate };
+}
+
 /* =============================== DATA LOADERS =============================== */
 
 /* ---- Overview KPIs & tile ---- */
 async function loadOverview() {
   const month = getSelectedMonth();
+
   try {
-    const [L, P, RR, perTenant] = await Promise.all([
+    const [L, RR, perTenant] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
-      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-      fetchOutstandingRows().catch(() => []),
+      fetchOutstandingRows(month).catch(() => []),
     ]);
 
     // Total leases (lifetime)
-    $("#kpiLeases") && ($("#kpiLeases").textContent = (L || []).length);
+    if ($("#kpiLeases")) {
+      $("#kpiLeases").textContent = (L || []).length;
+    }
 
-    // Open invoices for that month (rent-roll rows that are not fully paid)
-    $("#kpiOpen") &&
-      ($("#kpiOpen").textContent = (RR || []).filter(
+    // Open invoices for that month (rent-roll rows not fully paid)
+    if ($("#kpiOpen")) {
+      $("#kpiOpen").textContent = (RR || []).filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
-      ).length);
-
-    // Payments KPI – show amount if >0, otherwise count
-    const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    $("#kpiPayments") &&
-      ($("#kpiPayments").textContent =
-        pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length);
-
-    // Balance KPI – sum per-tenant outstanding (or fall back to rent-roll)
-    let balanceTotal = 0;
-    if (Array.isArray(perTenant) && perTenant.length) {
-      balanceTotal = perTenant.reduce(
-        (s, r) => s + (Number(r.outstanding) || 0),
-        0
-      );
-    } else {
-      balanceTotal = (RR || []).reduce(
-        (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
-        0
-      );
+      ).length;
     }
+
+    // Use rent-roll as the single source of truth for the collections math
+    const summary = summarizeRentRoll(RR);
+
+    // Payments (month) – amount collected for that month's invoices
+    if ($("#kpiPayments")) {
+      $("#kpiPayments").textContent =
+        summary.amountPaidTotal > 0
+          ? summary.amountPaidTotal.toLocaleString("en-KE")
+          : "0";
+    }
+
+    // Balance Due (month) – total outstanding for that month
     if ($("#kpiBalance")) {
-      $("#kpiBalance").textContent = ksh(balanceTotal);
+      $("#kpiBalance").textContent = ksh(summary.balanceTotal);
     }
 
-    // Feed the small “Outstanding by tenant” tile
+    // Feed the small “Outstanding by tenant” tile from the metrics view
     renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
   } catch (e) {
     console.error(e);
@@ -1090,50 +1113,27 @@ async function loadCollectionSummaryMonth() {
   const container = document.querySelector("#collection-summary-month");
   if (!container) return;
 
-  const month = getSelectedMonth(); // YYYY-MM like "2025-11"
+  const month = getSelectedMonth(); // YYYY-MM like "2025-09"
 
   try {
-    // Get metrics row(s), payments for the month, and rent-roll as a fallback
-    const [metricsRows, paymentRows, rentRollRows] = await Promise.all([
-      jget("/metrics/collection_summary_month").catch(() => []),
-      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-    ]);
+    const rentRollRows = await jget(
+      `/rent-roll?month=${encodeURIComponent(month)}`
+    ).catch(() => []);
 
-    const metricsList = Array.isArray(metricsRows) ? metricsRows : [];
+    const {
+      rentDueTotal,
+      amountPaidTotal,
+      balanceTotal,
+      collectionRate,
+    } = summarizeRentRoll(rentRollRows);
 
-    // Try to match the selected month, fall back to the latest metrics row
-    const metricsRow =
-      metricsList.find(
-        (r) => String(r.month_start || "").slice(0, 7) === month
-      ) || metricsList[metricsList.length - 1] || null;
-
-    // 1) RENT DUE: prefer metrics; fall back to rent-roll sum if needed
-    let totalDue = metricsRow ? Number(metricsRow.rent_due_total || 0) : 0;
-
-    if (!totalDue && Array.isArray(rentRollRows) && rentRollRows.length) {
-      totalDue = rentRollRows.reduce(
-        (sum, r) => sum + (Number(r.total_due ?? r.subtotal_rent ?? 0) || 0),
-        0
-      );
-    }
-
-    // 2) PAID: always trust /payments?month so this matches Overview
-    const paid = (paymentRows || []).reduce(
-      (sum, p) => sum + (Number(p.amount) || 0),
-      0
-    );
-
-    // 3) BALANCE + COLLECTION RATE
-    const balance = totalDue - paid;
-    const collectionRate =
-      totalDue > 0 ? (paid / totalDue) * 100 : 0;
-
-    // Use the selected month for the label (so it doesn’t jump to “latest row”)
-    const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
-      year: "numeric",
-      month: "short",
-    });
+    const monthDate = new Date(`${month}-01`);
+    const monthLabel = isNaN(monthDate.getTime())
+      ? month
+      : monthDate.toLocaleDateString("en-KE", {
+          year: "numeric",
+          month: "short",
+        });
 
     const elMonth = container.querySelector("[data-role='month-label']");
     const elDue   = container.querySelector("[data-role='rent-due-total']");
@@ -1142,9 +1142,9 @@ async function loadCollectionSummaryMonth() {
     const elRate  = container.querySelector("[data-role='collection-rate']");
 
     if (elMonth) elMonth.textContent = monthLabel;
-    if (elDue)   elDue.textContent   = formatMoney(totalDue);
-    if (elPaid)  elPaid.textContent  = formatMoney(paid);
-    if (elBal)   elBal.textContent   = formatMoney(balance);
+    if (elDue)   elDue.textContent   = formatMoney(rentDueTotal);
+    if (elPaid)  elPaid.textContent  = formatMoney(amountPaidTotal);
+    if (elBal)   elBal.textContent   = formatMoney(balanceTotal);
     if (elRate)  elRate.textContent  = `${collectionRate.toFixed(1)}%`;
   } catch (err) {
     console.error("Failed to load collection summary metrics", err);
