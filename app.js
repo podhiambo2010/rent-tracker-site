@@ -583,11 +583,10 @@ async function loadOverview() {
   const month = getSelectedMonth(); // YYYY-MM
 
   try {
-    const [leases, rentRoll, perTenant, summaryRows] = await Promise.all([
+    const [leases, rentRoll, perTenant] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
       fetchOutstandingRows(month).catch(() => []),
-      jget("/metrics/collection_summary_month").catch(() => []),
     ]);
 
     // Total leases (lifetime)
@@ -602,30 +601,36 @@ async function loadOverview() {
       ).length;
     }
 
-    // Pick the summary row that matches the selected month (fallback = latest)
-    let row = null;
-    const list = Array.isArray(summaryRows) ? summaryRows : [];
-    if (list.length) {
-      row =
-        list.find(
-          (r) => String(r.month_start || "").slice(0, 7) === month
-        ) || list[list.length - 1];
+    // Use the same per-tenant reconciliation for Due / Paid / Balance
+    let totalDue = 0;
+    let paid = 0;
+    let balance = 0;
+
+    if (Array.isArray(perTenant) && perTenant.length) {
+      for (const r of perTenant) {
+        totalDue += Number(r.rent_due) || 0;
+        paid     += Number(r.paid) || 0;
+        balance  += Number(r.outstanding) || 0;
+      }
+    } else {
+      // Fallback: derive from rent-roll if metrics are unavailable
+      for (const r of rentRoll || []) {
+        const td  = Number(r.total_due || 0);
+        const bal = Number(r.balance ?? r.total_due ?? 0);
+        totalDue += td;
+        balance  += bal;
+        paid     += (td - bal);
+      }
     }
 
-    const totalDue = row ? Number(row.rent_due_total || 0) : 0;
-    const paid     = row ? Number(row.amount_paid_total || 0) : 0;
-    const balance  = row
-      ? Number(row.balance_total || (totalDue - paid))
-      : 0;
-
-    // Payments KPI – now driven by the same summary as the card
+    // Payments KPI – now same notion as Monthly collection summary
     if ($("#kpiPayments")) {
       $("#kpiPayments").textContent = paid
         ? paid.toLocaleString("en-KE")
         : "0";
     }
 
-    // Balance KPI – also driven by the same summary
+    // Balance KPI – same as balances tab
     if ($("#kpiBalance")) {
       $("#kpiBalance").textContent = ksh(balance);
     }
