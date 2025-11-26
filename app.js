@@ -1084,20 +1084,31 @@ async function loadCollectionSummaryMonth() {
   const container = document.querySelector("#collection-summary-month");
   if (!container) return;
 
-  const month = getSelectedMonth();
+  const month = getSelectedMonth(); // YYYY-MM like "2025-11"
 
   try {
-    // Get all months from the metrics view
-    const rows = await api("/metrics/collection_summary_month");
-
+    // Ask backend for precomputed monthly metrics
+    const rows = await jget("/metrics/collection_summary_month").catch(() => []);
     const list = Array.isArray(rows) ? rows : [];
 
-    // Find the row whose month_start matches the selected YYYY-MM
-    const row = list.find(
-      (r) => String(r.month_start || "").slice(0, 7) === month
-    );
+    if (!list.length) {
+      container.textContent = "No collection data yet.";
+      return;
+    }
 
-    const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
+    // Try to match the selected month, fall back to the latest row
+    const row =
+      list.find((r) => String(r.month_start || "").slice(0, 7) === month) ||
+      list[list.length - 1];
+
+    const totalDue = Number(row.rent_due_total || 0);
+    const paid     = Number(row.amount_paid_total || 0);
+    const balance  = Number(row.balance_total || (totalDue - paid));
+    const rateRaw  = row.collection_rate_pct;
+    const collectionRate =
+      rateRaw != null ? Number(rateRaw) : (totalDue > 0 ? (paid / totalDue) * 100 : 0);
+
+    const monthLabel = new Date(row.month_start).toLocaleDateString("en-KE", {
       year: "numeric",
       month: "short",
     });
@@ -1109,32 +1120,12 @@ async function loadCollectionSummaryMonth() {
     const elRate  = container.querySelector("[data-role='collection-rate']");
 
     if (elMonth) elMonth.textContent = monthLabel;
-
-    if (!row) {
-      // If there is no data for that month, show zeros
-      if (elDue)  elDue.textContent  = "0.00";
-      if (elPaid) elPaid.textContent = "0.00";
-      if (elBal)  elBal.textContent  = "0.00";
-      if (elRate) elRate.textContent = "0.0%";
-      return;
-    }
-
-    const totalDue  = Number(row.rent_due_total ?? 0);
-    const paid      = Number(row.amount_paid_total ?? 0);
-    const balance   = Number(row.balance_total ?? totalDue - paid);
-    const rate      =
-      row.collection_rate_pct != null
-        ? Number(row.collection_rate_pct)
-        : totalDue > 0
-        ? (paid / totalDue) * 100
-        : 0;
-
-    if (elDue)  elDue.textContent  = formatMoney(totalDue);
-    if (elPaid) elPaid.textContent = formatMoney(paid);
-    if (elBal)  elBal.textContent  = formatMoney(balance);
-    if (elRate) elRate.textContent = `${rate.toFixed(1)}%`;
+    if (elDue)   elDue.textContent   = formatMoney(totalDue);
+    if (elPaid)  elPaid.textContent  = formatMoney(paid);
+    if (elBal)   elBal.textContent   = formatMoney(balance);
+    if (elRate)  elRate.textContent  = `${collectionRate.toFixed(1)}%`;
   } catch (err) {
-    console.error("Failed to load collection summary", err);
+    console.error("Failed to load collection summary metrics", err);
     container.textContent = "Error loading collection summary.";
   }
 }
