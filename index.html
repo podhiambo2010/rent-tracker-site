@@ -51,29 +51,6 @@
     .kpi h3{font-size:12px;color:var(--muted);margin:0}
     .kpi .v{font-size:22px;margin:6px 0 0}
 
-    /* ---------- Tighter layout for summary cards ---------- */
-    .summary-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-    }
-    .summary-card {
-      min-width: 210px;
-      flex: 1 1 0;
-    }
-    .summary-card-label {
-      font-size: 0.8rem;
-      line-height: 1.1;
-      opacity: 0.8;
-    }
-    .summary-card-value {
-      font-size: 1.05rem;
-      line-height: 1.25;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
     /* Monthly collection summary layout */
     #collection-summary-month{
       margin-top:10px;
@@ -236,12 +213,10 @@
           <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
         </div>
 
-        <!-- Monthly Collection Summary (API-driven) -->
+        <!-- Monthly Collection Summary (driven from KPIs) -->
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
         <div id="collection-summary-month">
-          <div>
-            <strong data-role="month-label"></strong>
-          </div>
+          <div><strong data-role="month-label"></strong></div>
           <div>KES <span data-role="rent-due-total"></span> due</div>
           <div>KES <span data-role="amount-paid-total"></span> collected</div>
           <div>KES <span data-role="balance-total"></span> balance</div>
@@ -335,7 +310,7 @@
         <div class="bar-flex">
           <h2>Balances (This Month)</h2>
           <button class="btn ghost" id="reloadBalances">Reload</button>
-          <!-- Export CSV button is injected by app.js (ensureExportButtons) -->
+          <button class="btn ghost" id="exportBalancesCsv">Export CSV</button>
         </div>
 
         <!-- Current-month balances table -->
