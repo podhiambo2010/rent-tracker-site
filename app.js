@@ -1006,65 +1006,6 @@ async function fetchOutstandingRows(month) {
   }
 }
 
-// --- Balances tab ---
-async function loadBalances() {
-  try {
-    const rows = await fetchOutstandingRows(); // current-month outstanding per tenant
-    state.balancesView = rows || [];
-
-    const body = $("#balancesBody");
-    const empty = $("#balancesEmpty");
-    if (!body) return;
-
-    if (!rows || !rows.length) {
-      body.innerHTML = "";
-      empty?.classList.remove("hidden");
-      renderOutstanding([]); // clear lower tile too
-      return;
-    }
-
-    empty?.classList.add("hidden");
-
-    const monthLabel = new Date(
-      `${getSelectedMonth()}-01`
-    ).toLocaleString("en-KE", { month: "short", year: "numeric" });
-
-    // Main "Balances (This Month)" table – one row per tenant
-    body.innerHTML = rows
-      .map(
-        (r) => `
-      <tr>
-        <td>${r.tenant_name ?? "—"}</td>
-        <td>${(r.tenant_id || "").toString().slice(0, 8)}…</td>
-        <td>${monthLabel}</td>
-        <td>${Number(r.outstanding || 0) === 0 ? "paid" : "due"}</td>
-        <td style="text-align:right">${money(r.outstanding)}</td>
-      </tr>`
-      )
-      .join("");
-
-    // Total row at the bottom
-    const total = rows.reduce(
-      (sum, x) => sum + (Number(x.outstanding) || 0),
-      0
-    );
-    const trow = document.createElement("tr");
-    trow.innerHTML = `
-      <td colspan="4" style="text-align:right;font-weight:600">Total</td>
-      <td style="text-align:right;font-weight:600">${money(total)}</td>
-    `;
-    body.appendChild(trow);
-
-    // Re-use the same data for the lower “Outstanding by tenant (this month)” section
-    renderOutstanding(rows);
-  } catch (e) {
-    console.error(e);
-    $("#balancesBody").innerHTML = "";
-    $("#balancesEmpty")?.classList.remove("hidden");
-    renderOutstanding([]);
-  }
-}
-
 $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
