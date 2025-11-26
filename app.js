@@ -1027,7 +1027,7 @@ async function fetchOutstandingRows(month) {
       const balance = Number(r.balance_total || (rentDue - paid)) || 0;
 
       return {
-        tenant_id: null, // view doesn’t return IDs yet – we can add later if needed
+        tenant_id: null,
         tenant_name: r.tenant_name || "—",
         rent_due: rentDue,
         paid,
@@ -1042,39 +1042,56 @@ async function fetchOutstandingRows(month) {
   }
 }
 
-/* --------- Balances (this month) tab --------- */
 async function loadBalances() {
-  const month = getSelectedMonth(); // YYYY-MM
+  const month = getSelectedMonth();
 
   try {
     const rows = await fetchOutstandingRows(month);
-    const list = Array.isArray(rows) ? rows : [];
-    state.balancesView = list;
+    state.balancesView = rows;
 
-    const tbody = $("#balancesBody");
-    const empty = $("#balancesEmpty");
+    const tbody   = document.querySelector("#balancesBody");
+    const empty   = document.querySelector("#balancesEmpty");
+    const countEl = document.querySelector("#balancesCount");
+    const totalEl = document.querySelector("#balancesTotal");
+
+    if (countEl) countEl.textContent = rows.length;
+
+    const totalOutstanding = rows.reduce(
+      (sum, r) => sum + (Number(r.outstanding) || 0),
+      0
+    );
+
+    if (totalEl) totalEl.textContent = ksh(totalOutstanding);
 
     if (tbody) {
-      tbody.innerHTML = list
-        .map((r) => {
-          return `
-            <tr>
-              <td>${r.tenant_name || "—"}</td>
-              <td style="text-align:right">${money(r.rent_due)}</td>
-              <td style="text-align:right">${money(r.paid)}</td>
-              <td style="text-align:right">${money(r.outstanding)}</td>
-              <td style="text-align:right">
-                ${Number(r.collection_rate_pct || 0).toFixed(0)}%
-              </td>
-            </tr>
-          `;
-        })
+      tbody.innerHTML = rows
+        .map(
+          (r) => `
+          <tr>
+            <td>${r.tenant_name}</td>
+            <td style="text-align:right">${formatMoney(r.rent_due)}</td>
+            <td style="text-align:right">${formatMoney(r.paid)}</td>
+            <td style="text-align:right">${formatMoney(r.outstanding)}</td>
+            <td style="text-align:right">${r.collection_rate_pct}%</td>
+          </tr>
+        `
+        )
         .join("");
     }
 
-    if (empty) {
-      empty.classList.toggle("hidden", list.length > 0);
-    }
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+  } catch (e) {
+    console.error("loadBalances failed", e);
+    const tbody = document.querySelector("#balancesBody");
+    const empty = document.querySelector("#balancesEmpty");
+    if (tbody) tbody.innerHTML = "";
+    if (empty) empty.classList.remove("hidden");
+  }
+}
+
+$("#reloadBalances")?.addEventListener("click", () =>
+  loadBalances().catch(console.error)
+);
 
     // Totals for the little "Balances (this month)" summary line/card
     const totalRent = list.reduce(
