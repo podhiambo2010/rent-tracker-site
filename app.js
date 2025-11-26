@@ -1367,18 +1367,14 @@ $("#waBuild")?.addEventListener("click", () => {
   }
 
   // When month changes: keep Overview, metrics card, balances, and tile in sync
-  if (mp) {
+    if (mp) {
     mp.addEventListener("change", () => {
-      loadCollectionSummaryMonth().catch(console.error);
-      loadOverview().catch(console.error);
-      loadBalances().catch(console.error);
-      loadOutstandingByTenant().catch(console.error);
+      const m = mp.value || getSelectedMonth();
+      loadOverview(m).catch(console.error);
+      loadBalances(m).catch(console.error);           // extra arg is fine if loadBalances ignores it
+      loadOutstandingByTenant(m).catch(console.error);
     });
   }
 
-  // Initial load for the summary card
-  loadCollectionSummaryMonth().catch(console.error);
-
-  // Default tab
+  // Default tab (this will also call loadOverview, which now updates the summary card)
   showTab("overview");
-})();
