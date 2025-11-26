@@ -1,4 +1,4 @@
-/* ==================== Rent Tracker Dashboard — app.js (overview & balances unified) ==================== */
+/* ==================== Rent Tracker Dashboard — app.js (metrics unified, no /metrics API) ==================== */
 
 /* ---------- constants ---------- */
 const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
@@ -67,6 +67,30 @@ async function api(path, options = {}) {
   }
 
   return data;
+}
+
+/* ---------- JSON GET/POST helpers (using state.api directly) ---------- */
+async function jget(path) {
+  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
+  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+async function jpost(path, body, { admin = false } = {}) {
+  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
+  const headers = { "Content-Type": "application/json" };
+  if (admin && state.adminToken) headers["X-Admin-Token"] = state.adminToken;
+  const r = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`${r.status} ${r.statusText} — ${txt}`);
+  }
+  return r.json();
 }
 
 /* ---------- CSV helpers ---------- */
@@ -193,30 +217,6 @@ function buildWhatsAppURL(phone, ctx = {}) {
   return `https://wa.me/${msisdn}?text=${text}`;
 }
 
-/* ---------- JSON GET/POST helpers (using state.api directly) ---------- */
-async function jget(path) {
-  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-  return r.json();
-}
-
-async function jpost(path, body, { admin = false } = {}) {
-  const url = /^https?:\/\//i.test(path) ? path : `${state.api}${path}`;
-  const headers = { "Content-Type": "application/json" };
-  if (admin && state.adminToken) headers["X-Admin-Token"] = state.adminToken;
-  const r = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body || {}),
-  });
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`${r.status} ${r.statusText} — ${txt}`);
-  }
-  return r.json();
-}
-
 /* ---------- API consumers ---------- */
 async function getRentRollForMonth(ym) {
   return jget(`/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`);
@@ -259,17 +259,13 @@ function renderOutstanding(rows) {
 
   // Positive balances only, sorted DESC
   const list = (rows || [])
-    .filter((r) => Number(r.outstanding || r.balance || 0) > 0)
-    .sort(
-      (a, b) =>
-        Number(b.outstanding || b.balance || 0) -
-        Number(a.outstanding || a.balance || 0)
-    );
+    .filter((r) => Number(r.outstanding || 0) > 0)
+    .sort((a, b) => Number(b.outstanding || 0) - Number(a.outstanding || 0));
 
   body.innerHTML = list
     .map((x) => {
-      const name = x.tenant || x.tenant_name || x.tenant_name_text || "—";
-      const bal = x.outstanding ?? x.balance ?? 0;
+      const name = x.tenant_name || x.tenant || "—";
+      const bal  = x.outstanding || 0;
       return `
         <tr>
           <td>${name}</td>
@@ -563,35 +559,6 @@ function wireActions() {
 
 /* =============================== DATA LOADERS =============================== */
 
-/* --- helper to update Monthly collection summary card --- */
-function updateCollectionSummaryCard(month, rentDueTotal, paidTotal, balanceTotal) {
-  const container = document.querySelector("#collection-summary-month");
-  if (!container) return;
-
-  const monthLabelEl = container.querySelector("[data-role='month-label']");
-  const dueEl   = container.querySelector("[data-role='rent-due-total']");
-  const paidEl  = container.querySelector("[data-role='amount-paid-total']");
-  const balEl   = container.querySelector("[data-role='balance-total']");
-  const rateEl  = container.querySelector("[data-role='collection-rate']");
-
-  // Month label
-  const d = month ? new Date(`${month}-01`) : new Date();
-  const monthLabel = d.toLocaleDateString("en-KE", {
-    month: "short",
-    year: "numeric",
-  });
-
-  if (monthLabelEl) monthLabelEl.textContent = monthLabel;
-  if (dueEl)  dueEl.textContent  = formatMoney(rentDueTotal || 0);
-  if (paidEl) paidEl.textContent = formatMoney(paidTotal || 0);
-  if (balEl)  balEl.textContent  = formatMoney(balanceTotal || 0);
-
-  const rate = rentDueTotal > 0 ? (paidTotal / rentDueTotal) * 100 : 0;
-  if (rateEl) {
-    rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
-  }
-}
-
 /* ---- Overview KPIs & tile ---- */
 async function loadOverview() {
   const month = getSelectedMonth();
@@ -599,49 +566,44 @@ async function loadOverview() {
     const [L, P, RR, perTenant] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
       jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
+      jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`).catch(() => []),
       fetchOutstandingRows(month).catch(() => []),
     ]);
 
-    const leases = Array.isArray(L) ? L : [];
-    const payments = Array.isArray(P) ? P : [];
-    const rentroll = Array.isArray(RR) ? RR : [];
-
     // Total leases (lifetime)
-    $("#kpiLeases") && ($("#kpiLeases").textContent = leases.length);
+    $("#kpiLeases") && ($("#kpiLeases").textContent = (L || []).length);
 
     // Open invoices for that month (rent-roll rows that are not fully paid)
     $("#kpiOpen") &&
-      ($("#kpiOpen").textContent = rentroll.filter(
+      ($("#kpiOpen").textContent = (RR || []).filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
       ).length);
 
-    // Payments KPI – show sum amount if >0, otherwise count
-    const pSum = payments.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    // Payments KPI – sum of amounts this month
+    const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     $("#kpiPayments") &&
-      ($("#kpiPayments").textContent =
-        pSum > 0 ? pSum.toLocaleString("en-KE") : payments.length);
+      ($("#kpiPayments").textContent = pSum.toLocaleString("en-KE"));
 
-    // Rent due, paid & balance for this month, based on rent-roll + payments
-    const rentDueTotal = rentroll.reduce(
-      (s, r) =>
-        s +
-        (Number(
-          r.total_due ?? r.subtotal_rent ?? r.rent ?? r.subtotal_rent ?? 0
-        ) || 0),
-      0
-    );
-    const balanceTotal = rentDueTotal - pSum;
-
+    // Balance KPI – sum per-tenant outstanding
+    let balanceTotal = 0;
+    if (Array.isArray(perTenant) && perTenant.length) {
+      balanceTotal = perTenant.reduce(
+        (s, r) => s + (Number(r.outstanding) || 0),
+        0
+      );
+    } else {
+      // fallback to rent-roll
+      balanceTotal = (RR || []).reduce(
+        (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
+        0
+      );
+    }
     if ($("#kpiBalance")) {
       $("#kpiBalance").textContent = ksh(balanceTotal);
     }
 
     // Feed the small “Outstanding by tenant” tile
     renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
-
-    // Update Monthly collection summary card so it ALWAYS matches KPIs
-    updateCollectionSummaryCard(month, rentDueTotal, pSum, balanceTotal);
   } catch (e) {
     console.error(e);
     toast("Failed to load overview");
@@ -802,7 +764,7 @@ async function loadRentroll() {
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
 
     // Pull rows for the selected month from the API
-    const rows = await jget(`/rent-roll?month=${month}`);
+    const rows = await jget(`/rent-roll?month=${month}&limit=1000`);
 
     // Apply simple text filters (tenant / property)
     const filtered = (rows || []).filter((r) => {
@@ -846,7 +808,9 @@ async function loadRentroll() {
           ? totalDueRaw
           : baseRent + lateFees - credits;
 
-        const displayBalance = totalDue;
+        const displayBalance = Number(
+          r.balance != null ? r.balance : totalDue
+        );
 
         return `
           <tr>
@@ -855,9 +819,16 @@ async function loadRentroll() {
             <td>${r.tenant ?? "—"}</td>
             <td>${periodLabel}</td>
 
+            <!-- Rent (base) -->
             <td>${money(baseRent)}</td>
+
+            <!-- Late fees (dash if zero) -->
             <td>${lateFees ? money(lateFees) : "—"}</td>
+
+            <!-- Status from view -->
             <td class="status-cell">${r.status ?? "—"}</td>
+
+            <!-- Total invoice amount for the period -->
             <td style="text-align:right">${money(displayBalance)}</td>
 
             <td>
@@ -878,6 +849,7 @@ async function loadRentroll() {
   }
 }
 
+// Keep these listeners as they were
 $("#applyRentroll")?.addEventListener("click", loadRentroll);
 $("#clearRentroll")?.addEventListener("click", () => {
   $("#rentrollTenant").value = "";
@@ -961,16 +933,16 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
       }
       const res = await jpost(
         "/invoices/mark_sent",
-        { invoice_ids: [invoiceId], sent_via: "whatsapp", sent_to: "tenant" },
+        { invoice_id: invoiceId },
         { admin: true }
       );
       btn
         .closest("tr")
         ?.querySelector(".status-cell")
         ?.replaceChildren(
-          document.createTextNode("sent")
+          document.createTextNode(res?.invoice?.status || "sent")
         );
-      toast(`Marked sent (${(res.updated || []).length} invoice)`);
+      toast("Marked sent");
     } catch (e) {
       toast(`Failed: ${e.message || e}`);
     } finally {
@@ -981,45 +953,67 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
 });
 
 /* --------- Balances helpers & tab --------- */
+/*  We now derive balances per-tenant from rent-roll only (no /metrics).  */
 
-/**
- * Build per-tenant outstanding for the selected month
- * PURELY from /rent-roll?month=…, so it doesn’t depend on /metrics/*.
- */
 async function fetchOutstandingRows(month) {
-  const ym = month || getSelectedMonth(); // YYYY-MM
+  const ym = month || getSelectedMonth(); // "YYYY-MM"
   try {
-    const rows = await getRentRollForMonth(ym);
+    const rows = await jget(
+      `/rent-roll?month=${encodeURIComponent(ym)}&limit=1000`
+    );
     if (!Array.isArray(rows)) return [];
 
     const byTenant = new Map();
-    for (const r of rows) {
-      const name = r.tenant || r.tenant_name || "—";
-      const due = Number(
-        r.total_due ?? r.subtotal_rent ?? r.rent ?? 0
-      ) || 0;
-      const paid = Number(r.paid_amount ?? 0) || 0;
-      const bal  = Number(r.balance ?? (due - paid)) || 0;
 
-      if (!byTenant.has(name)) {
-        byTenant.set(name, {
-          tenant_name: name,
-          rent_due: 0,
-          paid: 0,
-          outstanding: 0,
-        });
+    for (const r of rows) {
+      const name =
+        r.tenant_name ||
+        r.tenant ||
+        r.tenant_name_text ||
+        "—";
+
+      const key = name;
+      const totalDue = Number(
+        r.total_due ??
+        r.subtotal_rent ??
+        r.rent ??
+        0
+      ) || 0;
+
+      const paid = Number(r.paid_amount ?? 0) || 0;
+
+      // Prefer provided balance; otherwise compute from due-paid
+      let balance;
+      if (r.balance != null && r.balance !== "") {
+        balance = Number(r.balance) || 0;
+      } else {
+        balance = totalDue - paid;
       }
-      const acc = byTenant.get(name);
-      acc.rent_due += due;
-      acc.paid += paid;
-      acc.outstanding += bal;
+
+      const existing = byTenant.get(key) || {
+        tenant_name: name,
+        rent_due: 0,
+        paid: 0,
+        outstanding: 0,
+      };
+
+      existing.rent_due += totalDue;
+      existing.paid += paid;
+      existing.outstanding += balance;
+
+      byTenant.set(key, existing);
     }
 
-    return Array.from(byTenant.values()).map((r) => ({
-      ...r,
+    const list = Array.from(byTenant.values()).map((r) => ({
+      tenant_name: r.tenant_name,
+      rent_due: r.rent_due,
+      paid: r.paid,
+      outstanding: r.outstanding,
       collection_rate_pct:
-        r.rent_due > 0 ? (r.paid / r.rent_due) * 100 : 0,
+        r.rent_due > 0 ? Math.round((r.paid / r.rent_due) * 100) : 0,
     }));
+
+    return list;
   } catch (e) {
     console.error("fetchOutstandingRows failed", e);
     return [];
@@ -1027,59 +1021,38 @@ async function fetchOutstandingRows(month) {
 }
 
 async function loadBalances() {
-  const month = getSelectedMonth();
-  const body = $("#balancesBody");
-  const empty = $("#balancesEmpty");
-
   try {
+    const month = getSelectedMonth();
     const rows = await fetchOutstandingRows(month);
     state.balancesView = rows;
 
-    if (!body) return;
+    const tbody = $("#balancesBody");
+    const empty = $("#balancesEmpty");
+    const countEl = $("#balancesCount");
+    if (!tbody) return;
 
-    if (!rows.length) {
-      body.innerHTML = "";
-      empty?.classList.remove("hidden");
-      $("#balancesTotalDue") && ($("#balancesTotalDue").textContent = money(0));
-      $("#balancesTotalPaid") && ($("#balancesTotalPaid").textContent = money(0));
-      $("#balancesTotalBal") && ($("#balancesTotalBal").textContent = money(0));
-      return;
-    }
+    if (countEl) countEl.textContent = rows.length;
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
 
-    empty?.classList.add("hidden");
-
-    let totalDue = 0;
-    let totalPaid = 0;
-    let totalBal = 0;
-
-    body.innerHTML = rows
+    tbody.innerHTML = rows
       .map((r) => {
-        totalDue += r.rent_due;
-        totalPaid += r.paid;
-        totalBal += r.outstanding;
-        const pct = r.collection_rate_pct || 0;
-        return `<tr>
-          <td>${r.tenant_name}</td>
-          <td style="text-align:right">${money(r.rent_due)}</td>
-          <td style="text-align:right">${money(r.paid)}</td>
-          <td style="text-align:right">${money(r.outstanding)}</td>
-          <td style="text-align:right">${pct.toFixed
-            ? pct.toFixed(1)
-            : pct.toString()}%</td>
-        </tr>`;
+        return `
+          <tr>
+            <td>${r.tenant_name}</td>
+            <td style="text-align:right">${money(r.rent_due)}</td>
+            <td style="text-align:right">${money(r.paid)}</td>
+            <td style="text-align:right">${money(r.outstanding)}</td>
+            <td style="text-align:right">${r.collection_rate_pct}%</td>
+          </tr>
+        `;
       })
       .join("");
-
-    $("#balancesTotalDue") &&
-      ($("#balancesTotalDue").textContent = money(totalDue));
-    $("#balancesTotalPaid") &&
-      ($("#balancesTotalPaid").textContent = money(totalPaid));
-    $("#balancesTotalBal") &&
-      ($("#balancesTotalBal").textContent = money(totalBal));
   } catch (e) {
-    console.error("Failed to load balances", e);
-    if (body) body.innerHTML = "";
-    empty?.classList.remove("hidden");
+    console.error("loadBalances failed", e);
+    const tbody = $("#balancesBody");
+    const empty = $("#balancesEmpty");
+    if (tbody) tbody.innerHTML = "";
+    if (empty) empty.classList.remove("hidden");
   }
 }
 
@@ -1087,7 +1060,94 @@ $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
 
-/* --------- COLLECTION SUMMARY EXPORTS & OTHER EXPORTS --------- */
+/* --------- COLLECTION SUMMARY (metrics card, using rent-roll + payments) --------- */
+
+async function loadCollectionSummaryMonth() {
+  const container = document.querySelector("#collection-summary-month");
+  if (!container) return;
+
+  const month = getSelectedMonth(); // "YYYY-MM"
+
+  try {
+    // Use the SAME sources as the KPIs:
+    const [rrRows, payRows] = await Promise.all([
+      jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`).catch(() => []),
+      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
+    ]);
+
+    const rentroll = Array.isArray(rrRows) ? rrRows : [];
+    const payments = Array.isArray(payRows) ? payRows : [];
+
+    // Total rent due for the month (sum of invoice totals)
+    const totalDue = rentroll.reduce(
+      (sum, r) =>
+        sum +
+        (Number(
+          r.total_due ??
+          r.subtotal_rent ??
+          r.rent ??
+          0
+        ) || 0),
+      0
+    );
+
+    // Sum balances from rent roll (preferred)
+    const balanceFromRR = rentroll.reduce(
+      (sum, r) =>
+        sum +
+        (Number(
+          r.balance != null
+            ? r.balance
+            : (r.total_due ?? 0) - (r.paid_amount ?? 0)
+        ) || 0),
+      0
+    );
+
+    // Payments from /payments endpoint (cross-check)
+    const paidFromPayments = payments.reduce(
+      (sum, p) => sum + (Number(p.amount ?? 0) || 0),
+      0
+    );
+
+    // Prefer totalDue - balance; if that fails, fall back to /payments
+    let paid = totalDue - balanceFromRR;
+    if (!Number.isFinite(paid) || paid < 0) {
+      paid = paidFromPayments;
+    }
+
+    // Final balance = due – paid (do NOT use || here — 0 is valid!)
+    const balance = totalDue - paid;
+
+    // Nice label for the month
+    const monthDate = new Date(`${month}-01T00:00:00`);
+    const monthLabel = monthDate.toLocaleDateString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+
+    // Update the chips/spans inside the summary card
+    const elMonth = container.querySelector("[data-role='month-label']");
+    const elDue   = container.querySelector("[data-role='rent-due-total']");
+    const elPaid  = container.querySelector("[data-role='amount-paid-total']");
+    const elBal   = container.querySelector("[data-role='balance-total']");
+    const elRate  = container.querySelector("[data-role='collection-rate']");
+
+    if (elMonth) elMonth.textContent = monthLabel;
+    if (elDue)   elDue.textContent   = formatMoney(totalDue);
+    if (elPaid)  elPaid.textContent  = formatMoney(paid);
+    if (elBal)   elBal.textContent   = formatMoney(balance);
+
+    if (elRate) {
+      const rate = totalDue > 0 ? (paid / totalDue) * 100 : 0;
+      elRate.textContent = `${rate.toFixed(1)}%`;
+    }
+  } catch (err) {
+    console.error("Failed to load collection summary metrics", err);
+    container.textContent = "Error loading collection summary.";
+  }
+}
+
+/* ============================ EXPORTS ============================ */
 function ensureExportButtons() {
   function addAfter(anchorSel, id, label) {
     if ($(id)) return null;
@@ -1157,6 +1217,7 @@ function ensureExportButtons() {
     );
   });
 
+  // Balances CSV
   $("#exportBalances")?.addEventListener("click", () => {
     const month = getSelectedMonth();
     const cols = [
@@ -1323,17 +1384,21 @@ $("#waBuild")?.addEventListener("click", () => {
     mp.value = `${now.getFullYear()}-${mm}`;
   }
 
-  // When month changes: keep Overview, balances, and outstanding tile in sync
+  // When month changes: keep Overview, summary card, balances, and tile in sync
   if (mp) {
     mp.addEventListener("change", () => {
+      loadCollectionSummaryMonth().catch(console.error);
       loadOverview().catch(console.error);
       loadBalances().catch(console.error);
       loadOutstandingByTenant().catch(console.error);
     });
   }
 
-  // Initial load for overview (this also updates the summary card)
+  // Initial load for the summary card + overview + balances + tile
+  loadCollectionSummaryMonth().catch(console.error);
   loadOverview().catch(console.error);
+  loadBalances().catch(console.error);
+  loadOutstandingByTenant().catch(console.error);
 
   // Default tab
   showTab("overview");
