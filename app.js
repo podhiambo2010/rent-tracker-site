@@ -1006,6 +1006,80 @@ async function fetchOutstandingRows(month) {
   }
 }
 
+/* --------- Balances (this month) tab --------- */
+async function loadBalances() {
+  const month = getSelectedMonth(); // YYYY-MM
+
+  try {
+    const rows = await fetchOutstandingRows(month);
+    const list = Array.isArray(rows) ? rows : [];
+    state.balancesView = list;
+
+    const tbody = $("#balancesBody");
+    const empty = $("#balancesEmpty");
+
+    if (tbody) {
+      tbody.innerHTML = list
+        .map((r) => {
+          return `
+            <tr>
+              <td>${r.tenant_name || "—"}</td>
+              <td style="text-align:right">${money(r.rent_due)}</td>
+              <td style="text-align:right">${money(r.paid)}</td>
+              <td style="text-align:right">${money(r.outstanding)}</td>
+              <td style="text-align:right">
+                ${Number(r.collection_rate_pct || 0).toFixed(0)}%
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+
+    if (empty) {
+      empty.classList.toggle("hidden", list.length > 0);
+    }
+
+    // Totals for the little "Balances (this month)" summary line/card
+    const totalRent = list.reduce(
+      (s, r) => s + (Number(r.rent_due) || 0),
+      0
+    );
+    const totalPaid = list.reduce(
+      (s, r) => s + (Number(r.paid) || 0),
+      0
+    );
+    const totalOutstanding = list.reduce(
+      (s, r) => s + (Number(r.outstanding) || 0),
+      0
+    );
+
+    const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+
+    // These IDs are optional; if they exist in your HTML they’ll be populated.
+    const lbl = $("#balancesMonthLabel");
+    if (lbl) lbl.textContent = monthLabel;
+
+    const rentEl = $("#balancesTotalRent");
+    if (rentEl) rentEl.textContent = ksh(totalRent);
+
+    const paidEl = $("#balancesTotalPaid");
+    if (paidEl) paidEl.textContent = ksh(totalPaid);
+
+    const outEl = $("#balancesTotalOutstanding");
+    if (outEl) outEl.textContent = ksh(totalOutstanding);
+  } catch (e) {
+    console.error("loadBalances failed", e);
+    const tbody = $("#balancesBody");
+    const empty = $("#balancesEmpty");
+    if (tbody) tbody.innerHTML = "";
+    if (empty) empty.classList.remove("hidden");
+  }
+}
+
 $("#reloadBalances")?.addEventListener("click", () =>
   loadBalances().catch(console.error)
 );
@@ -1019,28 +1093,44 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // YYYY-MM like "2025-11"
 
   try {
-    // Ask backend for precomputed monthly metrics
-    const rows = await jget("/metrics/collection_summary_month").catch(() => []);
-    const list = Array.isArray(rows) ? rows : [];
+    // Get metrics row(s), payments for the month, and rent-roll as a fallback
+    const [metricsRows, paymentRows, rentRollRows] = await Promise.all([
+      jget("/metrics/collection_summary_month").catch(() => []),
+      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
+      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
+    ]);
 
-    if (!list.length) {
-      container.textContent = "No collection data yet.";
-      return;
+    const metricsList = Array.isArray(metricsRows) ? metricsRows : [];
+
+    // Try to match the selected month, fall back to the latest metrics row
+    const metricsRow =
+      metricsList.find(
+        (r) => String(r.month_start || "").slice(0, 7) === month
+      ) || metricsList[metricsList.length - 1] || null;
+
+    // 1) RENT DUE: prefer metrics; fall back to rent-roll sum if needed
+    let totalDue = metricsRow ? Number(metricsRow.rent_due_total || 0) : 0;
+
+    if (!totalDue && Array.isArray(rentRollRows) && rentRollRows.length) {
+      totalDue = rentRollRows.reduce(
+        (sum, r) => sum + (Number(r.total_due ?? r.subtotal_rent ?? 0) || 0),
+        0
+      );
     }
 
-    // Try to match the selected month, fall back to the latest row
-    const row =
-      list.find((r) => String(r.month_start || "").slice(0, 7) === month) ||
-      list[list.length - 1];
+    // 2) PAID: always trust /payments?month so this matches Overview
+    const paid = (paymentRows || []).reduce(
+      (sum, p) => sum + (Number(p.amount) || 0),
+      0
+    );
 
-    const totalDue = Number(row.rent_due_total || 0);
-    const paid     = Number(row.amount_paid_total || 0);
-    const balance  = Number(row.balance_total || (totalDue - paid));
-    const rateRaw  = row.collection_rate_pct;
+    // 3) BALANCE + COLLECTION RATE
+    const balance = totalDue - paid;
     const collectionRate =
-      rateRaw != null ? Number(rateRaw) : (totalDue > 0 ? (paid / totalDue) * 100 : 0);
+      totalDue > 0 ? (paid / totalDue) * 100 : 0;
 
-    const monthLabel = new Date(row.month_start).toLocaleDateString("en-KE", {
+    // Use the selected month for the label (so it doesn’t jump to “latest row”)
+    const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
       year: "numeric",
       month: "short",
     });
