@@ -579,12 +579,12 @@ function wireActions() {
 /* =============================== DATA LOADERS =============================== */
 
 /* ---- Overview KPIs & tile ---- */
-async function loadOverview() {
-  const month = getSelectedMonth(); // YYYY-MM
-
+async function loadOverview(monthOverride) {
+  const month = monthOverride || getSelectedMonth();
   try {
-    const [leases, rentRoll, perTenant] = await Promise.all([
+    const [L, P, RR, perTenant] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
+      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
       fetchOutstandingRows(month).catch(() => []),
     ]);
