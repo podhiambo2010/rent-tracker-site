@@ -1071,10 +1071,10 @@ async function loadCollectionSummaryMonth() {
 
   try {
     // Use the SAME sources as the KPIs:
-    const [rrRows, payRows] = await Promise.all([
-      jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`).catch(() => []),
-      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-    ]);
+  const [rrRows, payRows] = await Promise.all([
+    jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
+    jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
+  ]);
 
     const rentroll = Array.isArray(rrRows) ? rrRows : [];
     const payments = Array.isArray(payRows) ? payRows : [];
