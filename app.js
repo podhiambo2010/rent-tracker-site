@@ -1070,64 +1070,37 @@ $("#reloadBalances")?.addEventListener("click", () =>
   So the Monthly collection summary and Overview KPIs stay in sync.
 */
 async function loadCollectionSummaryMonth() {
-  const container = document.querySelector("#collection-summary-month");
-  if (!container) return;
-
-  const month = getSelectedMonth(); // "YYYY-MM"
+  const month = getSelectedMonth();
 
   try {
-    const [rrRows, payRows] = await Promise.all([
-      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-    ]);
+    const ov = await fetchBalancesOverview(month); // { total_invoiced, total_paid, total_outstanding } or null
 
-    const rentRows = Array.isArray(rrRows) ? rrRows : [];
-    const payments = Array.isArray(payRows) ? payRows : [];
+    const invoiced    = (ov && typeof ov.total_invoiced === "number")    ? ov.total_invoiced    : 0;
+    const paid        = (ov && typeof ov.total_paid === "number")        ? ov.total_paid        : 0;
+    const outstanding = (ov && typeof ov.total_outstanding === "number") ? ov.total_outstanding : Math.max(invoiced - paid, 0);
+    const rate        = invoiced > 0 ? (paid / invoiced) * 100 : 0;
 
-    if (!rentRows.length && !payments.length) {
-      container.textContent = "No collection data yet.";
-      return;
+    // 🔎 Use the same selectors you already had in your old function.
+    // Below are example IDs – if your app uses different ones, just swap them.
+    const elDue       = $("#summaryMonthDue");        // e.g. "KES xxx due"
+    const elCollected = $("#summaryMonthCollected");  // e.g. "KES xxx collected"
+    const elBalance   = $("#summaryMonthBalance");    // e.g. "KES xxx balance"
+    const elRate      = $("#summaryMonthRate");       // e.g. "xx.x% collection rate"
+
+    if (elDue) {
+      elDue.textContent = `${ksh(invoiced)} due`;
     }
-
-    const totalDue = rentRows.reduce((sum, r) => {
-      const base = Number(r.subtotal_rent ?? r.rent ?? 0) || 0;
-      const late = Number(r.late_fees ?? 0) || 0;
-      const credits = Number(r.credits ?? 0) || 0;
-      const fromTotal = r.total_due != null ? Number(r.total_due) : NaN;
-      const due = Number.isFinite(fromTotal)
-        ? fromTotal
-        : base + late - credits;
-      return sum + (Number.isFinite(due) ? due : 0);
-    }, 0);
-
-    const paid = payments.reduce(
-      (s, p) => s + (Number(p.amount) || 0),
-      0
-    );
-
-    const balance = totalDue - paid;
-    const collectionRate =
-      totalDue > 0 ? (paid / totalDue) * 100 : 0;
-
-    const monthLabel = new Date(`${month}-01`).toLocaleDateString("en-KE", {
-      year: "numeric",
-      month: "short",
-    });
-
-    const elMonth = container.querySelector("[data-role='month-label']");
-    const elDue   = container.querySelector("[data-role='rent-due-total']");
-    const elPaid  = container.querySelector("[data-role='amount-paid-total']");
-    const elBal   = container.querySelector("[data-role='balance-total']");
-    const elRate  = container.querySelector("[data-role='collection-rate']");
-
-    if (elMonth) elMonth.textContent = monthLabel;
-    if (elDue)   elDue.textContent   = formatMoney(totalDue);
-    if (elPaid)  elPaid.textContent  = formatMoney(paid);
-    if (elBal)   elBal.textContent   = formatMoney(balance);
-    if (elRate)  elRate.textContent  = `${collectionRate.toFixed(1)}%`;
+    if (elCollected) {
+      elCollected.textContent = `${ksh(paid)} collected`;
+    }
+    if (elBalance) {
+      elBalance.textContent = `${ksh(outstanding)} balance`;
+    }
+    if (elRate) {
+      elRate.textContent = `${rate.toFixed(1)}% collection rate`;
+    }
   } catch (err) {
-    console.error("Failed to load collection summary metrics", err);
-    container.textContent = "Error loading collection summary.";
+    console.error("Failed to load collection summary", err);
   }
 }
 
