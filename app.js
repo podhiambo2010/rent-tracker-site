@@ -156,6 +156,21 @@ function fmtMonYearFromISO(isoDate) {
   }
 }
 
+function formatMonthLabel(monthStr) {
+  if (!monthStr) return "";
+  try {
+    const [y, m] = monthStr.split("-").map(Number);
+    if (!y || !m) return "";
+    const d = new Date(y, m - 1, 1);
+    return d.toLocaleDateString("en-KE", {
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return monthStr;
+  }
+}
+
 function fmtKes(n) {
   const num = Number(n || 0);
   return num.toLocaleString("en-KE", { maximumFractionDigits: 0 });
@@ -1079,6 +1094,14 @@ async function loadCollectionSummaryMonth() {
     const paid        = (ov && typeof ov.total_paid === "number")        ? ov.total_paid        : 0;
     const outstanding = (ov && typeof ov.total_outstanding === "number") ? ov.total_outstanding : Math.max(invoiced - paid, 0);
     const rate        = invoiced > 0 ? (paid / invoiced) * 100 : 0;
+
+ // ----- Month label chip -----
+    if ($("#summaryMonthLabel")) {
+      // Prefer the current picker month, fall back to API month_start
+      const labelSource =
+        month || (data.month_start ? String(data.month_start).slice(0, 7) : "");
+      $("#summaryMonthLabel").textContent = formatMonthLabel(labelSource);
+    }
 
     // 🔎 Use the same selectors you already had in your old function.
     // Below are example IDs – if your app uses different ones, just swap them.
