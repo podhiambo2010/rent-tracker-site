@@ -7,6 +7,18 @@ const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 const $  = (q, el = document) => el.querySelector(q);
 const $$ = (q, el = document) => Array.from(el.querySelectorAll(q));
 
+// Small helper to call the new balances overview endpoint
+async function fetchBalancesOverview(month) {
+  const base = (window.state && state.apiBase) || API_BASE; // use whatever you already use elsewhere
+  const url = `${base}/balances/overview?month=${month}`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`balances/overview failed: ${res.status}`);
+  }
+  return await res.json(); // { month_start, total_invoiced, total_paid, total_outstanding }
+}
+
 // Nicely format KES amounts (works with strings or numbers)
 const formatMoney = (value) => {
   if (value === null || value === undefined) return "0.00";
@@ -224,6 +236,11 @@ async function getInvoiceIdForLeaseMonth(lease_id, ym) {
   if (res.status === 404) return null;
   const json = await res.json();
   return json?.invoice?.id || null;
+}
+
+// New helper: get monthly totals from v_balances_monthly
+async function fetchBalancesOverview(month) {
+  return jget(`/balances/overview?month=${encodeURIComponent(month)}`);
 }
 
 /* ---------- toast ---------- */
@@ -563,56 +580,79 @@ function wireActions() {
 /* =============================== DATA LOADERS =============================== */
 
 /* ---- Overview KPIs & tile ---- */
+
 async function loadOverview() {
   const month = getSelectedMonth();
+
   try {
-    const [L, P, RR, perTenant] = await Promise.all([
+    const [L, P, RR, perTenant, OV] = await Promise.all([
       jget("/leases?limit=1000").catch(() => []),
       jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
       fetchOutstandingRows(month).catch(() => []),
+      // 👇 NEW: overview totals from v_balances_monthly
+      fetchBalancesOverview(month).catch(() => null),
     ]);
 
     // Total leases (lifetime)
-    $("#kpiLeases") && ($("#kpiLeases").textContent = (L || []).length);
+    if ($("#kpiLeases")) {
+      $("#kpiLeases").textContent = (L || []).length;
+    }
 
     // Open invoices for that month (rent-roll rows that are not fully paid)
-    $("#kpiOpen") &&
-      ($("#kpiOpen").textContent = (RR || []).filter(
+    if ($("#kpiOpen")) {
+      $("#kpiOpen").textContent = (RR || []).filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
-      ).length);
+      ).length;
+    }
 
-    // Payments KPI – show amount if >0, otherwise count
-    const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    $("#kpiPayments") &&
-      ($("#kpiPayments").textContent =
-        pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length);
-
-    // Balance KPI – sum per-tenant outstanding (or fall back to rent-roll)
-    let balanceTotal = 0;
-    if (Array.isArray(perTenant) && perTenant.length) {
-      balanceTotal = perTenant.reduce(
-        (s, r) => s + (Number(r.outstanding) || 0),
-        0
-      );
+    // Payments KPI – PREFERRED: use balances overview (total_paid)
+    if (OV && typeof OV.total_paid === "number") {
+      if ($("#kpiPayments")) {
+        $("#kpiPayments").textContent = OV.total_paid.toLocaleString("en-KE");
+      }
     } else {
-      balanceTotal = (RR || []).reduce(
-        (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
-        0
-      );
-    }
-    if ($("#kpiBalance")) {
-      $("#kpiBalance").textContent = ksh(balanceTotal);
+      // Fallback: old behaviour using /payments
+      const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+      if ($("#kpiPayments")) {
+        $("#kpiPayments").textContent =
+          pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length;
+      }
     }
 
-    // Feed the small “Outstanding by tenant” tile
+    // Balance KPI – PREFERRED: use balances overview (total_outstanding)
+    if (OV && typeof OV.total_outstanding === "number") {
+      if ($("#kpiBalance")) {
+        $("#kpiBalance").textContent = ksh(OV.total_outstanding);
+      }
+    } else {
+      // Fallback: old behaviour using per-tenant / rent-roll
+      let balanceTotal = 0;
+      if (Array.isArray(perTenant) && perTenant.length) {
+        balanceTotal = perTenant.reduce(
+          (s, r) => s + (Number(r.outstanding) || 0),
+          0
+        );
+      } else {
+        balanceTotal = (RR || []).reduce(
+          (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
+          0
+        );
+      }
+      if ($("#kpiBalance")) {
+        $("#kpiBalance").textContent = ksh(balanceTotal);
+      }
+    }
+
+    // Feed the small “Outstanding by tenant” tile (unchanged)
     renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
   } catch (e) {
     console.error(e);
     toast("Failed to load overview");
   }
 
-  // Always refresh the monthly summary card from same data
+  // For now, keep the existing summary loader.
+  // We’ll rewire loadCollectionSummaryMonth to /balances/overview in the next step.
   loadCollectionSummaryMonth().catch(console.error);
 }
 
