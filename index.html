@@ -213,14 +213,14 @@
           <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
         </div>
 
-        <!-- Monthly Collection Summary (driven from KPIs) -->
+        <!-- Monthly Collection Summary (driven from /balances/overview) -->
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
         <div id="collection-summary-month">
-          <div><strong data-role="month-label"></strong></div>
-          <div>KES <span data-role="rent-due-total"></span> due</div>
-          <div>KES <span data-role="amount-paid-total"></span> collected</div>
-          <div>KES <span data-role="balance-total"></span> balance</div>
-          <div><span data-role="collection-rate"></span> collection rate</div>
+          <div><strong id="summaryMonthLabel">—</strong></div>
+          <div id="summaryMonthDue">KES due</div>
+          <div id="summaryMonthCollected">KES collected</div>
+          <div id="summaryMonthBalance">KES balance</div>
+          <div id="summaryMonthRate">collection rate</div>
         </div>
       </div>
 
