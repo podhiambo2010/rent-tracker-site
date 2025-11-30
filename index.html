@@ -366,24 +366,14 @@
 
   <div class="table-wrap">
    
-        <!-- Outstanding by tenant -->
-        <div class="bar-flex">
-          <h3>Outstanding by tenant (this month)</h3>
-          <button class="btn ghost" id="reloadOutstanding">Reload</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th style="text-align:right">Outstanding</th>
-              </tr>
-            </thead>
-            <tbody id="outstandingBody"></tbody>
-          </table>
-        </div>
-        <div id="outstandingEmpty" class="empty hidden">No outstanding balances.</div>
-      </div>
+   <!-- ===== Outstanding by tenant (this month) ===== -->
+<div class="bar-flex" style="margin-top:24px;">
+  <h3>Outstanding by tenant (this month)</h3>
+  <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
+</div>
+<p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">
+  Last updated: —
+</p>
 
       <!-- ===== WhatsApp (ad-hoc) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
