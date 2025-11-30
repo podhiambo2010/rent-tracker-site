@@ -1150,10 +1150,10 @@ async function fetchOutstandingRows(month) {
 async function loadBalances() {
   try {
     const month = getSelectedMonth();        // "YYYY-MM"
-
-    // ✅ Call the correct API endpoint (same data that powers the successful calls)
+    
+    // ✅ use the real API endpoint
     const rows = await jget(
-      `/balances/monthly_tenant_payments?month=${encodeURIComponent(month)}`
+      `/monthly_tenant_payments?month=${encodeURIComponent(month)}`
     );
 
     const tbody = document.getElementById("balancesBody");
