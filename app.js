@@ -667,31 +667,36 @@ async function loadOverview() {
   loadCollectionSummaryMonth().catch(console.error);
 }
 
+
 /* ---- Monthly collection summary row (Overview card) ---- */
 
 async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // Re-use the same data source as the Balances tab
+    // Same data source as the Balances tab
     const rows = await fetchOutstandingRows(month); // [{ rent_due, paid, outstanding, ... }]
 
-    const root = document.getElementById("collection-summary-month");
-    if (!root) return;
+    // Grab the tiles directly by data-role
+    const labelEl = document.querySelector('[data-role="month-label"]');
+    const dueEl   = document.querySelector('[data-role="rent-due-total"]');
+    const paidEl  = document.querySelector('[data-role="amount-paid-total"]');
+    const balEl   = document.querySelector('[data-role="balance-total"]');
+    const rateEl  = document.querySelector('[data-role="collection-rate"]');
 
-    const labelEl = root.querySelector('[data-role="month-label"]');
-    const dueEl   = root.querySelector('[data-role="rent-due-total"]');
-    const paidEl  = root.querySelector('[data-role="amount-paid-total"]');
-    const balEl   = root.querySelector('[data-role="balance-total"]');
-    const rateEl  = root.querySelector('[data-role="collection-rate"]');
+    // If the elements aren't there, just bail out quietly
+    if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) {
+      console.warn("Collection summary elements not found in DOM");
+      return;
+    }
 
-    // If nothing came back, clear and exit
+    // If nothing came back from the API, clear and exit
     if (!Array.isArray(rows) || !rows.length) {
-      if (labelEl) labelEl.textContent = "";
-      if (dueEl)   dueEl.textContent   = "";
-      if (paidEl)  paidEl.textContent  = "";
-      if (balEl)   balEl.textContent   = "";
-      if (rateEl)  rateEl.textContent  = "–";
+      labelEl.textContent = "";
+      dueEl.textContent   = "";
+      paidEl.textContent  = "";
+      balEl.textContent   = "";
+      rateEl.textContent  = "–";
       return;
     }
 
@@ -702,9 +707,7 @@ async function loadCollectionSummaryMonth() {
     const rate      = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
 
     // ---- Month label "Nov 2025" ----
-    if (labelEl) {
-      labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
-    }
+    labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
 
     // ---- Format numbers ----
     const fmt = (v) =>
@@ -713,14 +716,15 @@ async function loadCollectionSummaryMonth() {
         maximumFractionDigits: 0,
       });
 
-    if (dueEl)  dueEl.textContent  = fmt(totalDue);
-    if (paidEl) paidEl.textContent = fmt(totalPaid);
-    if (balEl)  balEl.textContent  = fmt(totalBal);
-    if (rateEl) rateEl.textContent = `${rate.toFixed(1)}%`;
+    dueEl.textContent  = fmt(totalDue);
+    paidEl.textContent = fmt(totalPaid);
+    balEl.textContent  = fmt(totalBal);
+    rateEl.textContent = `${rate.toFixed(1)}%`;
   } catch (err) {
     console.error("loadCollectionSummaryMonth failed", err);
   }
 }
+
 
 /* ---- Leases ---- */
 async function loadLeases() {
