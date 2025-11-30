@@ -605,29 +605,27 @@ async function loadOverview() {
       jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
       jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
       fetchOutstandingRows(month).catch(() => []),
-      // 👇 NEW: overview totals from v_balances_monthly
-      fetchBalancesOverview(month).catch(() => null),
+      fetchBalancesOverview(month).catch(() => null), // overview totals view
     ]);
 
-    // Total leases (lifetime)
+    // Total leases
     if ($("#kpiLeases")) {
       $("#kpiLeases").textContent = (L || []).length;
     }
 
-    // Open invoices for that month (rent-roll rows that are not fully paid)
+    // Open invoices for that month (rows not fully paid)
     if ($("#kpiOpen")) {
       $("#kpiOpen").textContent = (RR || []).filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
       ).length;
     }
 
-    // Payments KPI – PREFERRED: use balances overview (total_paid)
+    // Payments KPI – prefer overview view, fall back to /payments
     if (OV && typeof OV.total_paid === "number") {
       if ($("#kpiPayments")) {
         $("#kpiPayments").textContent = OV.total_paid.toLocaleString("en-KE");
       }
     } else {
-      // Fallback: old behaviour using /payments
       const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
       if ($("#kpiPayments")) {
         $("#kpiPayments").textContent =
@@ -635,13 +633,12 @@ async function loadOverview() {
       }
     }
 
-    // Balance KPI – PREFERRED: use balances overview (total_outstanding)
+    // Balance KPI – prefer overview view, fall back to per-tenant
     if (OV && typeof OV.total_outstanding === "number") {
       if ($("#kpiBalance")) {
         $("#kpiBalance").textContent = ksh(OV.total_outstanding);
       }
     } else {
-      // Fallback: old behaviour using per-tenant / rent-roll
       let balanceTotal = 0;
       if (Array.isArray(perTenant) && perTenant.length) {
         balanceTotal = perTenant.reduce(
@@ -659,25 +656,25 @@ async function loadOverview() {
       }
     }
 
-    // Feed the small “Outstanding by tenant” tile (unchanged)
+    // Feed the “Outstanding by tenant” tile
     renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
   } catch (e) {
     console.error(e);
     toast("Failed to load overview");
   }
 
-  // For now, keep the existing summary loader.
-  // We’ll rewire loadCollectionSummaryMonth to /balances/overview in the next step.
+  // Make sure the Monthly collection summary card stays in sync
   loadCollectionSummaryMonth().catch(console.error);
 }
 
 /* ---- Monthly collection summary row (Overview card) ---- */
+
 async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
     // Re-use the same data source as the Balances tab
-    const rows = await fetchOutstandingRows(month); // [{ tenant_name, rent_due, paid, outstanding, ... }]
+    const rows = await fetchOutstandingRows(month); // [{ rent_due, paid, outstanding, ... }]
 
     const root = document.getElementById("collection-summary-month");
     if (!root) return;
@@ -688,7 +685,7 @@ async function loadCollectionSummaryMonth() {
     const balEl   = root.querySelector('[data-role="balance-total"]');
     const rateEl  = root.querySelector('[data-role="collection-rate"]');
 
-    // If nothing came back, just clear and exit
+    // If nothing came back, clear and exit
     if (!Array.isArray(rows) || !rows.length) {
       if (labelEl) labelEl.textContent = "";
       if (dueEl)   dueEl.textContent   = "";
@@ -699,9 +696,9 @@ async function loadCollectionSummaryMonth() {
     }
 
     // ---- Compute totals from per-tenant rows ----
-    const totalDue = rows.reduce((s, r) => s + (Number(r.rent_due)       || 0), 0);
-    const totalPaid = rows.reduce((s, r) => s + (Number(r.paid)          || 0), 0);
-    const totalBal  = rows.reduce((s, r) => s + (Number(r.outstanding)   || 0), 0);
+    const totalDue = rows.reduce((s, r) => s + (Number(r.rent_due)     || 0), 0);
+    const totalPaid = rows.reduce((s, r) => s + (Number(r.paid)        || 0), 0);
+    const totalBal  = rows.reduce((s, r) => s + (Number(r.outstanding) || 0), 0);
     const rate      = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
 
     // ---- Month label "Nov 2025" ----
