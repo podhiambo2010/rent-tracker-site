@@ -674,48 +674,61 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // 1) Make sure the Balances tab numbers are up to date
+    // 1) First, update the Balances tab so its totals are correct
     await loadBalances();
 
-    // 2) Read the already-formatted strings from the Balances card
-    const monthLabelSrc =
+    // 2) Read the already-formatted totals from the Balances card
+    const balancesMonthLabel =
       document.getElementById("balancesMonthLabel")?.textContent ||
       fmtMonYearFromISO(`${month}-01`);
 
-    const dueText =
+    const balancesDue =
       document.getElementById("balancesTotalDue")?.textContent || "";
-    const paidText =
+    const balancesPaid =
       document.getElementById("balancesTotalPaid")?.textContent || "";
-    const balText =
+    const balancesOutstanding =
       document.getElementById("balancesTotalOutstanding")?.textContent || "";
-    const rateText =
+    const balancesRate =
       document.getElementById("balancesCollectionRate")?.textContent || "–";
 
-    // 3) Find the Overview summary elements (chips)
-    const labelEl = document.querySelector('[data-role="month-label"]');
-    const dueEl   = document.querySelector('[data-role="rent-due-total"]');
-    const paidEl  = document.querySelector('[data-role="amount-paid-total"]');
-    const balEl   = document.querySelector('[data-role="balance-total"]');
-    const rateEl  = document.querySelector('[data-role="collection-rate"]');
+    // 3) Find the Overview summary elements.
+    //    Try data-role first, fall back to the older #summaryMonth* IDs.
+    const labelEl =
+      document.querySelector("[data-role='month-label']") ||
+      document.getElementById("summaryMonthLabel");
 
-    // If the elements aren’t there, just stop quietly
+    const dueEl =
+      document.querySelector("[data-role='rent-due-total']") ||
+      document.getElementById("summaryMonthDue");
+
+    const paidEl =
+      document.querySelector("[data-role='amount-paid-total']") ||
+      document.getElementById("summaryMonthCollected");
+
+    const balEl =
+      document.querySelector("[data-role='balance-total']") ||
+      document.getElementById("summaryMonthBalance");
+
+    const rateEl =
+      document.querySelector("[data-role='collection-rate']") ||
+      document.getElementById("summaryMonthRate");
+
+    // If the elements are missing, don't crash – just log once.
     if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) {
-      console.warn("Collection summary elements not found in DOM");
+      console.warn("Monthly summary: overview DOM elements not found");
       return;
     }
 
-    // 4) Copy the values over so both cards stay in sync
-    labelEl.textContent = monthLabelSrc;
-    dueEl.textContent   = dueText;   // e.g. "KES 566,469.00"
-    paidEl.textContent  = paidText;  // e.g. "KES 445,000.00"
-    balEl.textContent   = balText;   // e.g. "KES 121,469.00"
-    rateEl.textContent  = rateText;  // e.g. "78.6%"
-
+    // 4) Copy values from Balances to Overview
+    labelEl.textContent = balancesMonthLabel;
+    dueEl.textContent   = balancesDue;
+    paidEl.textContent  = balancesPaid;
+    balEl.textContent   = balancesOutstanding;
+    rateEl.textContent  = balancesRate;
   } catch (err) {
     console.error("loadCollectionSummaryMonth failed", err);
   }
 }
-
 
 /* ---- Leases ---- */
 async function loadLeases() {
