@@ -674,61 +674,58 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // 1) First, update the Balances tab so its totals are correct
-    await loadBalances();
+    // Use the same overview endpoint as the top KPIs
+    // /balances/overview?month=YYYY-MM
+    const ov = await fetchBalancesOverview(month); // { total_invoiced, total_paid, total_outstanding, month_start }
 
-    // 2) Read the already-formatted totals from the Balances card
-    const balancesMonthLabel =
-      document.getElementById("balancesMonthLabel")?.textContent ||
-      fmtMonYearFromISO(`${month}-01`);
+    // Grab the elements in the Monthly collection summary card
+    const labelEl = document.getElementById("summaryMonthLabel");
+    const dueEl   = document.getElementById("summaryMonthDue");
+    const paidEl  = document.getElementById("summaryMonthCollected");
+    const balEl   = document.getElementById("summaryMonthBalance");
+    const rateEl  = document.getElementById("summaryMonthRate");
 
-    const balancesDue =
-      document.getElementById("balancesTotalDue")?.textContent || "";
-    const balancesPaid =
-      document.getElementById("balancesTotalPaid")?.textContent || "";
-    const balancesOutstanding =
-      document.getElementById("balancesTotalOutstanding")?.textContent || "";
-    const balancesRate =
-      document.getElementById("balancesCollectionRate")?.textContent || "–";
-
-    // 3) Find the Overview summary elements.
-    //    Try data-role first, fall back to the older #summaryMonth* IDs.
-    const labelEl =
-      document.querySelector("[data-role='month-label']") ||
-      document.getElementById("summaryMonthLabel");
-
-    const dueEl =
-      document.querySelector("[data-role='rent-due-total']") ||
-      document.getElementById("summaryMonthDue");
-
-    const paidEl =
-      document.querySelector("[data-role='amount-paid-total']") ||
-      document.getElementById("summaryMonthCollected");
-
-    const balEl =
-      document.querySelector("[data-role='balance-total']") ||
-      document.getElementById("summaryMonthBalance");
-
-    const rateEl =
-      document.querySelector("[data-role='collection-rate']") ||
-      document.getElementById("summaryMonthRate");
-
-    // If the elements are missing, don't crash – just log once.
-    if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) {
-      console.warn("Monthly summary: overview DOM elements not found");
+    // If anything is missing, just bail out quietly
+    if (!ov || !labelEl || !dueEl || !paidEl || !balEl || !rateEl) {
+      console.warn("Monthly summary: missing data or elements", { ov });
       return;
     }
 
-    // 4) Copy values from Balances to Overview
-    labelEl.textContent = balancesMonthLabel;
-    dueEl.textContent   = balancesDue;
-    paidEl.textContent  = balancesPaid;
-    balEl.textContent   = balancesOutstanding;
-    rateEl.textContent  = balancesRate;
+    // Normalise the numbers from the API
+    const invoiced = Number(
+      ov.total_invoiced ??
+      ov.rent_due_total ??
+      0
+    );
+
+    const paid = Number(
+      ov.total_paid ??
+      ov.amount_paid_total ??
+      0
+    );
+
+    const outstanding = Number(
+      ov.total_outstanding ??
+      ov.balance_total ??
+      Math.max(invoiced - paid, 0)
+    );
+
+    const rate = invoiced > 0 ? (paid / invoiced) * 100 : 0;
+
+    // Month label e.g. "Nov 2025"
+    const monthSource = ov.month_start || `${month}-01`;
+    labelEl.textContent = fmtMonYearFromISO(monthSource);
+
+    // Fill the four chips
+    dueEl.textContent   = ksh(invoiced);
+    paidEl.textContent  = ksh(paid);
+    balEl.textContent   = ksh(outstanding);
+    rateEl.textContent  = `${rate.toFixed(1)}%`;
   } catch (err) {
     console.error("loadCollectionSummaryMonth failed", err);
   }
 }
+
 
 /* ---- Leases ---- */
 async function loadLeases() {
