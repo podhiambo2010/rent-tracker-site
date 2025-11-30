@@ -317,12 +317,32 @@ function renderOutstanding(rows) {
 }
 
 async function loadOutstandingByTenant() {
+  const month = getSelectedMonth();
   try {
-    const rows = await fetchOutstandingRows();
-    renderOutstanding(Array.isArray(rows) ? rows : []);
-  } catch (err) {
-    console.error("Failed to load outstanding-by-tenant", err);
-    renderOutstanding([]);
+    const rows = await fetchOutstandingRows(month);
+    const tbody = document.getElementById("outstandingBody");
+    const empty = document.getElementById("outstandingEmpty");
+    if (!tbody || !empty) return;
+
+    // Only show tenants who actually owe something (>0)
+    const withBalance = rows.filter((r) => (r.outstanding || 0) > 0);
+
+    tbody.innerHTML = withBalance
+      .map(
+        (r) => `
+          <tr>
+            <td>${r.tenant_name}</td>
+            <td style="text-align:right">${money(r.outstanding)}</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    empty.classList.toggle("hidden", withBalance.length > 0);
+
+    setLastUpdated("outstandingLastUpdated");
+  } catch (e) {
+    console.error("loadOutstandingByTenant failed", e);
   }
 }
 
@@ -330,7 +350,7 @@ document.getElementById("reloadOutstanding")?.addEventListener("click", () => {
   loadOutstandingByTenant().catch(console.error);
 });
 
-    setLastUpdated("outstandingLastUpdated");
+setLastUpdated("outstandingLastUpdated");
 
 /* ============================== DUNNING ============================== */
 let _logBusy = false;
