@@ -1372,12 +1372,16 @@ $("#waBuild")?.addEventListener("click", () => {
   setAPI(state.api);
   setAdminToken(state.adminToken);
 
+  // Footer year
   $("#yy") && ($("#yy").textContent = new Date().getFullYear());
+
+  // Wire UI
   wireTabs();
   wireHeader();
   wireSettings();
   wireActions();
 
+  // Month picker
   const mp = document.getElementById("monthPicker");
   if (mp && !mp.value) {
     const now = new Date();
@@ -1394,24 +1398,26 @@ $("#waBuild")?.addEventListener("click", () => {
     });
   }
 
+  // Balances tab reload
+  const reloadBalancesBtn = document.getElementById("reloadBalances");
+  if (reloadBalancesBtn) {
+    reloadBalancesBtn.addEventListener("click", () => {
+      loadBalances().catch(console.error);
+    });
+  }
+
+  // "Outstanding by tenant (this month)" reload
+  ["reloadOutstandingByTenant", "reloadOutstanding"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      loadOutstandingByTenant().catch(console.error);
+    });
+  });
+
   // Initial loads
   loadOverview().catch(console.error);
   loadBalances().catch(console.error);
   loadOutstandingByTenant().catch(console.error);
   showTab("overview");
-});
-
-// Balances tab reload
-$("#reloadBalances")?.addEventListener("click", () => {
-  loadBalances().catch(console.error);
-});
-
-// "Outstanding by tenant (this month)" reload
-["#reloadOutstandingByTenant", "#reloadOutstanding"].forEach((sel) => {
-  const btn = $(sel);
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    loadOutstandingByTenant().catch(console.error);
-  });
-)();
-
+})();
