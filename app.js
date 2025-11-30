@@ -1414,3 +1414,4 @@ $("#reloadBalances")?.addEventListener("click", () => {
     loadOutstandingByTenant().catch(console.error);
   });
 )();
+
