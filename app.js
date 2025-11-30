@@ -1126,16 +1126,13 @@ async function loadBalances() {
     const rows = await fetchOutstandingRows(month);
     state.balancesView = rows;
 
-    const tbody   = document.getElementById("balancesBody");
-    const empty   = document.getElementById("balancesEmpty");
-    const countEl = document.getElementById("balancesCount");
-
-    if (countEl) countEl.textContent = rows.length;
+    const tbody = document.getElementById("balancesBody");
+    const empty = document.getElementById("balancesEmpty");
 
     if (tbody) {
       tbody.innerHTML = rows
-        .map((r) => {
-          return `
+        .map(
+          (r) => `
             <tr>
               <td>${r.tenant_name}</td>
               <td style="text-align:right">${money(r.rent_due)}</td>
@@ -1143,34 +1140,38 @@ async function loadBalances() {
               <td style="text-align:right">${money(r.outstanding)}</td>
               <td style="text-align:right">${r.collection_rate_pct}%</td>
             </tr>
-          `;
-        })
+          `
+        )
         .join("");
     }
-
     if (empty) empty.classList.toggle("hidden", rows.length > 0);
 
-    // Totals for the Balances summary card
-    const totalDue         = rows.reduce((s, r) => s + (r.rent_due || 0), 0);
-    const totalPaid        = rows.reduce((s, r) => s + (r.paid || 0), 0);
-    const totalOutstanding = rows.reduce((s, r) => s + (r.outstanding || 0), 0);
-    const rate             =
-      totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
+    const totalDue = rows.reduce((s, r) => s + r.rent_due, 0);
+    const totalPaid = rows.reduce((s, r) => s + r.paid, 0);
+    const totalOutstanding = rows.reduce((s, r) => s + r.outstanding, 0);
+    const rate = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
 
     const monthLabelEl = document.getElementById("balancesMonthLabel");
-    if (monthLabelEl) {
-      monthLabelEl.textContent = fmtMonYearFromISO(`${month}-01`);
-    }
+    if (monthLabelEl) monthLabelEl.textContent = fmtMonYearFromISO(`${month}-01`);
 
     const dEl = document.getElementById("balancesTotalDue");
     const pEl = document.getElementById("balancesTotalPaid");
     const oEl = document.getElementById("balancesTotalOutstanding");
     const rEl = document.getElementById("balancesCollectionRate");
 
-    if (dEl) dEl.textContent = ksh(totalDue);
-    if (pEl) pEl.textContent = ksh(totalPaid);
-    if (oEl) oEl.textContent = ksh(totalOutstanding);
+    const fmt = (v) =>
+      v.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      });
+
+    if (dEl) dEl.textContent = `KES ${fmt(totalDue)}`;
+    if (pEl) pEl.textContent = `KES ${fmt(totalPaid)}`;
+    if (oEl) oEl.textContent = `KES ${fmt(totalOutstanding)}`;
     if (rEl) rEl.textContent = `${rate.toFixed(1)}%`;
+
+    // stamp last updated
+    setLastUpdated("balancesLastUpdated");
   } catch (e) {
     console.error("loadBalances failed", e);
   }
