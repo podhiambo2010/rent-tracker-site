@@ -1094,7 +1094,6 @@ function canonicalTenantName(raw) {
 }
 
 // Normalise metrics/monthly_tenant_payment_reconciliation result
-// Normalise metrics/monthly_tenant_payment_reconciliation result
 async function fetchOutstandingRows(month) {
   const ym = month || getSelectedMonth(); // YYYY-MM
   try {
