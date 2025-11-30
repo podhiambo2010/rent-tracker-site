@@ -671,6 +671,53 @@ async function loadOverview() {
   loadCollectionSummaryMonth().catch(console.error);
 }
 
+async function loadCollectionSummaryMonth() {
+  const month = getSelectedMonth();
+  try {
+    const summary = await jget(
+      `/balances/monthly-summary?month=${encodeURIComponent(month)}`
+    );
+
+    if (!summary) return;
+
+    const root = document.getElementById("collection-summary-month");
+    if (!root) return;
+
+    const labelEl   = root.querySelector('[data-role="month-label"]');
+    const dueEl     = root.querySelector('[data-role="rent-due-total"]');
+    const paidEl    = root.querySelector('[data-role="amount-paid-total"]');
+    const balEl     = root.querySelector('[data-role="balance-total"]');
+    const rateEl    = root.querySelector('[data-role="collection-rate"]');
+
+    // Month label like "Nov 2025"
+    if (labelEl && summary.month_start) {
+      const d = new Date(summary.month_start);
+      labelEl.textContent = d.toLocaleDateString("en-KE", {
+        month: "short",
+        year: "numeric",
+      });
+    }
+
+    const rentDue   = Number(summary.rent_due_total || 0);
+    const paidTotal = Number(summary.amount_paid_total || 0);
+    const balance   = Number(summary.balance_total || 0);
+
+    if (dueEl)  dueEl.textContent  = rentDue.toLocaleString("en-KE");
+    if (paidEl) paidEl.textContent = paidTotal.toLocaleString("en-KE");
+    if (balEl)  balEl.textContent  = balance.toLocaleString("en-KE");
+
+    // Collection rate = paid / due
+    let rateText = "–";
+    if (rentDue > 0) {
+      const rate = (paidTotal / rentDue) * 100;
+      rateText = `${rate.toFixed(1)}%`;
+    }
+    if (rateEl) rateEl.textContent = rateText;
+  } catch (err) {
+    console.error("loadCollectionSummaryMonth failed", err);
+  }
+}
+
 /* ---- Leases ---- */
 async function loadLeases() {
   try {
