@@ -1149,13 +1149,12 @@ async function fetchOutstandingRows(month) {
 // Balances tab (per-tenant + monthly totals)
 async function loadBalances() {
   try {
-    const month = getSelectedMonth(); // "YYYY-MM"
+    const month = getSelectedMonth();        // "YYYY-MM"
 
-    // ✅ Call the correct API endpoint
-   // ✅ Call the correct API endpoint (same as Overview)
-  const rows = await jget(
-    `/monthly_tenant_payments?month=${encodeURIComponent(month)}`
-  );
+    // ✅ Call the correct API endpoint (same data that powers the successful calls)
+    const rows = await jget(
+      `/balances/monthly_tenant_payments?month=${encodeURIComponent(month)}`
+    );
 
     const tbody = document.getElementById("balancesBody");
     const empty = document.getElementById("balancesEmpty");
@@ -1163,10 +1162,10 @@ async function loadBalances() {
 
     tbody.innerHTML = "";
 
-    // If no rows, show "empty" message and clear totals
     if (!rows || !rows.length) {
       if (empty) empty.classList.remove("hidden");
 
+      // also clear totals if there is no data
       const labelEl = document.getElementById("balancesMonthLabel");
       const dueEl   = document.getElementById("balancesDue");
       const paidEl  = document.getElementById("balancesPaid");
@@ -1185,19 +1184,15 @@ async function loadBalances() {
     if (empty) empty.classList.add("hidden");
 
     // 1) Render per-tenant rows
-    let totalDue  = 0;
+    let totalDue = 0;
     let totalPaid = 0;
 
     for (const row of rows) {
-      const tenant  = row.tenant_name ?? "";
-      const rentDue = Number(row.rent_due ?? 0);
-      const paid    = Number(row.paid ?? 0);
-      const balance = Number(row.balance ?? 0);
-
-      const rawRate = row.collection_rate;
-      const rateNum = typeof rawRate === "number"
-        ? rawRate
-        : Number(rawRate ?? 0);
+      const tenant   = row.tenant_name || "";
+      const rentDue  = Number(row.rent_due || 0);
+      const paid     = Number(row.paid || 0);
+      const balance  = Number(row.balance || 0);
+      const rate     = row.collection_rate; // e.g. 80 (percent)
 
       totalDue  += rentDue;
       totalPaid += paid;
@@ -1208,13 +1203,13 @@ async function loadBalances() {
         <td>${fmtKES(rentDue)}</td>
         <td>${fmtKES(paid)}</td>
         <td>${fmtKES(balance)}</td>
-        <td>${rateNum.toFixed(0)}%</td>
+        <td>${typeof rate === "number" ? rate.toFixed(0) + "%" : escapeHtml(rate || "")}</td>
       `;
       tbody.appendChild(tr);
     }
 
     // 2) Update "This month totals (all tenants)" row
-    const totalBalance   = totalDue - totalPaid;
+    const totalBalance = totalDue - totalPaid;
     const collectionRate = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
 
     const labelEl = document.getElementById("balancesMonthLabel");
@@ -1223,7 +1218,7 @@ async function loadBalances() {
     const balEl   = document.getElementById("balancesOutstanding");
     const rateEl  = document.getElementById("balancesRate");
 
-    if (labelEl) labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
+    if (labelEl) labelEl.textContent = fmtMonYearFromISO(`${month}-01`); // "Nov 2025"
     if (dueEl)   dueEl.textContent   = fmtKES(totalDue);
     if (paidEl)  paidEl.textContent  = fmtKES(totalPaid);
     if (balEl)   balEl.textContent   = fmtKES(totalBalance);
@@ -1234,6 +1229,7 @@ async function loadBalances() {
   }
 }
 
+// 🔁 Reload button for Balances tab
 document
   .getElementById("reloadBalances")
   ?.addEventListener("click", () => loadBalances().catch(console.error));
