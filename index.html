@@ -230,6 +230,81 @@
           <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
         </div>
 
+        <!-- ===== Balances (This Month) ===== -->
+<div class="panel hidden" id="tab-balances">
+  <div class="bar-flex">
+    <h2>Balances (This Month)</h2>
+    <div style="display:flex;gap:8px;">
+      <button id="reloadBalances" class="btn ghost">Reload</button>
+      <button
+        class="btn ghost"
+        data-export-endpoint="/monthly_tenant_payments"
+        data-export-prefix="balances_"
+      >
+        Export CSV
+      </button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th>Rent due</th>
+          <th>Paid</th>
+          <th>Balance</th>
+          <th>Collection rate</th>
+        </tr>
+      </thead>
+      <tbody id="balancesBody"></tbody>
+    </table>
+
+    <div id="balancesEmpty" class="empty-message hidden">
+      No balances for this month.
+    </div>
+  </div>
+
+  <div style="margin-top:24px;">
+    <h3>This month totals (all tenants)</h3>
+    <div class="grid" style="margin-top:12px;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">
+      <div class="pill"><span id="balancesMonthLabel">—</span></div>
+      <div class="pill"><span id="balancesDue">KES 0</span></div>
+      <div class="pill"><span id="balancesPaid">KES 0</span></div>
+      <div class="pill"><span id="balancesOutstanding">KES 0</span></div>
+    </div>
+    <div class="pill" style="margin-top:12px;max-width:200px;">
+      <span id="balancesRate">0.0%</span> collection rate
+    </div>
+  </div>
+
+  <div style="margin-top:32px;">
+    <div class="bar-flex">
+      <h2>Outstanding by tenant (this month)</h2>
+      <button id="reloadOutstanding" class="btn ghost">Reload</button>
+    </div>
+    <p class="muted" id="outstandingUpdatedLabel" style="margin:8px 0 16px;">
+      Last updated: —
+    </p>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Tenant</th>
+            <th>Outstanding</th>
+          </tr>
+        </thead>
+        <tbody id="outstandingBody"></tbody>
+      </table>
+
+      <div id="outstandingEmpty" class="empty-message hidden">
+        No outstanding balances for this month.
+      </div>
+    </div>
+  </div>
+</div>
+
         <!-- Monthly Collection Summary (driven from /balances/overview) -->
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
         <div id="collection-summary-month">
