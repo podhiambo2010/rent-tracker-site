@@ -1038,6 +1038,19 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
 
 /* ---- Balances helpers & tab --------- */
 
+function canonicalTenantName(raw) {
+  const clean = String(raw || "").trim();
+  const lower = clean.toLowerCase();
+
+  // Fix known misspelling from bank / form data
+  if (lower === "everlyne achieng'" || lower === "everlyne achieng") {
+    return "Evelyne Achieng";
+  }
+
+  return clean;
+}
+
+// Normalise metrics/monthly_tenant_payment_reconciliation result
 // Normalise metrics/monthly_tenant_payment_reconciliation result
 async function fetchOutstandingRows(month) {
   const ym = month || getSelectedMonth(); // YYYY-MM
@@ -1049,27 +1062,41 @@ async function fetchOutstandingRows(month) {
     );
     if (!Array.isArray(res)) return [];
 
-    const mapped = res.map((r) => {
+    const buckets = new Map(); // key = canonical tenant name (lowercase)
+
+    for (const r of res) {
       const rentDue = Number(r.rent_due_total || 0) || 0;
       const paid    = Number(r.amount_paid_total || 0) || 0;
       const balance = Number(r.balance_total || (rentDue - paid)) || 0;
 
-      return {
-        tenant_id: null,
-        tenant_name: r.tenant_name || "—",
-        rent_due: rentDue,
-        paid,
-        outstanding: balance,
-        collection_rate_pct:
-          rentDue > 0 ? Math.round((paid / rentDue) * 100) : 0,
-      };
-    });
+      const name = canonicalTenantName(r.tenant_name || "—");
+      const key  = name.toLowerCase();
 
-    // 🔴 filter out internal / technical rows like "Agency Transaction"
-    return mapped.filter((r) => {
-      const name = String(r.tenant_name || "").toLowerCase().trim();
-      return name !== "agency transaction";
-    });
+      // Skip internal / technical rows
+      if (key === "agency transaction") continue;
+
+      const current = buckets.get(key) || {
+        tenant_id: null,
+        tenant_name: name,
+        rent_due: 0,
+        paid: 0,
+        outstanding: 0,
+        collection_rate_pct: 0,
+      };
+
+      current.rent_due    += rentDue;
+      current.paid        += paid;
+      current.outstanding += balance;
+
+      buckets.set(key, current);
+    }
+
+    // Compute collection rate after merging
+    return Array.from(buckets.values()).map((row) => ({
+      ...row,
+      collection_rate_pct:
+        row.rent_due > 0 ? Math.round((row.paid / row.rent_due) * 100) : 0,
+    }));
   } catch (e) {
     console.error("fetchOutstandingRows failed", e);
     return [];
