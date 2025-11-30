@@ -316,33 +316,39 @@ function renderOutstanding(rows) {
   if (empty) empty.classList.toggle("hidden", list.length > 0);
 }
 
+/* ---- Outstanding by tenant (this month) ---- */
 async function loadOutstandingByTenant() {
-  const month = getSelectedMonth();
+  const month = getSelectedMonth(); // "YYYY-MM"
   try {
+    // reuse same data as balances
     const rows = await fetchOutstandingRows(month);
-    const tbody = document.getElementById("outstandingBody");
-    const empty = document.getElementById("outstandingEmpty");
-    if (!tbody || !empty) return;
 
-    // Only show tenants who actually owe something (>0)
-    const withBalance = rows.filter((r) => (r.outstanding || 0) > 0);
+    const tbody   = document.getElementById("outstandingBody");
+    const empty   = document.getElementById("outstandingEmpty");
+    const countEl = document.getElementById("outstandingCount"); // optional chip
 
-    tbody.innerHTML = withBalance
-      .map(
-        (r) => `
-          <tr>
-            <td>${r.tenant_name}</td>
-            <td style="text-align:right">${money(r.outstanding)}</td>
-          </tr>
-        `
-      )
-      .join("");
+    if (countEl) countEl.textContent = rows.length;
 
-    empty.classList.toggle("hidden", withBalance.length > 0);
+    if (tbody) {
+      tbody.innerHTML = (rows || [])
+        .map((r) => {
+          return `
+            <tr>
+              <td>${r.tenant_name}</td>
+              <td style="text-align:right">${money(r.outstanding)}</td>
+              <td style="text-align:right">${r.collection_rate_pct}%</td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
 
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+
+    // stamp the "Last updated" label
     setLastUpdated("outstandingLastUpdated");
-  } catch (e) {
-    console.error("loadOutstandingByTenant failed", e);
+  } catch (err) {
+    console.error("loadOutstandingByTenant failed", err);
   }
 }
 
