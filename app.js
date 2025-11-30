@@ -1230,76 +1230,40 @@ document
   ?.addEventListener("click", () => loadBalances().catch(console.error));
 
 /* ============================ EXPORTS ============================ */
-
-// Wire up the "Balances (This Month) → Export CSV" button.
-// This reads directly from the table in the DOM.
 function ensureExportButtons() {
-  const btn = document.getElementById("exportBalances");
-  if (!btn) return;
+  const makeExporter = (selector, url, filenamePrefix) => {
+    const btn = document.querySelector(selector);
+    if (!btn) return;
 
-  // Avoid double-wiring if init runs more than once
-  if (btn.dataset.wired === "1") return;
-  btn.dataset.wired = "1";
+    btn.addEventListener("click", async () => {
+      try {
+        const month = getSelectedMonth();
+        const res = await fetch(
+          `${state.api}${url}?month=${encodeURIComponent(month)}`,
+          authHeaders()
+        );
+        if (!res.ok) throw new Error(`Export failed: ${res.status}`);
 
-  btn.addEventListener("click", () => {
-    const tbody = document.getElementById("balancesBody");
-    if (!tbody) {
-      alert("Balances table not found.");
-      return;
-    }
-
-    const trs = Array.from(tbody.querySelectorAll("tr"));
-    if (!trs.length) {
-      alert("No balances data to export. Click Reload first, then try again.");
-      return;
-    }
-
-    const header = ["Tenant", "Rent due", "Paid", "Balance", "Collection rate"];
-
-    const dataRows = trs.map((tr) => {
-      const tds = tr.querySelectorAll("td");
-      return [
-        tds[0]?.textContent?.trim() || "",
-        tds[1]?.textContent?.trim() || "",
-        tds[2]?.textContent?.trim() || "",
-        tds[3]?.textContent?.trim() || "",
-        tds[4]?.textContent?.trim() || "",
-      ];
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${filenamePrefix}-${month}.csv`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (err) {
+        console.error(err);
+        toast("Failed to export CSV");
+      }
     });
+  };
 
-    const allRows = [header, ...dataRows];
-
-    const csv = allRows
-      .map((row) =>
-        row
-          .map((cell) => {
-            const v = String(cell ?? "");
-            if (/[",\n]/.test(v)) {
-              return `"${v.replace(/"/g, '""')}"`;
-            }
-            return v;
-          })
-          .join(",")
-      )
-      .join("\n");
-
-    const monthLabel =
-      (document.getElementById("summaryMonthLabel")?.textContent || "").trim() ||
-      "balances";
-
-    const filename = `${monthLabel.replace(/\s+/g, "_").toLowerCase()}_balances.csv`;
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  });
+  // Adjust selectors / endpoints to match your HTML + API
+  makeExporter("#btnExportBalances", "/balances/export", "balances");
+  makeExporter("#btnExportRentroll", "/rentroll/export", "rentroll");
+  makeExporter("#btnExportPayments", "/payments/export", "payments");
 }
+
+ensureExportButtons();
 
 /* ================================ BOOT ================================ */
 (function init() {
@@ -1345,13 +1309,14 @@ function ensureExportButtons() {
 
   // ---------------- Outstanding-by-tenant reload ----------------
   // Support either id, depending on what exists in index.html
-  ["reloadOutstandingByTenant", "reloadOutstanding"].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (!btn) return;
-    btn.addEventListener("click", () => {
-      loadOutstandingByTenant().catch(console.error);
-    });
+  // "Outstanding by tenant (this month)" reload
+["#reloadOutstandingByTenant", "#reloadOutstanding"].forEach((sel) => {
+  const btn = $(sel);
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    loadOutstandingByTenant().catch(console.error);
   });
+});
 
   // ---------------- Initial loads ----------------
   loadOverview().catch(console.error);
