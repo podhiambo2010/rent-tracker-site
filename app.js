@@ -1036,7 +1036,7 @@ $("#rentrollBody")?.addEventListener("click", async (ev) => {
   }
 });
 
-/* --------- Balances helpers & tab --------- */
+/* ---- Balances helpers & tab --------- */
 
 // Normalise metrics/monthly_tenant_payment_reconciliation result
 async function fetchOutstandingRows(month) {
@@ -1076,8 +1076,8 @@ async function loadBalances() {
     const rows = await fetchOutstandingRows(month);
     state.balancesView = rows;
 
-    const tbody = document.getElementById("balancesBody");
-    const empty = document.getElementById("balancesEmpty");
+    const tbody   = document.getElementById("balancesBody");
+    const empty   = document.getElementById("balancesEmpty");
     const countEl = document.getElementById("balancesCount");
 
     if (countEl) countEl.textContent = rows.length;
@@ -1097,35 +1097,38 @@ async function loadBalances() {
         })
         .join("");
     }
+
     if (empty) empty.classList.toggle("hidden", rows.length > 0);
 
-    const totalDue = rows.reduce((s, r) => s + r.rent_due, 0);
-    const totalPaid = rows.reduce((s, r) => s + r.paid, 0);
-    const totalOutstanding = rows.reduce((s, r) => s + r.outstanding, 0);
-    const rate =
+    // Totals for the Balances summary card
+    const totalDue         = rows.reduce((s, r) => s + (r.rent_due || 0), 0);
+    const totalPaid        = rows.reduce((s, r) => s + (r.paid || 0), 0);
+    const totalOutstanding = rows.reduce((s, r) => s + (r.outstanding || 0), 0);
+    const rate             =
       totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
 
     const monthLabelEl = document.getElementById("balancesMonthLabel");
     if (monthLabelEl) {
       monthLabelEl.textContent = fmtMonYearFromISO(`${month}-01`);
     }
+
     const dEl = document.getElementById("balancesTotalDue");
     const pEl = document.getElementById("balancesTotalPaid");
     const oEl = document.getElementById("balancesTotalOutstanding");
     const rEl = document.getElementById("balancesCollectionRate");
 
-    if (dEl) dEl.textContent = formatMoney(totalDue);
-    if (pEl) pEl.textContent = formatMoney(totalPaid);
-    if (oEl) oEl.textContent = formatMoney(totalOutstanding);
+    if (dEl) dEl.textContent = ksh(totalDue);
+    if (pEl) pEl.textContent = ksh(totalPaid);
+    if (oEl) oEl.textContent = ksh(totalOutstanding);
     if (rEl) rEl.textContent = `${rate.toFixed(1)}%`;
   } catch (e) {
     console.error("loadBalances failed", e);
   }
 }
 
-$("#reloadBalances")?.addEventListener("click", () =>
-  loadBalances().catch(console.error)
-);
+document
+  .getElementById("reloadBalances")
+  ?.addEventListener("click", () => loadBalances().catch(console.error));
 
 
 /* ============================ EXPORTS ============================ */
