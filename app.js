@@ -1164,209 +1164,6 @@ document
   ?.addEventListener("click", () => loadBalances().catch(console.error));
 
 
-/* ============================ EXPORTS ============================ */
-function ensureExportButtons() {
-  function addAfter(anchorSel, id, label) {
-    if ($(id)) return null;
-    const anchor = $(anchorSel);
-    if (!anchor) return null;
-    const btn = document.createElement("button");
-    btn.className = "btn ghost";
-    btn.id = id.slice(1);
-    btn.textContent = label;
-    anchor.insertAdjacentElement("afterend", btn);
-    return btn;
-  }
-  addAfter("#reloadLeases", "#exportLeases", "Export CSV");
-  addAfter("#applyPayments", "#exportPayments", "Export CSV");
-  addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
-  
-  $("#exportLeases")?.addEventListener("click", () => {
-    const cols = [
-      { label: "Tenant", value: (r) => r.tenant },
-      { label: "Unit", value: (r) => r.unit },
-      { label: "Rent", value: (r) => r.rent_amount ?? r.rent },
-      { label: "Cycle", value: (r) => r.billing_cycle ?? r.cycle },
-      { label: "Due Day", value: (r) => r.due_day },
-      { label: "Status", value: (r) => r.lease_status ?? r.status },
-      { label: "Lease ID", value: (r) => r.lease_id || r.id },
-    ];
-    download(`leases_${yyyymm()}.csv`, toCSV(state.leasesView, cols));
-  });
-
-  $("#exportPayments")?.addEventListener("click", () => {
-    const cols = [
-      { label: "Date", value: (r) => r.paid_at || r.created_at },
-      { label: "Tenant", value: (r) => r.tenant },
-      { label: "Method", value: (r) => r.method },
-      { label: "Status", value: (r) => r.status ?? "posted" },
-      { label: "Amount", value: (r) => r.amount },
-      { label: "Invoice ID", value: (r) => r.invoice_id },
-      { label: "Payment ID", value: (r) => r.id },
-    ];
-    download(
-      `payments_${$("#paymentsMonth")?.value || yyyymm()}.csv`,
-      toCSV(state.paymentsView, cols)
-    );
-  });
-
-  $("#exportRentroll")?.addEventListener("click", () => {
-    const cols = [
-      { label: "Property", value: (r) => r.property_name ?? r.property },
-      { label: "Unit", value: (r) => r.unit_code ?? r.unit },
-      { label: "Tenant", value: (r) => r.tenant },
-      {
-        label: "Period",
-        value: (r) =>
-          r.period || `${r.period_start || ""} → ${r.period_end || ""}`,
-      },
-      { label: "Total Due", value: (r) => r.total_due },
-      { label: "Status", value: (r) => r.status },
-      { label: "Balance", value: (r) => r.balance },
-    ];
-    download(
-      `rent_roll_${$("#rentrollMonth")?.value || yyyymm()}.csv`,
-      toCSV(state.rentrollView, cols)
-    );
-  });
-
-  $("#exportBalances")?.addEventListener("click", () => {
-    const month = getSelectedMonth();
-    const cols = [
-      { label: "Tenant", value: (r) => r.tenant_name },
-      { label: "Month", value: () => month },
-      { label: "Rent Due", value: (r) => r.rent_due },
-      { label: "Paid", value: (r) => r.paid },
-      { label: "Balance", value: (r) => r.outstanding },
-      {
-        label: "Collection Rate %", value: (r) => r.collection_rate_pct,
-      },
-    ];
-    download(
-      `balances_${month}.csv`,
-      toCSV(state.balancesView, cols)
-    );
-  });
-}
-ensureExportButtons();
-
-/* ======================= OVERVIEW BIG BUTTONS ====================== */
-$("#btnSendAll")?.addEventListener("click", async () => {
-  const ym = getSelectedMonth();
-  try {
-    const rows = await getRentRollForMonth(ym);
-    const dueRows = rows.filter((r) => Number(r.balance || 0) > 0);
-    if (!dueRows.length) {
-      alert("Nothing to send for " + ym);
-      return;
-    }
-    let opened = 0,
-      skippedNoPhone = 0;
-    for (const r of dueRows) {
-      const contact = await getContactForLease(r.lease_id);
-      const phone = (contact?.phone || "").trim();
-      if (!phone) {
-        skippedNoPhone++;
-        continue;
-      }
-      const url = buildWhatsAppURL(phone, {
-        tenant_name: contact?.tenant || r.tenant || "Tenant",
-        unit: r.unit_code || r.unit || "Unit",
-        period: fmtMonYearFromISO(r.period_start),
-        rent: Number(r.subtotal_rent || r.rent || 0),
-        late_fees: Number(r.late_fees || 0),
-        total_due: Number(r.total_due || 0),
-        paid_to_date: Number(r.paid_amount || 0),
-        amount_due: Number(r.balance || r.total_due || 0),
-        due_date: r.due_date
-          ? new Date(r.due_date).toLocaleDateString("en-KE", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })
-          : "",
-      });
-      window.open(url, "_blank");
-      opened++;
-      await new Promise((res) => setTimeout(res, 600));
-    }
-    alert(
-      `Opened ${opened} WhatsApp chats. Skipped ${skippedNoPhone} (no phone).`
-    );
-  } catch (e) {
-    console.error(e);
-    alert("Send All failed: " + e.message);
-  }
-});
-
-$("#btnMarkSelected")?.addEventListener("click", async () => {
-  const ym = getSelectedMonth();
-  try {
-    const rows = await getRentRollForMonth(ym);
-    const dueRows = rows.filter((r) => Number(r.balance || 0) > 0);
-    const invoiceIds = [];
-    for (const r of dueRows) {
-      const id = await getInvoiceIdForLeaseMonth(r.lease_id, ym);
-      if (id) invoiceIds.push(id);
-      await new Promise((res) => setTimeout(res, 120));
-    }
-    if (!invoiceIds.length) {
-      alert("No invoices found to mark for " + ym);
-      return;
-    }
-    const res = await fetch(`${state.api}/invoices/mark_sent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        invoice_ids: invoiceIds,
-        sent_via: "whatsapp",
-        sent_to: "tenant",
-        sent_at: new Date().toISOString(),
-      }),
-    });
-    if (!res.ok) throw new Error("API returned " + res.status);
-    const out = await res.json();
-    alert(`Marked as sent: ${out.updated?.length || 0} invoices.`);
-  } catch (e) {
-    console.error(e);
-    alert("Mark Sent failed: " + e.message);
-  }
-});
-
-/* ============================ WHATSAPP DIY ============================ */
-$("#waBuild")?.addEventListener("click", () => {
-  const name = ($("#waTenant")?.value || "").trim() || "Tenant";
-  const phone = ($("#waPhone")?.value || "").trim();
-  const period =
-    ($("#waPeriod")?.value || "").trim() ||
-    new Date().toLocaleString("en-KE", {
-      month: "short",
-      year: "numeric",
-    });
-  const bal = Number($("#waBalance")?.value || 0);
-  if (!phone) {
-    alert("Enter a recipient phone number");
-    return;
-  }
-  const url = buildWhatsAppURL(phone, {
-    tenant_name: name,
-    unit: "your unit",
-    period,
-    rent: bal,
-    late_fees: 0,
-    total_due: bal,
-    paid_to_date: 0,
-    amount_due: bal,
-    due_date: "",
-  });
-  const out = $("#waResult");
-  if (out) {
-    out.innerHTML = `Link ready: <a href="${url}" target="_blank">Open WhatsApp</a>`;
-  } else {
-    window.open(url, "_blank");
-  }
-});
-
 /* ================================ BOOT ================================ */
 (function init() {
   setAPI(state.api);
@@ -1398,20 +1195,44 @@ $("#waBuild")?.addEventListener("click", () => {
     });
   }
 
-  // Balances tab reload
+  // Balances tab reload – with visual feedback
   const reloadBalancesBtn = document.getElementById("reloadBalances");
   if (reloadBalancesBtn) {
-    reloadBalancesBtn.addEventListener("click", () => {
-      loadBalances().catch(console.error);
+    reloadBalancesBtn.addEventListener("click", async () => {
+      const prev = reloadBalancesBtn.textContent;
+      reloadBalancesBtn.disabled = true;
+      reloadBalancesBtn.textContent = "Reloading…";
+      try {
+        await loadBalances();
+        toast("Balances refreshed");
+      } catch (e) {
+        console.error(e);
+        toast("Failed to reload balances");
+      } finally {
+        reloadBalancesBtn.disabled = false;
+        reloadBalancesBtn.textContent = prev;
+      }
     });
   }
 
-  // "Outstanding by tenant (this month)" reload
+  // "Outstanding by tenant (this month)" reload – with feedback
   ["reloadOutstandingByTenant", "reloadOutstanding"].forEach((id) => {
     const btn = document.getElementById(id);
     if (!btn) return;
-    btn.addEventListener("click", () => {
-      loadOutstandingByTenant().catch(console.error);
+    btn.addEventListener("click", async () => {
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Reloading…";
+      try {
+        await loadOutstandingByTenant();
+        toast("Outstanding list refreshed");
+      } catch (e) {
+        console.error(e);
+        toast("Failed to reload outstanding list");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
     });
   });
 
