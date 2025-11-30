@@ -672,41 +672,68 @@ async function loadOverview() {
 }
 
 async function loadCollectionSummaryMonth() {
-  const month = getSelectedMonth();
+  const month = getSelectedMonth(); // e.g. "2025-11"
+
   try {
+    // This must match the FastAPI route that reads v_monthly_rent_balances
     const summary = await jget(
       `/balances/monthly-summary?month=${encodeURIComponent(month)}`
     );
 
-    if (!summary) return;
+    if (!summary) {
+      console.warn("No monthly summary returned for", month);
+      return;
+    }
 
     const root = document.getElementById("collection-summary-month");
     if (!root) return;
 
-    const labelEl   = root.querySelector('[data-role="month-label"]');
-    const dueEl     = root.querySelector('[data-role="rent-due-total"]');
-    const paidEl    = root.querySelector('[data-role="amount-paid-total"]');
-    const balEl     = root.querySelector('[data-role="balance-total"]');
-    const rateEl    = root.querySelector('[data-role="collection-rate"]');
+    const labelEl = root.querySelector('[data-role="month-label"]');
+    const dueEl   = root.querySelector('[data-role="rent-due-total"]');
+    const paidEl  = root.querySelector('[data-role="amount-paid-total"]');
+    const balEl   = root.querySelector('[data-role="balance-total"]');
+    const rateEl  = root.querySelector('[data-role="collection-rate"]');
 
-    // Month label like "Nov 2025"
-    if (labelEl && summary.month_start) {
-      const d = new Date(summary.month_start);
+    // ---- Normalise fields from API (v_monthly_rent_balances) ----
+    const monthStart =
+      summary.month_start || `${month}-01`; // fallback
+
+    const rentDue =
+      Number(summary.rent_due_total ??
+             summary.rent_due ??
+             0) || 0;
+
+    const paidTotal =
+      Number(summary.amount_paid_total ??
+             summary.total_paid ??
+             0) || 0;
+
+    const balance =
+      Number(summary.balance_total ??
+             summary.total_outstanding ??
+             0) || 0;
+
+    // ---- Month label e.g. "Nov 2025" ----
+    if (labelEl && monthStart) {
+      const d = new Date(monthStart);
       labelEl.textContent = d.toLocaleDateString("en-KE", {
         month: "short",
         year: "numeric",
       });
     }
 
-    const rentDue   = Number(summary.rent_due_total || 0);
-    const paidTotal = Number(summary.amount_paid_total || 0);
-    const balance   = Number(summary.balance_total || 0);
+    // ---- Numbers ----
+    const fmt = (v) =>
+      v.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      });
 
-    if (dueEl)  dueEl.textContent  = rentDue.toLocaleString("en-KE");
-    if (paidEl) paidEl.textContent = paidTotal.toLocaleString("en-KE");
-    if (balEl)  balEl.textContent  = balance.toLocaleString("en-KE");
+    if (dueEl)  dueEl.textContent  = fmt(rentDue);
+    if (paidEl) paidEl.textContent = fmt(paidTotal);
+    if (balEl)  balEl.textContent  = fmt(balance);
 
-    // Collection rate = paid / due
+    // ---- Collection rate: paid / due ----
     let rateText = "–";
     if (rentDue > 0) {
       const rate = (paidTotal / rentDue) * 100;
