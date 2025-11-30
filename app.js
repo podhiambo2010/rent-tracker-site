@@ -1153,8 +1153,7 @@ function ensureExportButtons() {
   addAfter("#reloadLeases", "#exportLeases", "Export CSV");
   addAfter("#applyPayments", "#exportPayments", "Export CSV");
   addAfter("#applyRentroll", "#exportRentroll", "Export CSV");
-  addAfter("#reloadBalances", "#exportBalances", "Export CSV");
-
+  
   $("#exportLeases")?.addEventListener("click", () => {
     const cols = [
       { label: "Tenant", value: (r) => r.tenant },
@@ -1373,4 +1372,18 @@ $("#waBuild")?.addEventListener("click", () => {
   loadBalances().catch(console.error);
   loadOutstandingByTenant().catch(console.error);
   showTab("overview");
-})();
+});
+
+// Balances tab reload
+$("#reloadBalances")?.addEventListener("click", () => {
+  loadBalances().catch(console.error);
+});
+
+// "Outstanding by tenant (this month)" reload
+["#reloadOutstandingByTenant", "#reloadOutstanding"].forEach((sel) => {
+  const btn = $(sel);
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    loadOutstandingByTenant().catch(console.error);
+  });
+)();
