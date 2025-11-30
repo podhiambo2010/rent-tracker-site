@@ -330,6 +330,8 @@ document.getElementById("reloadOutstanding")?.addEventListener("click", () => {
   loadOutstandingByTenant().catch(console.error);
 });
 
+    setLastUpdated("outstandingLastUpdated");
+
 /* ============================== DUNNING ============================== */
 let _logBusy = false;
 async function loadDunningLog(month = "", stage = "") {
