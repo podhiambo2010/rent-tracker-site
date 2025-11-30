@@ -674,41 +674,48 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // 1) First, update the Balances tab so its totals are correct
-    await loadBalances();
+    // Pull per-tenant monthly totals from the metrics view
+    const rows = await fetchOutstandingRows(month); // [{ rent_due, paid, outstanding, ... }]
 
-    // 2) Read the already-formatted totals from the Balances card
-    const balancesMonthLabel =
-      document.getElementById("balancesMonthLabel")?.textContent ||
-      fmtMonYearFromISO(`${month}-01`);
-
-    const balancesDue =
-      document.getElementById("balancesTotalDue")?.textContent || "";
-    const balancesPaid =
-      document.getElementById("balancesTotalPaid")?.textContent || "";
-    const balancesOutstanding =
-      document.getElementById("balancesTotalOutstanding")?.textContent || "";
-    const balancesRate =
-      document.getElementById("balancesCollectionRate")?.textContent || "";
-
-    // 3) Point to the Overview monthly summary elements
     const labelEl = document.getElementById("summaryMonthLabel");
     const dueEl   = document.getElementById("summaryMonthDue");
     const paidEl  = document.getElementById("summaryMonthCollected");
     const balEl   = document.getElementById("summaryMonthBalance");
     const rateEl  = document.getElementById("summaryMonthRate");
 
-    if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) {
+    if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) return;
+
+    // If nothing came back, show just the labels
+    if (!Array.isArray(rows) || !rows.length) {
+      labelEl.textContent = "";
+      dueEl.textContent   = "due";
+      paidEl.textContent  = "collected";
+      balEl.textContent   = "balance";
+      rateEl.textContent  = "collection rate";
       return;
     }
 
-    // 4) Copy values from Balances → Overview,
-    //    adding the words you want on each chip
-    labelEl.textContent = balancesMonthLabel;
-    dueEl.textContent   = `${balancesDue} due`;
-    paidEl.textContent  = `${balancesPaid} collected`;
-    balEl.textContent   = `${balancesOutstanding} balance`;
-    rateEl.textContent  = `${balancesRate} collection rate`;
+    // ---- Compute totals from per-tenant rows ----
+    const totalDue  = rows.reduce((s, r) => s + (Number(r.rent_due)     || 0), 0);
+    const totalPaid = rows.reduce((s, r) => s + (Number(r.paid)         || 0), 0);
+    // Force balance = due - paid so you get 566,469 - 445,000 = 121,469
+    const totalBal  = Math.max(0, totalDue - totalPaid);
+    const rate      = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
+
+    // ---- Month label "Nov 2025" ----
+    labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
+
+    // ---- Format with KES + words ----
+    const withKes = (v) =>
+      `KES ${v.toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
+
+    dueEl.textContent  = `${withKes(totalDue)} due`;
+    paidEl.textContent = `${withKes(totalPaid)} collected`;
+    balEl.textContent  = `${withKes(totalBal)} balance`;
+    rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
   } catch (err) {
     console.error("loadCollectionSummaryMonth failed", err);
   }
