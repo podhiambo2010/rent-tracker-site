@@ -1149,12 +1149,11 @@ async function fetchOutstandingRows(month) {
 // Balances tab (per-tenant + monthly totals)
 async function loadBalances() {
   try {
-    const month = getSelectedMonth();        // "YYYY-MM"
-    
-    // ✅ use the real API endpoint
-    const rows = await jget(
-      `/monthly_tenant_payments?month=${encodeURIComponent(month)}`
-    );
+   https://rent-tracker-api-16i0.onrender.com/metrics/monthly_tenant_payment_reconciliation?month=2025-11
+
+   const rows = await jget(
+  `/monthly_tenant_payments?month=${encodeURIComponent(month)}`
+);
 
     const tbody = document.getElementById("balancesBody");
     const empty = document.getElementById("balancesEmpty");
