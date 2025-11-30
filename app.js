@@ -1152,9 +1152,10 @@ async function loadBalances() {
     const month = getSelectedMonth(); // "YYYY-MM"
 
     // ✅ Call the correct API endpoint
-    const rows = await jget(
-      `/balances/monthly_tenant_payments?month=${encodeURIComponent(month)}`
-    );
+   // ✅ Call the correct API endpoint (same as Overview)
+  const rows = await jget(
+    `/monthly_tenant_payments?month=${encodeURIComponent(month)}`
+  );
 
     const tbody = document.getElementById("balancesBody");
     const empty = document.getElementById("balancesEmpty");
