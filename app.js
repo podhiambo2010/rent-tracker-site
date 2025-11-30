@@ -477,6 +477,21 @@ function setAdminToken(v) {
   $("#adminToken") && ($("#adminToken").value = state.adminToken);
 }
 
+function setLastUpdated(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const now = new Date();
+  el.textContent =
+    "Last updated: " +
+    now.toLocaleString("en-KE", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+}
+
 function wireHeader() {
   $("#useApi")?.addEventListener("click", () => {
     setAPI($("#apiBase")?.value || DEFAULT_API);
