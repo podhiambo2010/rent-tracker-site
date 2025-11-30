@@ -1149,7 +1149,7 @@ async function fetchOutstandingRows(month) {
 async function loadBalances() {
   try {
     const month = getSelectedMonth();        // "YYYY-MM"
-    const rows = await jget(`/balances/monthly?month=${month}`);
+    const rows = await jget(`/balances/month?month=${encodeURIComponent(month)}`);
 
     const tbody = document.getElementById("balancesBody");
     const empty = document.getElementById("balancesEmpty");
