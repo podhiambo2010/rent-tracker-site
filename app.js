@@ -1244,22 +1244,23 @@ function ensureExportButtons() {
 // Call it once after the DOM is ready (script is at the end of <body>)
 ensureExportButtons();
 
-
 /* ================================ BOOT ================================ */
 (function init() {
+  // Basic wiring
   setAPI(state.api);
   setAdminToken(state.adminToken);
 
-  // Footer year
-  $("#yy") && ($("#yy").textContent = new Date().getFullYear());
+  const yearEl = document.getElementById("yy");
+  if (yearEl) {
+    yearEl.textContent = new Date().getFullYear();
+  }
 
-  // Wire UI
   wireTabs();
   wireHeader();
   wireSettings();
   wireActions();
 
-  // Month picker
+  // Month picker default
   const mp = document.getElementById("monthPicker");
   if (mp && !mp.value) {
     const now = new Date();
@@ -1267,6 +1268,7 @@ ensureExportButtons();
     mp.value = `${now.getFullYear()}-${mm}`;
   }
 
+  // When month changes, refresh overview + balances + outstanding
   if (mp) {
     mp.addEventListener("change", () => {
       loadCollectionSummaryMonth().catch(console.error);
@@ -1276,50 +1278,31 @@ ensureExportButtons();
     });
   }
 
-  // Balances tab reload – with visual feedback
-  const reloadBalancesBtn = document.getElementById("reloadBalances");
-  if (reloadBalancesBtn) {
-    reloadBalancesBtn.addEventListener("click", async () => {
-      const prev = reloadBalancesBtn.textContent;
-      reloadBalancesBtn.disabled = true;
-      reloadBalancesBtn.textContent = "Reloading…";
-      try {
-        await loadBalances();
-        toast("Balances refreshed");
-      } catch (e) {
-        console.error(e);
-        toast("Failed to reload balances");
-      } finally {
-        reloadBalancesBtn.disabled = false;
-        reloadBalancesBtn.textContent = prev;
-      }
-    });
-  }
-
-  // "Outstanding by tenant (this month)" reload – with feedback
-  ["reloadOutstandingByTenant", "reloadOutstanding"].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (!btn) return;
-    btn.addEventListener("click", async () => {
-      const prev = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "Reloading…";
-      try {
-        await loadOutstandingByTenant();
-        toast("Outstanding list refreshed");
-      } catch (e) {
-        console.error(e);
-        toast("Failed to reload outstanding list");
-      } finally {
-        btn.disabled = false;
-        btn.textContent = prev;
-      }
-    });
-  });
-
   // Initial loads
   loadOverview().catch(console.error);
   loadBalances().catch(console.error);
   loadOutstandingByTenant().catch(console.error);
   showTab("overview");
+
+  // Balances tab reload
+  const btnBal = document.getElementById("reloadBalances");
+  if (btnBal) {
+    btnBal.addEventListener("click", () => {
+      loadBalances().catch(console.error);
+    });
+  }
+
+  // "Outstanding by tenant (this month)" reload
+  ["reloadOutstandingByTenant", "reloadOutstanding"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      loadOutstandingByTenant().catch(console.error);
+    });
+  });
+
+  // Wire Export CSV buttons if helper exists
+  if (typeof ensureExportButtons === "function") {
+    ensureExportButtons();
+  }
 })();
