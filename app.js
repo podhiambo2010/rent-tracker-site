@@ -1280,5 +1280,66 @@ function ensureExportButtons() {
 
 /* ================================ BOOT ================================ */
 (function init() {
-  ...
+  // Restore API + admin token from local storage
+  setAPI(state.api);
+  setAdminToken(state.adminToken);
+
+  // Footer year
+  const yy = $("#yy");
+  if (yy) yy.textContent = new Date().getFullYear();
+
+  // Wire up UI behaviour (tabs, header buttons, auth ping, etc.)
+  wireTabs();
+  wireHeader();
+  wireSettings();
+  wireActions(); // <- this is what makes "Auth ping" clickable
+
+  // Month picker default (YYYY-MM, current month) if empty
+  const mp = document.getElementById("monthPicker");
+  if (mp && !mp.value) {
+    const now = new Date();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    mp.value = `${now.getFullYear()}-${mm}`;
+  }
+
+  // When month is changed, reload all month-sensitive data
+  if (mp) {
+    mp.addEventListener("change", () => {
+      loadCollectionSummaryMonth().catch(console.error);
+      loadOverview().catch(console.error);
+      loadBalances().catch(console.error);
+      loadOutstandingByTenant().catch(console.error);
+    });
+  }
+
+  // ---------------- Balances tab reload ----------------
+  const btnBalReload = document.getElementById("reloadBalances");
+  if (btnBalReload) {
+    btnBalReload.addEventListener("click", () => {
+      loadBalances().catch(console.error);
+    });
+  }
+
+  // ---------------- Outstanding-by-tenant reload ----------------
+  // Support either id, depending on what exists in index.html
+  ["reloadOutstandingByTenant", "reloadOutstanding"].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      loadOutstandingByTenant().catch(console.error);
+    });
+  });
+
+  // ---------------- Initial loads ----------------
+  loadOverview().catch(console.error);
+  loadBalances().catch(console.error);
+  loadOutstandingByTenant().catch(console.error);
+
+  // Hook up the CSV export buttons if that helper exists
+  if (typeof ensureExportButtons === "function") {
+    ensureExportButtons();
+  }
+
+  // Start on Overview tab
+  showTab("overview");
 })();
