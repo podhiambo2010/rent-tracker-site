@@ -674,52 +674,43 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // Same data source as the Balances tab
-    const rows = await fetchOutstandingRows(month); // [{ rent_due, paid, outstanding, ... }]
+    // 1) Make sure the Balances tab numbers are up to date
+    await loadBalances();
 
-    // Grab the tiles directly by data-role
+    // 2) Read the already-formatted strings from the Balances card
+    const monthLabelSrc =
+      document.getElementById("balancesMonthLabel")?.textContent ||
+      fmtMonYearFromISO(`${month}-01`);
+
+    const dueText =
+      document.getElementById("balancesTotalDue")?.textContent || "";
+    const paidText =
+      document.getElementById("balancesTotalPaid")?.textContent || "";
+    const balText =
+      document.getElementById("balancesTotalOutstanding")?.textContent || "";
+    const rateText =
+      document.getElementById("balancesCollectionRate")?.textContent || "–";
+
+    // 3) Find the Overview summary elements (chips)
     const labelEl = document.querySelector('[data-role="month-label"]');
     const dueEl   = document.querySelector('[data-role="rent-due-total"]');
     const paidEl  = document.querySelector('[data-role="amount-paid-total"]');
     const balEl   = document.querySelector('[data-role="balance-total"]');
     const rateEl  = document.querySelector('[data-role="collection-rate"]');
 
-    // If the elements aren't there, just bail out quietly
+    // If the elements aren’t there, just stop quietly
     if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) {
       console.warn("Collection summary elements not found in DOM");
       return;
     }
 
-    // If nothing came back from the API, clear and exit
-    if (!Array.isArray(rows) || !rows.length) {
-      labelEl.textContent = "";
-      dueEl.textContent   = "";
-      paidEl.textContent  = "";
-      balEl.textContent   = "";
-      rateEl.textContent  = "–";
-      return;
-    }
+    // 4) Copy the values over so both cards stay in sync
+    labelEl.textContent = monthLabelSrc;
+    dueEl.textContent   = dueText;   // e.g. "KES 566,469.00"
+    paidEl.textContent  = paidText;  // e.g. "KES 445,000.00"
+    balEl.textContent   = balText;   // e.g. "KES 121,469.00"
+    rateEl.textContent  = rateText;  // e.g. "78.6%"
 
-    // ---- Compute totals from per-tenant rows ----
-    const totalDue = rows.reduce((s, r) => s + (Number(r.rent_due)     || 0), 0);
-    const totalPaid = rows.reduce((s, r) => s + (Number(r.paid)        || 0), 0);
-    const totalBal  = rows.reduce((s, r) => s + (Number(r.outstanding) || 0), 0);
-    const rate      = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
-
-    // ---- Month label "Nov 2025" ----
-    labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
-
-    // ---- Format numbers ----
-    const fmt = (v) =>
-      v.toLocaleString("en-KE", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      });
-
-    dueEl.textContent  = fmt(totalDue);
-    paidEl.textContent = fmt(totalPaid);
-    balEl.textContent  = fmt(totalBal);
-    rateEl.textContent = `${rate.toFixed(1)}%`;
   } catch (err) {
     console.error("loadCollectionSummaryMonth failed", err);
   }
