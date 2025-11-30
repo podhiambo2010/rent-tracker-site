@@ -1049,7 +1049,7 @@ async function fetchOutstandingRows(month) {
     );
     if (!Array.isArray(res)) return [];
 
-    return res.map((r) => {
+    const mapped = res.map((r) => {
       const rentDue = Number(r.rent_due_total || 0) || 0;
       const paid    = Number(r.amount_paid_total || 0) || 0;
       const balance = Number(r.balance_total || (rentDue - paid)) || 0;
@@ -1063,6 +1063,12 @@ async function fetchOutstandingRows(month) {
         collection_rate_pct:
           rentDue > 0 ? Math.round((paid / rentDue) * 100) : 0,
       };
+    });
+
+    // 🔴 filter out internal / technical rows like "Agency Transaction"
+    return mapped.filter((r) => {
+      const name = String(r.tenant_name || "").toLowerCase().trim();
+      return name !== "agency transaction";
     });
   } catch (e) {
     console.error("fetchOutstandingRows failed", e);
