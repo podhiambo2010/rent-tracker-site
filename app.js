@@ -1206,6 +1206,44 @@ document
   .getElementById("reloadBalances")
   ?.addEventListener("click", () => loadBalances().catch(console.error));
 
+/* ============================ EXPORTS ============================ */
+
+// Wire up the "Balances (This Month) → Export CSV" button
+function ensureExportButtons() {
+  const btn = document.getElementById("exportBalances");
+  if (!btn) return;
+
+  // Avoid double-wiring if this function is called more than once
+  if (btn.dataset.wired === "1") return;
+  btn.dataset.wired = "1";
+
+  btn.addEventListener("click", () => {
+    const rows = state.balancesView || [];
+    const month = getSelectedMonth(); // "YYYY-MM"
+
+    // Safety: if data hasn’t loaded yet, tell the user
+    if (!rows.length) {
+      alert("No balances data loaded yet. Click Reload first, then try Export CSV again.");
+      return;
+    }
+
+    const cols = [
+      { label: "Tenant",          value: (r) => r.tenant_name },
+      { label: "Month",           value: () => month },
+      { label: "Rent due",        value: (r) => r.rent_due },
+      { label: "Paid",            value: (r) => r.paid },
+      { label: "Balance",         value: (r) => r.outstanding },
+      { label: "Collection rate", value: (r) => r.collection_rate_pct }
+    ];
+
+    const csv = toCSV(rows, cols);
+    download(`balances_${month}.csv`, csv);
+  });
+}
+
+// Call it once after the DOM is ready (script is at the end of <body>)
+ensureExportButtons();
+
 
 /* ================================ BOOT ================================ */
 (function init() {
