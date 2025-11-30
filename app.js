@@ -1145,8 +1145,91 @@ async function fetchOutstandingRows(month) {
   }
 }
 
-https://rent-tracker-api-16i0.onrender.com/metrics/monthly_tenant_payment_reconciliation?month=2025-11
+/* ---- Balances (This Month) tab ---- */
+async function loadBalances() {
+  try {
+    const month = getSelectedMonth(); // "YYYY-MM"
 
+    // Pull per-tenant monthly payments for that month
+    const rows = await jget(
+      `/monthly_tenant_payments?month=${encodeURIComponent(month)}`
+    );
+
+    const tbody = document.getElementById("balancesBody");
+    const empty = document.getElementById("balancesEmpty");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+
+    if (!rows || !rows.length) {
+      if (empty) empty.classList.remove("hidden");
+
+      const labelEl = document.getElementById("balancesMonthLabel");
+      const dueEl   = document.getElementById("balancesDue");
+      const paidEl  = document.getElementById("balancesPaid");
+      const balEl   = document.getElementById("balancesOutstanding");
+      const rateEl  = document.getElementById("balancesRate");
+
+      if (labelEl) labelEl.textContent = "—";
+      if (dueEl)   dueEl.textContent   = "KES 0";
+      if (paidEl)  paidEl.textContent  = "KES 0";
+      if (balEl)   balEl.textContent   = "KES 0";
+      if (rateEl)  rateEl.textContent  = "0.0%";
+
+      return;
+    }
+
+    if (empty) empty.classList.add("hidden");
+
+    // 1) Render per-tenant rows
+    let totalDue = 0;
+    let totalPaid = 0;
+
+    for (const row of rows) {
+      const tenant  = row.tenant_name || "";
+      const rentDue = Number(row.rent_due || 0);
+      const paid    = Number(row.paid || 0);
+      const balance = Number(row.balance || 0);
+      const rate    = row.collection_rate; // numeric percent
+
+      totalDue  += rentDue;
+      totalPaid += paid;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${tenant}</td>
+        <td>${money(rentDue)}</td>
+        <td>${money(paid)}</td>
+        <td>${money(balance)}</td>
+        <td>${
+          typeof rate === "number"
+            ? rate.toFixed(0) + "%"
+            : (rate || "")
+        }</td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    // 2) Update "This month totals (all tenants)" row
+    const totalBalance   = totalDue - totalPaid;
+    const collectionRate = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
+
+    const labelEl = document.getElementById("balancesMonthLabel");
+    const dueEl   = document.getElementById("balancesDue");
+    const paidEl  = document.getElementById("balancesPaid");
+    const balEl   = document.getElementById("balancesOutstanding");
+    const rateEl  = document.getElementById("balancesRate");
+
+    if (labelEl) labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
+    if (dueEl)   dueEl.textContent   = `KES ${fmtKes(totalDue)}`;
+    if (paidEl)  paidEl.textContent  = `KES ${fmtKes(totalPaid)}`;
+    if (balEl)   balEl.textContent   = `KES ${fmtKes(totalBalance)}`;
+    if (rateEl)  rateEl.textContent  = `${collectionRate.toFixed(1)}%`;
+  } catch (err) {
+    console.error("loadBalances failed", err);
+    toast("Failed to load balances");
+  }
+}
 
 /* ============================ EXPORTS ============================ */
 function ensureExportButtons() {
@@ -1229,13 +1312,13 @@ ensureExportButtons();
   // ---------------- Outstanding-by-tenant reload ----------------
   // Support either id, depending on what exists in index.html
   // "Outstanding by tenant (this month)" reload
-["#reloadOutstandingByTenant", "#reloadOutstanding"].forEach((sel) => {
-  const btn = $(sel);
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    loadOutstandingByTenant().catch(console.error);
+  ["#reloadOutstandingByTenant", "#reloadOutstanding"].forEach((sel) => {
+    const btn = $(sel);
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      loadOutstandingByTenant().catch(console.error);
+    });
   });
-});
 
   // ---------------- Initial loads ----------------
   loadOverview().catch(console.error);
