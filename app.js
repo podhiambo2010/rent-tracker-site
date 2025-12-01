@@ -1103,7 +1103,7 @@ async function fetchOutstandingRows(month) {
       const name = canonicalTenantName(r.tenant_name || "—");
       const key  = name.toLowerCase();
 
-      // Skip internal / technical rows
+      // Skip internal / technical rows (e.g. "Agency Transaction")
       if (key === "agency transaction") continue;
 
       const current = buckets.get(key) || {
@@ -1134,47 +1134,34 @@ async function fetchOutstandingRows(month) {
   }
 }
 
-/* ---- Balances tab (table) ---- */
-
+/* ---- Balances tab (This Month) ---- */
 async function loadBalances() {
   const month = getSelectedMonth(); // "YYYY-MM"
-
   try {
-    // Re-use the same per-tenant rows we use for Overview + tile
-    const rows = await fetchOutstandingRows(month); // [{ tenant_name, rent_due, paid, outstanding, collection_rate_pct }]
+    const rows = await fetchOutstandingRows(month);
 
-    const tbody = document.getElementById("balancesBody");
-    const empty = document.getElementById("balancesEmpty");
+    const tbody      = document.getElementById("balancesBody");
+    const empty      = document.getElementById("balancesEmpty");
+    const monthLabel = document.getElementById("balancesMonthLabel");
+
     if (!tbody) return;
 
-    tbody.innerHTML = "";
-
-    // If no rows, show the empty message and stop
-    if (!Array.isArray(rows) || !rows.length) {
-      if (empty) empty.classList.remove("hidden");
-      return;
+    if (monthLabel) {
+      monthLabel.textContent = fmtMonYearFromISO(`${month}-01`);
     }
-    if (empty) empty.classList.add("hidden");
 
-    state.balancesView = rows;
-
-    tbody.innerHTML = rows
-      .map((r, idx) => {
-        const tenant = r.tenant_name || r.tenant || "—";
-        const due    = Number(r.rent_due) || 0;
-        const paid   = Number(r.paid) || 0;
-        const bal    =
-          Number.isFinite(Number(r.outstanding))
-            ? Number(r.outstanding)
-            : Math.max(0, due - paid);
-        const rate   =
+    tbody.innerHTML = (rows || [])
+      .map((r) => {
+        const due  = Number(r.rent_due || 0);
+        const paid = Number(r.paid || 0);
+        const bal  = Number(r.outstanding || 0);
+        const rate =
           r.collection_rate_pct ??
           (due > 0 ? Math.round((paid / due) * 100) : 0);
 
         return `
           <tr>
-            <td>${idx + 1}</td>
-            <td>${tenant}</td>
+            <td>${r.tenant_name || r.tenant || "—"}</td>
             <td style="text-align:right">${money(due)}</td>
             <td style="text-align:right">${money(paid)}</td>
             <td style="text-align:right">${money(bal)}</td>
@@ -1183,30 +1170,43 @@ async function loadBalances() {
         `;
       })
       .join("");
-  } catch (e) {
-    console.error("loadBalances failed", e);
+
+    if (empty) empty.classList.toggle("hidden", (rows || []).length > 0);
+
+    setLastUpdated("balancesLastUpdated");
+  } catch (err) {
+    console.error("loadBalances failed", err);
+    toast("Failed to load balances");
   }
 }
 
 /* ============================ EXPORTS ============================ */
 function ensureExportButtons() {
-  const makeExporter = (selector, url, filenamePrefix) => {
-    const btn = document.querySelector(selector);
-    if (!btn) return;
+  // Any button with data-export-endpoint + optional data-export-prefix
+  const buttons = document.querySelectorAll("[data-export-endpoint]");
+  if (!buttons.length) return;
+
+  buttons.forEach((btn) => {
+    const endpoint = btn.getAttribute("data-export-endpoint");
+    const prefix   = btn.getAttribute("data-export-prefix") || "export";
 
     btn.addEventListener("click", async () => {
       try {
         const month = getSelectedMonth();
-        const res = await fetch(
-          `${state.api}${url}?month=${encodeURIComponent(month)}`,
-          authHeaders()
-        );
+        const url = `${state.api}${endpoint}?month=${encodeURIComponent(
+          month
+        )}`;
+
+        const headers = {};
+        if (state.adminToken) headers["X-Admin-Token"] = state.adminToken;
+
+        const res = await fetch(url, { headers });
         if (!res.ok) throw new Error(`Export failed: ${res.status}`);
 
         const blob = await res.blob();
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = `${filenamePrefix}-${month}.csv`;
+        a.download = `${prefix}-${month}.csv`;
         a.click();
         URL.revokeObjectURL(a.href);
       } catch (err) {
@@ -1214,15 +1214,11 @@ function ensureExportButtons() {
         toast("Failed to export CSV");
       }
     });
-  };
-
-  // Adjust selectors / endpoints to match your HTML + API
-  makeExporter("#btnExportBalances", "/balances/export", "balances");
-  makeExporter("#btnExportRentroll", "/rentroll/export", "rentroll");
-  makeExporter("#btnExportPayments", "/payments/export", "payments");
+  });
 }
 
 ensureExportButtons();
+
 
 /* ================================ BOOT ================================ */
 (function init() {
