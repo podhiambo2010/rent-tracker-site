@@ -1145,65 +1145,57 @@ async function fetchOutstandingRows(month) {
   }
 }
 
-// Main Balances tab loader
+/* ---- Balances tab (table) ---- */
+
 async function loadBalances() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    const rows = await fetchOutstandingRows(month);
+    // Re-use the same per-tenant rows we use for Overview + tile
+    const rows = await fetchOutstandingRows(month); // [{ tenant_name, rent_due, paid, outstanding, collection_rate_pct }]
 
-    const tbody    = document.getElementById("balancesBody");
-    const empty    = document.getElementById("balancesEmpty");
-    const countEl  = document.getElementById("balancesCount");
-    const sumDueEl = document.getElementById("balancesTotalDue");
-    const sumPaidEl= document.getElementById("balancesTotalPaid");
-    const sumOutEl = document.getElementById("balancesTotalOutstanding");
+    const tbody = document.getElementById("balancesBody");
+    const empty = document.getElementById("balancesEmpty");
+    if (!tbody) return;
 
-    // If the table doesn't exist, just stop quietly
-    if (!tbody) {
-      console.warn("Balances table body #balancesBody not found");
+    tbody.innerHTML = "";
+
+    // If no rows, show the empty message and stop
+    if (!Array.isArray(rows) || !rows.length) {
+      if (empty) empty.classList.remove("hidden");
       return;
     }
+    if (empty) empty.classList.add("hidden");
 
-    // Totals
-    let totalDue = 0;
-    let totalPaid = 0;
-    let totalOutstanding = 0;
+    state.balancesView = rows;
 
-    for (const r of rows) {
-      totalDue        += Number(r.rent_due)      || 0;
-      totalPaid       += Number(r.paid)          || 0;
-      totalOutstanding+= Number(r.outstanding)   || 0;
-    }
-
-    // Update summary chips
-    if (countEl) countEl.textContent = rows.length.toString();
-    if (sumDueEl) sumDueEl.textContent = money(totalDue);
-    if (sumPaidEl) sumPaidEl.textContent = money(totalPaid);
-    if (sumOutEl) sumOutEl.textContent  = money(totalOutstanding);
-
-    // Fill table
     tbody.innerHTML = rows
-      .map((r) => {
+      .map((r, idx) => {
+        const tenant = r.tenant_name || r.tenant || "—";
+        const due    = Number(r.rent_due) || 0;
+        const paid   = Number(r.paid) || 0;
+        const bal    =
+          Number.isFinite(Number(r.outstanding))
+            ? Number(r.outstanding)
+            : Math.max(0, due - paid);
+        const rate   =
+          r.collection_rate_pct ??
+          (due > 0 ? Math.round((paid / due) * 100) : 0);
+
         return `
           <tr>
-            <td>${r.tenant_name}</td>
-            <td style="text-align:right">${money(r.rent_due)}</td>
-            <td style="text-align:right">${money(r.paid)}</td>
-            <td style="text-align:right">${money(r.outstanding)}</td>
-            <td style="text-align:right">${r.collection_rate_pct}%</td>
+            <td>${idx + 1}</td>
+            <td>${tenant}</td>
+            <td style="text-align:right">${money(due)}</td>
+            <td style="text-align:right">${money(paid)}</td>
+            <td style="text-align:right">${money(bal)}</td>
+            <td style="text-align:right">${rate}%</td>
           </tr>
         `;
       })
       .join("");
-
-    if (empty) empty.classList.toggle("hidden", rows.length > 0);
-
-    // Stamp “Last updated” for balances (if label exists)
-    setLastUpdated("balancesLastUpdated");
   } catch (e) {
     console.error("loadBalances failed", e);
-    toast("Failed to load balances");
   }
 }
 
