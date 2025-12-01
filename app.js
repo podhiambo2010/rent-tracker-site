@@ -7,17 +7,6 @@ const DEFAULT_API = "https://rent-tracker-api-16i0.onrender.com";
 const $  = (q, el = document) => el.querySelector(q);
 const $$ = (q, el = document) => Array.from(el.querySelectorAll(q));
 
-// Small helper to call the new balances overview endpoint
-async function fetchBalancesOverview(month) {
-  const base = (window.state && state.apiBase) || API_BASE; // use whatever you already use elsewhere
-  const url = `${base}/balances/overview?month=${month}`;
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`balances/overview failed: ${res.status}`);
-  }
-  return await res.json(); // { month_start, total_invoiced, total_paid, total_outstanding }
-}
 
 // Nicely format KES amounts (works with strings or numbers)
 const formatMoney = (value) => {
