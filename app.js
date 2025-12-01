@@ -1145,86 +1145,64 @@ async function fetchOutstandingRows(month) {
   }
 }
 
-// Balances tab (per-tenant + monthly totals)
+// Main Balances tab loader
 async function loadBalances() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    const rows = await fetchOutstandingRows(month); // already aggregated
+    const rows = await fetchOutstandingRows(month);
 
-    const tbody = document.getElementById("balancesBody");
-    const empty = document.getElementById("balancesEmpty");
-    if (!tbody) return;
+    const tbody    = document.getElementById("balancesBody");
+    const empty    = document.getElementById("balancesEmpty");
+    const countEl  = document.getElementById("balancesCount");
+    const sumDueEl = document.getElementById("balancesTotalDue");
+    const sumPaidEl= document.getElementById("balancesTotalPaid");
+    const sumOutEl = document.getElementById("balancesTotalOutstanding");
 
-    tbody.innerHTML = "";
-
-    // If nothing, show "empty" message and clear totals
-    if (!Array.isArray(rows) || !rows.length) {
-      if (empty) empty.classList.remove("hidden");
-
-      const labelEl = document.getElementById("balancesMonthLabel");
-      const dueEl   = document.getElementById("balancesDue");
-      const paidEl  = document.getElementById("balancesPaid");
-      const balEl   = document.getElementById("balancesOutstanding");
-      const rateEl  = document.getElementById("balancesRate");
-
-      if (labelEl) labelEl.textContent = "—";
-      if (dueEl)   dueEl.textContent   = "KES 0";
-      if (paidEl)  paidEl.textContent  = "KES 0";
-      if (balEl)   balEl.textContent   = "KES 0";
-      if (rateEl)  rateEl.textContent  = "0.0%";
-
+    // If the table doesn't exist, just stop quietly
+    if (!tbody) {
+      console.warn("Balances table body #balancesBody not found");
       return;
     }
 
-    if (empty) empty.classList.add("hidden");
-
-    // 1) Render per-tenant rows
+    // Totals
     let totalDue = 0;
     let totalPaid = 0;
+    let totalOutstanding = 0;
 
-    const fmtKES = (n) => `KES ${fmtKes(n)}`;
-
-    for (const row of rows) {
-      const tenant   = row.tenant_name || row.tenant || "—";
-      const rentDue  = Number(row.rent_due || 0);
-      const paid     = Number(row.paid || 0);
-      const balance  = Number(
-        row.outstanding != null ? row.outstanding : rentDue - paid
-      );
-      const rate     = row.collection_rate_pct;
-
-      totalDue  += rentDue;
-      totalPaid += paid;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${tenant}</td>
-        <td>${fmtKES(rentDue)}</td>
-        <td>${fmtKES(paid)}</td>
-        <td>${fmtKES(balance)}</td>
-        <td>${typeof rate === "number" ? rate.toFixed(0) + "%" : ""}</td>
-      `;
-      tbody.appendChild(tr);
+    for (const r of rows) {
+      totalDue        += Number(r.rent_due)      || 0;
+      totalPaid       += Number(r.paid)          || 0;
+      totalOutstanding+= Number(r.outstanding)   || 0;
     }
 
-    // 2) Update "This month totals (all tenants)" row
-    const totalBalance   = Math.max(0, totalDue - totalPaid);
-    const collectionRate = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
+    // Update summary chips
+    if (countEl) countEl.textContent = rows.length.toString();
+    if (sumDueEl) sumDueEl.textContent = money(totalDue);
+    if (sumPaidEl) sumPaidEl.textContent = money(totalPaid);
+    if (sumOutEl) sumOutEl.textContent  = money(totalOutstanding);
 
-    const labelEl = document.getElementById("balancesMonthLabel");
-    const dueEl   = document.getElementById("balancesDue");
-    const paidEl  = document.getElementById("balancesPaid");
-    const balEl   = document.getElementById("balancesOutstanding");
-    const rateEl  = document.getElementById("balancesRate");
+    // Fill table
+    tbody.innerHTML = rows
+      .map((r) => {
+        return `
+          <tr>
+            <td>${r.tenant_name}</td>
+            <td style="text-align:right">${money(r.rent_due)}</td>
+            <td style="text-align:right">${money(r.paid)}</td>
+            <td style="text-align:right">${money(r.outstanding)}</td>
+            <td style="text-align:right">${r.collection_rate_pct}%</td>
+          </tr>
+        `;
+      })
+      .join("");
 
-    if (labelEl) labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
-    if (dueEl)   dueEl.textContent   = fmtKES(totalDue);
-    if (paidEl)  paidEl.textContent  = fmtKES(totalPaid);
-    if (balEl)   balEl.textContent   = fmtKES(totalBalance);
-    if (rateEl)  rateEl.textContent  = `${collectionRate.toFixed(1)}%`;
-  } catch (err) {
-    console.error("loadBalances failed", err);
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+
+    // Stamp “Last updated” for balances (if label exists)
+    setLastUpdated("balancesLastUpdated");
+  } catch (e) {
+    console.error("loadBalances failed", e);
     toast("Failed to load balances");
   }
 }
