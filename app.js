@@ -261,6 +261,13 @@ function toast(msg, ms = 2200) {
   }, ms);
 }
 
+  // Normalise API responses that may be either an array or { ok, data: [...] }
+function apiArray(result) {
+  if (Array.isArray(result)) return result;
+  if (result && Array.isArray(result.data)) return result.data;
+  return [];
+}
+
 /* ==================== OUTSTANDING BY TENANT (TILE) ==================== */
 
 // Renders the little table under "Outstanding by tenant"
