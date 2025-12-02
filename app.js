@@ -165,6 +165,13 @@ function fmtKes(n) {
   return num.toLocaleString("en-KE", { maximumFractionDigits: 0 });
 }
 
+// Normalise API responses that may be either an array or { ok, data: [...] }
+function apiArray(result) {
+  if (Array.isArray(result)) return result;
+  if (result && Array.isArray(result.data)) return result.data;
+  return [];
+}
+
 // General WhatsApp link builder used by:
 // - Rent Roll "WhatsApp" buttons
 // - Overview "Send All" button
