@@ -640,13 +640,19 @@ async function loadOverview() {
   const month = getSelectedMonth();
 
   try {
-    const [L, P, RR, perTenant, OV] = await Promise.all([
-      jget("/leases?limit=1000").catch(() => []),
-      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-      jget(`/rent-roll?month=${encodeURIComponent(month)}`).catch(() => []),
-      fetchOutstandingRows(month).catch(() => []),
-      fetchBalancesOverview(month).catch(() => null), // overview totals view
-    ]);
+    const [L_raw, P_raw, RR_raw, perTenant, OV] = await Promise.all([
+  jget("/leases?limit=1000").catch(() => []),
+  jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
+  jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`).catch(() => []),
+  fetchOutstandingRows(month).catch(() => []),
+  fetchBalancesOverview(month).catch(() => null),
+]);
+
+// Normalise all the pieces we care about
+const L  = apiArray(L_raw);   // leases
+const P  = apiArray(P_raw);   // payments
+const RR = apiArray(RR_raw);  // rent-roll
+
 
     // Total leases
     if ($("#kpiLeases")) {
@@ -911,7 +917,8 @@ async function loadRentroll() {
     const tQ = ($("#rentrollTenant")?.value || "").toLowerCase().trim();
     const pQ = ($("#rentrollProperty")?.value || "").toLowerCase().trim();
 
-    const rows = await jget(`/rent-roll?month=${month}`);
+    const res  = await jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`);
+    const rows = apiArray(res);
 
     const filtered = (rows || []).filter((r) => {
       const okTenant = tQ
