@@ -727,8 +727,10 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // Pull per-tenant monthly totals from the metrics view
-    const rows = await fetchOutstandingRows(month); // [{ rent_due, paid, outstanding, ... }]
+    // Get the same aggregated numbers used by the Overview cards
+    const summary = await jget(
+      `/dashboard/overview?month=${encodeURIComponent(month)}`
+    );
 
     const labelEl = document.getElementById("summaryMonthLabel");
     const dueEl   = document.getElementById("summaryMonthDue");
@@ -738,8 +740,8 @@ async function loadCollectionSummaryMonth() {
 
     if (!labelEl || !dueEl || !paidEl || !balEl || !rateEl) return;
 
-    // If nothing came back, show just the labels
-    if (!Array.isArray(rows) || !rows.length) {
+    // If API returned nothing sensible, just show the labels
+    if (!summary || typeof summary !== "object") {
       labelEl.textContent = "";
       dueEl.textContent   = "due";
       paidEl.textContent  = "collected";
@@ -748,14 +750,19 @@ async function loadCollectionSummaryMonth() {
       return;
     }
 
-    // ---- Compute totals from per-tenant rows ----
-    const totalDue  = rows.reduce((s, r) => s + (Number(r.rent_due)     || 0), 0);
-    const totalPaid = rows.reduce((s, r) => s + (Number(r.paid)         || 0), 0);
-    // Force balance = due - paid so you get 566,469 - 445,000 = 121,469
-    const totalBal  = Math.max(0, totalDue - totalPaid);
-    const rate      = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
+    const totalDue  = Number(summary.total_due || 0);
+    const totalPaid = Number(summary.total_paid || 0);
+    const totalBal  = Number(summary.balance_total || 0);
 
-    // ---- Month label "Nov 2025" ----
+    // Use collection_rate_pct if provided, otherwise compute
+    const rate =
+      summary.collection_rate_pct != null
+        ? Number(summary.collection_rate_pct)
+        : totalDue > 0
+        ? (totalPaid / totalDue) * 100
+        : 0;
+
+    // ---- Month label "Dec 2025" ----
     labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
 
     // ---- Format with KES + words ----
@@ -1104,57 +1111,28 @@ function canonicalTenantName(raw) {
   return clean;
 }
 
-// Normalise metrics/monthly_tenant_payment_reconciliation result
+// Use the new /metrics/monthly-outstanding endpoint
 async function fetchOutstandingRows(month) {
   const ym = month || getSelectedMonth(); // YYYY-MM
   try {
-    const res = await jget(
-      `/metrics/monthly_tenant_payment_reconciliation?month=${encodeURIComponent(
-        ym
-      )}`
+    const rows = await jget(
+      `/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`
     );
-    if (!Array.isArray(res)) return [];
+    if (!Array.isArray(rows)) return [];
 
-    const buckets = new Map(); // key = canonical tenant name (lowercase)
-
-    for (const r of res) {
-      const rentDue = Number(r.rent_due_total || 0) || 0;
-      const paid    = Number(r.amount_paid_total || 0) || 0;
-      const balance = Number(r.balance_total || (rentDue - paid)) || 0;
-
-      const name = canonicalTenantName(r.tenant_name || "—");
-      const key  = name.toLowerCase();
-
-      // Skip internal / technical rows (e.g. "Agency Transaction")
-      if (key === "agency transaction") continue;
-
-      const current = buckets.get(key) || {
-        tenant_id: null,
-        tenant_name: name,
-        rent_due: 0,
-        paid: 0,
-        outstanding: 0,
-        collection_rate_pct: 0,
-      };
-
-      current.rent_due    += rentDue;
-      current.paid        += paid;
-      current.outstanding += balance;
-
-      buckets.set(key, current);
-    }
-
-    // Compute collection rate after merging
-    return Array.from(buckets.values()).map((row) => ({
-      ...row,
-      collection_rate_pct:
-        row.rent_due > 0 ? Math.round((row.paid / row.rent_due) * 100) : 0,
-    }));
-  } catch (e) {
-    console.error("fetchOutstandingRows failed", e);
+    return rows
+      .map((r) => ({
+        tenant: r.tenant,
+        outstanding: Number(r.outstanding || 0),
+        collection_rate: Number(r.collection_rate || 0),
+      }))
+      .sort((a, b) => b.outstanding - a.outstanding);
+  } catch (err) {
+    console.error("fetchOutstandingRows failed", err);
     return [];
   }
 }
+
 
 /* ---- Balances tab (This Month) ---- */
 async function loadBalances() {
