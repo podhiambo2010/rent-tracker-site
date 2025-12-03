@@ -1167,58 +1167,88 @@ function canonicalTenantName(raw) {
   return clean;
 }
 
-/* ---- Balances tab: main table + "This month totals" card ---- */
+/* ---- Balances tab: totals card + main table ---- */
 
 async function loadBalances() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
-  // ---------- 1) Totals card ----------
+  /* ---------- 1) Totals card (This month totals) ---------- */
   try {
+    // Use the same endpoint as the Overview card so numbers ALWAYS match
     const summary = await jget(
-      `/balances/overview?month=${encodeURIComponent(month)}`
+      `/dashboard/overview?month=${encodeURIComponent(month)}`
     );
 
-    const labelEl = document.getElementById("balMonthLabel");
-    const dueEl   = document.getElementById("balMonthDue");
-    const paidEl  = document.getElementById("balMonthCollected");
-    const balEl   = document.getElementById("balMonthBalance");
-    const rateEl  = document.getElementById("balMonthRate");
+    // Support either old or new ids in the HTML
+    const labelEl =
+      document.getElementById("balMonthLabel") ||
+      document.getElementById("balancesMonthLabel");
+    const dueEl =
+      document.getElementById("balMonthDue") ||
+      document.getElementById("balancesMonthDue");
+    const paidEl =
+      document.getElementById("balMonthCollected") ||
+      document.getElementById("balancesMonthCollected");
+    const balEl =
+      document.getElementById("balMonthBalance") ||
+      document.getElementById("balancesMonthBalance");
+    const rateEl =
+      document.getElementById("balMonthRate") ||
+      document.getElementById("balancesMonthRate");
 
-    if (labelEl && dueEl && paidEl && balEl && rateEl &&
-        summary && typeof summary === "object") {
+    if (labelEl && dueEl && paidEl && balEl && rateEl) {
+      if (!summary || typeof summary !== "object") {
+        // fallback text
+        labelEl.textContent = "–";
+        dueEl.textContent   = "KES 0 due";
+        paidEl.textContent  = "KES 0 collected";
+        balEl.textContent   = "KES 0 balance";
+        rateEl.textContent  = "0.0% collection rate";
+      } else {
+        const totalDue =
+          Number(summary.total_due || summary.total_invoiced || 0);
+        const totalPaid = Number(summary.total_paid || 0);
+        const totalBal =
+          Number(summary.balance_total || summary.total_outstanding || 0);
 
-      const totalDue  = Number(summary.total_invoiced ?? summary.total_due ?? 0);
-      const totalPaid = Number(summary.total_paid ?? 0);
-      const totalBal  = Number(summary.total_outstanding ?? summary.balance_total ?? 0);
+        const rate =
+          summary.collection_rate_pct != null
+            ? Number(summary.collection_rate_pct)
+            : totalDue > 0
+            ? (totalPaid / totalDue) * 100
+            : 0;
 
-      const rate =
-        summary.collection_rate_pct != null
-          ? Number(summary.collection_rate_pct)
-          : totalDue > 0
-          ? (totalPaid / totalDue) * 100
-          : 0;
+        // "Dec 2025"
+        labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
 
-      // Label like "Dec 2025"
-      labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
+        const withKes = (v) =>
+          `KES ${Number(v || 0).toLocaleString("en-KE", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          })}`;
 
-      const withKes = (v) =>
-        `KES ${Number(v || 0).toLocaleString("en-KE", {
-          minimumFractionDigits: 0,
-          maximumFractionDigits: 0,
-        })}`;
-
-      dueEl.textContent  = `${withKes(totalDue)} due`;
-      paidEl.textContent = `${withKes(totalPaid)} collected`;
-      balEl.textContent  = `${withKes(totalBal)} balance`;
-      rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+        dueEl.textContent  = `${withKes(totalDue)} due`;
+        paidEl.textContent = `${withKes(totalPaid)} collected`;
+        balEl.textContent  = `${withKes(totalBal)} balance`;
+        rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+      }
     }
   } catch (err) {
     console.error("loadBalances(): totals card failed", err);
   }
 
-  // ---------- 2) Per-tenant balances table ----------
+  /* ---------- 2) Per-tenant “Balances (This Month)” table ---------- */
   const tbody = document.getElementById("balancesBody");
+  const empty = document.getElementById("balancesEmpty");
+  const monthLabel =
+    document.getElementById("balancesMonthLabel") ||
+    document.getElementById("balMonthLabel");
+
   if (!tbody) return;
+
+  if (monthLabel) {
+    monthLabel.textContent = fmtMonYearFromISO(`${month}-01`);
+  }
 
   tbody.innerHTML =
     '<tr><td colspan="5" class="empty">Loading balances…</td></tr>';
@@ -1233,6 +1263,8 @@ async function loadBalances() {
     if (!Array.isArray(rows) || !rows.length) {
       tbody.innerHTML =
         '<tr><td colspan="5" class="empty">No balances to show yet.</td></tr>';
+      if (empty) empty.classList.add("hidden");
+      setLastUpdated("balancesLastUpdated");
       return;
     }
 
@@ -1247,15 +1279,23 @@ async function loadBalances() {
         (a.tenant_name || "").localeCompare(b.tenant_name || "")
       )
       .map((r) => {
-        const name = r.tenant_name || "";
-        const due  = Number(r.rent_due_total       || 0);
-        const paid = Number(r.amount_paid_total    || 0);
-        const bal  = Number(r.balance_total        || 0);
-        const rate = due > 0 ? (paid / due) * 100 : 0;
+        const due     = Number(r.rent_due_total    || 0);
+        const rawPaid = Number(r.amount_paid_total || 0);
+
+        // 👇 FIX 1: never show more than this month's rent as "paid"
+        const paid = Math.min(due, rawPaid);
+
+        // 👇 FIX 2: month balance is never negative
+        const bal  = Math.max(0, due - paid);
+
+        const rate =
+          due > 0
+            ? (paid / due) * 100
+            : 0;
 
         return `
           <tr>
-            <td>${name}</td>
+            <td>${r.tenant_name || r.tenant || "—"}</td>
             <td class="num">${withKesPlain(due)}</td>
             <td class="num">${withKesPlain(paid)}</td>
             <td class="num">${withKesPlain(bal)}</td>
@@ -1266,13 +1306,15 @@ async function loadBalances() {
       .join("");
 
     tbody.innerHTML = html;
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+    setLastUpdated("balancesLastUpdated");
   } catch (err) {
     console.error("loadBalances(): table failed", err);
     tbody.innerHTML =
       '<tr><td colspan="5" class="empty">Failed to load balances.</td></tr>';
+    if (empty) empty.classList.add("hidden");
   }
 }
-
 
 /* ============================ EXPORTS ============================ */
 function ensureExportButtons() {
