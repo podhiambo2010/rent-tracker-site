@@ -970,7 +970,7 @@ async function loadRentroll() {
             <td>${r.tenant ?? "—"}</td>
             <td>${periodLabel}</td>
             <td>${money(baseRent)}</td>
-            <td>${lateFees ? money(lateFees) : "—"}</td>
+            <td>${money(lateFees)}</td>
             <td class="status-cell">${r.status ?? "—"}</td>
             <td style="text-align:right">${money(displayBalance)}</td>
             <td>
