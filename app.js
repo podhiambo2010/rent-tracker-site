@@ -1111,25 +1111,109 @@ function canonicalTenantName(raw) {
   return clean;
 }
 
-// Use the new /metrics/monthly-outstanding endpoint
-async function fetchOutstandingRows(month) {
-  const ym = month || getSelectedMonth(); // YYYY-MM
+/* ---- Balances tab: main table + "This month totals" card ---- */
+
+async function loadBalances() {
+  const month = getSelectedMonth(); // "YYYY-MM"
+
+  // ---------- 1) Totals card ----------
+  try {
+    const summary = await jget(
+      `/balances/overview?month=${encodeURIComponent(month)}`
+    );
+
+    const labelEl = document.getElementById("balMonthLabel");
+    const dueEl   = document.getElementById("balMonthDue");
+    const paidEl  = document.getElementById("balMonthCollected");
+    const balEl   = document.getElementById("balMonthBalance");
+    const rateEl  = document.getElementById("balMonthRate");
+
+    if (labelEl && dueEl && paidEl && balEl && rateEl &&
+        summary && typeof summary === "object") {
+
+      const totalDue  = Number(summary.total_invoiced ?? summary.total_due ?? 0);
+      const totalPaid = Number(summary.total_paid ?? 0);
+      const totalBal  = Number(summary.total_outstanding ?? summary.balance_total ?? 0);
+
+      const rate =
+        summary.collection_rate_pct != null
+          ? Number(summary.collection_rate_pct)
+          : totalDue > 0
+          ? (totalPaid / totalDue) * 100
+          : 0;
+
+      // Label like "Dec 2025"
+      labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
+
+      const withKes = (v) =>
+        `KES ${Number(v || 0).toLocaleString("en-KE", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        })}`;
+
+      dueEl.textContent  = `${withKes(totalDue)} due`;
+      paidEl.textContent = `${withKes(totalPaid)} collected`;
+      balEl.textContent  = `${withKes(totalBal)} balance`;
+      rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+    }
+  } catch (err) {
+    console.error("loadBalances(): totals card failed", err);
+  }
+
+  // ---------- 2) Per-tenant balances table ----------
+  const tbody = document.getElementById("balancesBody");
+  if (!tbody) return;
+
+  tbody.innerHTML =
+    '<tr><td colspan="5" class="empty">Loading balances…</td></tr>';
+
   try {
     const rows = await jget(
-      `/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`
+      `/metrics/monthly_tenant_payment_reconciliation?month=${encodeURIComponent(
+        month
+      )}`
     );
-    if (!Array.isArray(rows)) return [];
 
-    return rows
-      .map((r) => ({
-        tenant: r.tenant,
-        outstanding: Number(r.outstanding || 0),
-        collection_rate: Number(r.collection_rate || 0),
-      }))
-      .sort((a, b) => b.outstanding - a.outstanding);
+    if (!Array.isArray(rows) || !rows.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="5" class="empty">No balances to show yet.</td></tr>';
+      return;
+    }
+
+    const withKesPlain = (v) =>
+      `KES ${Number(v || 0).toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
+
+    const html = rows
+      .sort((a, b) =>
+        (a.tenant_name || "").localeCompare(b.tenant_name || "")
+      )
+      .map((r) => {
+        const name = r.tenant_name || "";
+        const due  = Number(r.rent_due_total       || 0);
+        const paid = Number(r.amount_paid_total    || 0);
+        const bal  = Number(r.balance_total        || 0);
+        const rate = due > 0 ? (paid / due) * 100 : 0;
+
+        return `
+          <tr>
+            <td>${name}</td>
+            <td class="num">${withKesPlain(due)}</td>
+            <td class="num">${withKesPlain(paid)}</td>
+            <td class="num">${withKesPlain(bal)}</td>
+            <td class="num">${rate.toFixed(1)}%</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    tbody.innerHTML = html;
   } catch (err) {
-    console.error("fetchOutstandingRows failed", err);
-    return [];
+    console.error("loadBalances(): table failed", err);
+    tbody.innerHTML =
+      '<tr><td colspan="5" class="empty">Failed to load balances.</td></tr>';
   }
 }
 
