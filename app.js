@@ -254,6 +254,23 @@ async function fetchBalancesOverview(month) {
   return jget(`/balances/overview?month=${encodeURIComponent(month)}`);
 }
 
+// New helper: per-tenant outstanding from v_monthly_outstanding
+async function fetchOutstandingRows(month) {
+  const ym = month || getSelectedMonth(); // "YYYY-MM"
+
+  const res = await jget(
+    `/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`
+  );
+
+  if (!res) return [];
+
+  // API returns { ok: true, data: [...] }
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res.data)) return res.data;
+
+  return [];
+}
+
 /* ---------- toast ---------- */
 function toast(msg, ms = 2200) {
   const el = $("#actionMsg");
@@ -266,13 +283,6 @@ function toast(msg, ms = 2200) {
   setTimeout(() => {
     el.style.opacity = 0;
   }, ms);
-}
-
-  // Normalise API responses that may be either an array or { ok, data: [...] }
-function apiArray(result) {
-  if (Array.isArray(result)) return result;
-  if (result && Array.isArray(result.data)) return result.data;
-  return [];
 }
 
 /* ==================== OUTSTANDING BY TENANT (TILE) ==================== */
@@ -1217,52 +1227,6 @@ async function loadBalances() {
   }
 }
 
-
-/* ---- Balances tab (This Month) ---- */
-async function loadBalances() {
-  const month = getSelectedMonth(); // "YYYY-MM"
-  try {
-    const rows = await fetchOutstandingRows(month);
-
-    const tbody      = document.getElementById("balancesBody");
-    const empty      = document.getElementById("balancesEmpty");
-    const monthLabel = document.getElementById("balancesMonthLabel");
-
-    if (!tbody) return;
-
-    if (monthLabel) {
-      monthLabel.textContent = fmtMonYearFromISO(`${month}-01`);
-    }
-
-    tbody.innerHTML = (rows || [])
-      .map((r) => {
-        const due  = Number(r.rent_due || 0);
-        const paid = Number(r.paid || 0);
-        const bal  = Number(r.outstanding || 0);
-        const rate =
-          r.collection_rate_pct ??
-          (due > 0 ? Math.round((paid / due) * 100) : 0);
-
-        return `
-          <tr>
-            <td>${r.tenant_name || r.tenant || "—"}</td>
-            <td style="text-align:right">${money(due)}</td>
-            <td style="text-align:right">${money(paid)}</td>
-            <td style="text-align:right">${money(bal)}</td>
-            <td style="text-align:right">${rate}%</td>
-          </tr>
-        `;
-      })
-      .join("");
-
-    if (empty) empty.classList.toggle("hidden", (rows || []).length > 0);
-
-    setLastUpdated("balancesLastUpdated");
-  } catch (err) {
-    console.error("loadBalances failed", err);
-    toast("Failed to load balances");
-  }
-}
 
 /* ============================ EXPORTS ============================ */
 function ensureExportButtons() {
