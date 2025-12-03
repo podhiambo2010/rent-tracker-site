@@ -329,39 +329,84 @@ function renderOutstanding(rows) {
   if (empty) empty.classList.toggle("hidden", list.length > 0);
 }
 
-/* ---- Outstanding by tenant (this month) ---- */
-async function loadOutstandingByTenant() {
-  const month = getSelectedMonth(); // "YYYY-MM"
+/* ---- Balances tab: "Outstanding by tenant (this month)" ---- */
+async function loadOutstandingByTenant(month) {
+  const ym = month || getSelectedMonth();
+
+  const tbody     = document.getElementById("outstandingBody");
+  const empty     = document.getElementById("outstandingEmpty");
+  const countEl   = document.getElementById("outstandingCount"); // optional chip
+  const updatedEl = document.getElementById("outstandingLastUpdated");
+
+  if (!tbody) return;
+
+  tbody.innerHTML =
+    '<tr><td colspan="3" class="empty">Loading outstanding balances…</td></tr>';
+
   try {
-    // reuse same data as balances
-    const rows = await fetchOutstandingRows(month);
+    const rows = await fetchOutstandingRows(ym);
 
-    const tbody   = document.getElementById("outstandingBody");
-    const empty   = document.getElementById("outstandingEmpty");
-    const countEl = document.getElementById("outstandingCount"); // optional chip
-
-    if (countEl) countEl.textContent = rows.length;
-
-    if (tbody) {
-      tbody.innerHTML = (rows || [])
-        .map((r) => {
-          return `
-            <tr>
-              <td>${r.tenant_name}</td>
-              <td style="text-align:right">${money(r.outstanding)}</td>
-              <td style="text-align:right">${r.collection_rate_pct}%</td>
-            </tr>
-          `;
-        })
-        .join("");
+    if (!rows.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="3" class="empty">No outstanding balances this month 🎉</td></tr>';
+      if (empty) empty.classList.add("hidden");
+      if (countEl) countEl.textContent = "0";
+      if (updatedEl) setLastUpdated("outstandingLastUpdated");
+      return;
     }
 
-    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+    // Biggest balances first
+    rows.sort(
+      (a, b) => Number(b.outstanding || 0) - Number(a.outstanding || 0)
+    );
 
-    // stamp the "Last updated" label
-    setLastUpdated("outstandingLastUpdated");
+    const withKesPlain = (v) =>
+      `KES ${Number(v || 0).toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
+
+    const html = rows
+      .map((r) => {
+        const tenant =
+          r.tenant ||
+          r.tenant_name ||
+          r.tenant_name_text ||
+          "—";
+
+        const outstanding = Number(
+          r.outstanding ??
+          r.balance_total ??
+          r.balance ??
+          r.amount_due ??
+          0
+        );
+
+        const rate = Number(
+          r.collection_rate ??
+          r.collection_rate_pct ??
+          0
+        );
+
+        return `
+          <tr>
+            <td>${tenant}</td>
+            <td class="num">${withKesPlain(outstanding)}</td>
+            <td class="num">${rate.toFixed(1)}%</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    tbody.innerHTML = html;
+
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+    if (countEl) countEl.textContent = String(rows.length);
+    if (updatedEl) setLastUpdated("outstandingLastUpdated");
   } catch (err) {
     console.error("loadOutstandingByTenant failed", err);
+    tbody.innerHTML =
+      '<tr><td colspan="3" class="empty">Failed to load outstanding balances.</td></tr>';
   }
 }
 
@@ -370,6 +415,7 @@ document.getElementById("reloadOutstanding")?.addEventListener("click", () => {
 });
 
 setLastUpdated("outstandingLastUpdated");
+
 
 /* ============================== DUNNING ============================== */
 let _logBusy = false;
