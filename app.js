@@ -1172,29 +1172,27 @@ function canonicalTenantName(raw) {
 async function loadBalances() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
-  /* ---------- 1) Totals card (This month totals) ---------- */
+    /* ---------- 1) Totals card (This month totals) ---------- */
   try {
-    // Use the same endpoint as the Overview card so numbers ALWAYS match
     const summary = await jget(
       `/dashboard/overview?month=${encodeURIComponent(month)}`
     );
 
-    // Support either old or new ids in the HTML
     const labelEl =
       document.getElementById("balMonthLabel") ||
       document.getElementById("balancesMonthLabel");
     const dueEl =
       document.getElementById("balMonthDue") ||
-      document.getElementById("balancesMonthDue");
+      document.getElementById("balancesDue");
     const paidEl =
       document.getElementById("balMonthCollected") ||
-      document.getElementById("balancesMonthCollected");
+      document.getElementById("balancesPaid");
     const balEl =
       document.getElementById("balMonthBalance") ||
-      document.getElementById("balancesMonthBalance");
+      document.getElementById("balancesOutstanding");
     const rateEl =
       document.getElementById("balMonthRate") ||
-      document.getElementById("balancesMonthRate");
+      document.getElementById("balancesRate");
 
     if (labelEl && dueEl && paidEl && balEl && rateEl) {
       if (!summary || typeof summary !== "object") {
