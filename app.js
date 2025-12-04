@@ -1482,11 +1482,6 @@ ensureExportButtons();
   loadBalances().catch(console.error);
   loadOutstandingByTenant().catch(console.error);
 
-  // Hook up the CSV export buttons if that helper exists
-  if (typeof ensureExportButtons === "function") {
-    ensureExportButtons();
-  }
-
   // Start on Overview tab
   showTab("overview");
 })();
