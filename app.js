@@ -391,6 +391,34 @@ async function loadOutstandingByTenant() {
       '<tr><td colspan="3" class="empty">Failed to load outstanding balances.</td></tr>';
     if (empty) empty.classList.remove("hidden");
   }
+
+    // ---- Fix "Balance Due (month)" card using unified balances API ----
+  try {
+    const bal = await jget(
+      `/balances/overview?month=${encodeURIComponent(month)}`
+    );
+
+    if (bal && typeof bal === "object") {
+      const totalBal =
+        Number(bal.balance_total || bal.balance_in_month || 0);
+
+      const balCardEl =
+        document.getElementById("overviewBalanceDue") ||
+        document.getElementById("cardBalanceDueMonth") ||
+        document.getElementById("balanceDueMonth");
+
+      if (balCardEl) {
+        balCardEl.textContent =
+          "Ksh " +
+          totalBal.toLocaleString("en-KE", {
+            maximumFractionDigits: 0,
+          });
+      }
+    }
+  } catch (err) {
+    console.error("loadOverview(): /balances/overview for Balance Due card failed", err);
+  }
+
 }
 
 document.getElementById("reloadOutstanding")?.addEventListener("click", () => {
