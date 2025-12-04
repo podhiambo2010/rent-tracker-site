@@ -1167,6 +1167,47 @@ function canonicalTenantName(raw) {
   return clean;
 }
 
+async function exportBalancesCsv() {
+  // Use the same month the Balances tab is showing
+  const month = state.month || yyyymm();
+
+  try {
+    const url = `${state.api}/balances/export?month=${encodeURIComponent(
+      month
+    )}`;
+
+    // Re-use your existing headers helper if it exists
+    const headers =
+      typeof makeHeaders === "function" ? makeHeaders() : {};
+
+    const res = await fetch(url, { headers });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || "Export failed");
+    }
+
+    // Convert response to a Blob and trigger a download
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = `balances_${month}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (err) {
+    console.error("Failed to export CSV", err);
+    if (typeof toast === "function") {
+      toast("Failed to export CSV");
+    } else {
+      alert("Failed to export CSV");
+    }
+  }
+}
+
 /* ---- Balances tab: totals card + main table ---- */
 
 async function loadBalances() {
