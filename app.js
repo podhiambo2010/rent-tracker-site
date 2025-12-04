@@ -1458,6 +1458,14 @@ ensureExportButtons();
     });
   }
 
+    // Balances CSV export button
+  const btnExportBalances = document.getElementById("btnExportBalances");
+  if (btnExportBalances) {
+    btnExportBalances.addEventListener("click", () => {
+      exportBalancesCsv().catch(console.error);
+    });
+  }
+
   // ---------------- Outstanding-by-tenant reload ----------------
   // Support either id, depending on what exists in index.html
   // "Outstanding by tenant (this month)" reload
