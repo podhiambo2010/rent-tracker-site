@@ -1170,42 +1170,147 @@ function canonicalTenantName(raw) {
 /* ---- Balances tab: totals card + main table ---- */
 
 async function loadBalances() {
-  const month = state.month;
+  const month = state.month || yyyymm(); // fallback to current month
 
+  /* ---------- 1) Totals card (This month totals) ---------- */
   try {
-    setSectionLoading("balances", true);
-
-    // 1) Fetch summary totals for the month
-    const summaryPromise = jget(
+    const summary = await jget(
       `/balances/overview?month=${encodeURIComponent(month)}`
     );
 
-    // 2) Fetch per-tenant rows for the month
-    const rowsPromise = jget(
+    const labelEl =
+      document.getElementById("balMonthLabel") ||
+      document.getElementById("balancesMonthLabel");
+    const dueEl =
+      document.getElementById("balMonthDue") ||
+      document.getElementById("balancesDue");
+    const paidEl =
+      document.getElementById("balMonthCollected") ||
+      document.getElementById("balancesPaid");
+    const balEl =
+      document.getElementById("balMonthBalance") ||
+      document.getElementById("balancesOutstanding");
+    const rateEl =
+      document.getElementById("balMonthRate") ||
+      document.getElementById("balancesRate");
+
+    if (labelEl && dueEl && paidEl && balEl && rateEl) {
+      if (!summary || typeof summary !== "object") {
+        // Fallback if API fails
+        labelEl.textContent = "–";
+        dueEl.textContent = "KES 0 due";
+        paidEl.textContent = "KES 0 collected";
+        balEl.textContent = "KES 0 balance";
+        rateEl.textContent = "0.0% collection rate";
+      } else {
+        const totalDue = Number(summary.total_due || 0);
+        const totalPaid = Number(summary.total_paid || 0);
+        const totalBal = Number(summary.balance_total || 0);
+
+        const rate =
+          summary.collection_rate_pct != null
+            ? Number(summary.collection_rate_pct)
+            : totalDue > 0
+            ? (totalPaid / totalDue) * 100
+            : 0;
+
+        // e.g. "Dec 2025"
+        labelEl.textContent = fmtMonYearFromISO(`${month}-01`);
+
+        const withKes = (v) =>
+          `KES ${Number(v || 0).toLocaleString("en-KE", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          })}`;
+
+        dueEl.textContent = `${withKes(totalDue)} due`;
+        paidEl.textContent = `${withKes(totalPaid)} collected`;
+        balEl.textContent = `${withKes(totalBal)} balance`;
+        rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+      }
+    }
+  } catch (err) {
+    console.error("loadBalances(): totals card failed", err);
+  }
+
+  /* ---------- 2) Per-tenant “Balances (This Month)” table ---------- */
+  const tbody = document.getElementById("balancesBody");
+  const empty = document.getElementById("balancesEmpty");
+  const monthLabel =
+    document.getElementById("balancesMonthLabel") ||
+    document.getElementById("balMonthLabel");
+
+  if (!tbody) return;
+
+  if (monthLabel) {
+    monthLabel.textContent = fmtMonYearFromISO(`${month}-01`);
+  }
+
+  tbody.innerHTML =
+    '<tr><td colspan="5" class="empty">Loading balances…</td></tr>';
+
+  try {
+    const rows = await jget(
       `/metrics/monthly_tenant_payment_reconciliation?month=${encodeURIComponent(
         month
       )}`
     );
 
-    const [summary, rows] = await Promise.all([summaryPromise, rowsPromise]);
+    if (!Array.isArray(rows) || !rows.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="5" class="empty">No balances to show yet.</td></tr>';
+      if (empty) empty.classList.add("hidden");
+      setLastUpdated("balancesLastUpdated");
+      return;
+    }
 
-    // summary has: month, total_due, total_paid, balance_total, collection_rate_pct
-    renderBalancesSummary(summary);
+    const withKesPlain = (v) =>
+      `KES ${Number(v || 0).toLocaleString("en-KE", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      })}`;
 
-    // rows is an array of objects:
-    // { tenant, property_name, unit_code, rent_due, paid, balance, balance_in_month, collection_rate_pct, ... }
-    renderBalancesTable(rows);
+    const html = rows
+      .sort((a, b) => (a.tenant || "").localeCompare(b.tenant || ""))
+      .map((r) => {
+        const due = Number(r.rent_due || 0);
+        const paid = Number(r.paid || 0);
+
+        // SQL already gives us cumulative, non-negative balance
+        const bal =
+          r.balance_in_month != null
+            ? Number(r.balance_in_month)
+            : Math.max(0, due - paid);
+
+        const rate =
+          r.collection_rate_pct != null
+            ? Number(r.collection_rate_pct)
+            : due > 0
+            ? (paid / due) * 100
+            : 0;
+
+        return `
+          <tr>
+            <td>${r.tenant || "—"}</td>
+            <td class="num">${withKesPlain(due)}</td>
+            <td class="num">${withKesPlain(paid)}</td>
+            <td class="num">${withKesPlain(bal)}</td>
+            <td class="num">${rate.toFixed(1)}%</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    tbody.innerHTML = html;
+    if (empty) empty.classList.toggle("hidden", rows.length > 0);
+    setLastUpdated("balancesLastUpdated");
   } catch (err) {
-    console.error("Failed to load balances", err);
-    toast("Failed to load balances");
-  } finally {
-    setSectionLoading("balances", false);
+    console.error("loadBalances(): table failed", err);
+    tbody.innerHTML =
+      '<tr><td colspan="5" class="empty">Failed to load balances.</td></tr>';
+    if (empty) empty.classList.add("hidden");
   }
 }
-
-$("#balances-reload")?.addEventListener("click", () => {
-  loadBalances();
-});
 
 
 /* ============================ EXPORTS ============================ */
