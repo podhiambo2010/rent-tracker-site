@@ -1172,6 +1172,68 @@ function canonicalTenantName(raw) {
 async function loadBalances() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
+  /* ---- Balances CSV export (client-side) ---- */
+async function exportBalancesCsv() {
+  const month = getSelectedMonth(); // "YYYY-MM"
+
+  try {
+    // Reuse the same endpoint as the Balances table
+    const rows = await jget(
+      `/metrics/monthly_tenant_payment_reconciliation?month=${encodeURIComponent(
+        month
+      )}`
+    );
+
+    if (!Array.isArray(rows) || !rows.length) {
+      toast("No balances to export");
+      return;
+    }
+
+    const cols = [
+      {
+        label: "Tenant",
+        value: (r) => r.tenant_name || r.tenant || "",
+      },
+      {
+        label: "Rent due",
+        value: (r) =>
+          Number(r.rent_due_total ?? r.rent_due ?? 0).toFixed(2),
+      },
+      {
+        label: "Paid",
+        value: (r) =>
+          Number(r.amount_paid_total ?? r.paid ?? 0).toFixed(2),
+      },
+      {
+        label: "Balance",
+        value: (r) =>
+          Number(r.balance_total ?? r.outstanding ?? 0).toFixed(2),
+      },
+      {
+        label: "Collection rate (%)",
+        value: (r) => {
+          const due = Number(r.rent_due_total ?? r.rent_due ?? 0);
+          const paid = Number(r.amount_paid_total ?? r.paid ?? 0);
+          if (!due) return "0.0";
+          return ((paid / due) * 100).toFixed(1);
+        },
+      },
+    ];
+
+    const csv = toCSV(rows, cols);
+    if (!csv) {
+      toast("Nothing to export");
+      return;
+    }
+
+    download(`balances-${month}.csv`, csv);
+    toast("Balances CSV exported");
+  } catch (err) {
+    console.error("exportBalancesCsv failed", err);
+    toast("Failed to export balances CSV");
+  }
+}
+
     /* ---------- 1) Totals card (This month totals) ---------- */
   try {
     const summary = await jget(
