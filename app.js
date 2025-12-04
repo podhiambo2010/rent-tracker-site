@@ -330,35 +330,37 @@ function renderOutstanding(rows) {
 }
 
 /* ---- Balances tab: "Outstanding by tenant (this month)" ---- */
-async function loadOutstandingByTenant(month) {
-  const ym = month || getSelectedMonth();
+async function loadOutstandingByTenant() {
+  const month =
+    typeof getSelectedMonthYYYYMM === "function"
+      ? getSelectedMonthYYYYMM()
+      : yyyymm();
 
-  const tbody     = document.getElementById("outstandingBody");
-  const empty     = document.getElementById("outstandingEmpty");
-  const countEl   = document.getElementById("outstandingCount"); // optional chip
-  const updatedEl = document.getElementById("outstandingLastUpdated");
+  const tbody = document.getElementById("outstandingBody");
+  const empty = document.getElementById("outstandingEmpty");
+  const label = document.getElementById("outstandingMonthLabel");
 
   if (!tbody) return;
 
+  if (label) {
+    label.textContent = fmtMonYearFromISO(`${month}-01`); // e.g. "Dec 2025"
+  }
+
   tbody.innerHTML =
-    '<tr><td colspan="3" class="empty">Loading outstanding balances…</td></tr>';
+    '<tr><td colspan="3" class="empty">Loading outstanding…</td></tr>';
 
   try {
-    const rows = await fetchOutstandingRows(ym);
+    const rows = await jget(
+      `/balances/outstanding?month=${encodeURIComponent(month)}`
+    );
 
-    if (!rows.length) {
+    if (!Array.isArray(rows) || rows.length === 0) {
       tbody.innerHTML =
-        '<tr><td colspan="3" class="empty">No outstanding balances this month 🎉</td></tr>';
-      if (empty) empty.classList.add("hidden");
-      if (countEl) countEl.textContent = "0";
-      if (updatedEl) setLastUpdated("outstandingLastUpdated");
+        '<tr><td colspan="3" class="empty">No outstanding balances.</td></tr>';
+      if (empty) empty.classList.remove("hidden");
+      setLastUpdated("outstandingLastUpdated");
       return;
     }
-
-    // Biggest balances first
-    rows.sort(
-      (a, b) => Number(b.outstanding || 0) - Number(a.outstanding || 0)
-    );
 
     const withKesPlain = (v) =>
       `KES ${Number(v || 0).toLocaleString("en-KE", {
@@ -366,47 +368,28 @@ async function loadOutstandingByTenant(month) {
         maximumFractionDigits: 0,
       })}`;
 
-    const html = rows
-      .map((r) => {
-        const tenant =
-          r.tenant ||
-          r.tenant_name ||
-          r.tenant_name_text ||
-          "—";
-
-        const outstanding = Number(
-          r.outstanding ??
-          r.balance_total ??
-          r.balance ??
-          r.amount_due ??
-          0
-        );
-
-        const rate = Number(
-          r.collection_rate ??
-          r.collection_rate_pct ??
-          0
-        );
-
-        return `
-          <tr>
-            <td>${tenant}</td>
-            <td class="num">${withKesPlain(outstanding)}</td>
-            <td class="num">${rate.toFixed(1)}%</td>
-          </tr>
-        `;
-      })
+    tbody.innerHTML = rows
+      .sort((a, b) => (a.tenant || "").localeCompare(b.tenant || ""))
+      .map(
+        (r) => `
+        <tr>
+          <td>${r.tenant || "—"}</td>
+          <td class="num">${withKesPlain(r.outstanding)}</td>
+          <td class="num">${Number(
+            r.collection_rate_pct || 0
+          ).toFixed(1)}%</td>
+        </tr>
+      `
+      )
       .join("");
 
-    tbody.innerHTML = html;
-
-    if (empty) empty.classList.toggle("hidden", rows.length > 0);
-    if (countEl) countEl.textContent = String(rows.length);
-    if (updatedEl) setLastUpdated("outstandingLastUpdated");
+    if (empty) empty.classList.add("hidden");
+    setLastUpdated("outstandingLastUpdated");
   } catch (err) {
-    console.error("loadOutstandingByTenant failed", err);
+    console.error("loadOutstandingByTenant() failed", err);
     tbody.innerHTML =
       '<tr><td colspan="3" class="empty">Failed to load outstanding balances.</td></tr>';
+    if (empty) empty.classList.remove("hidden");
   }
 }
 
