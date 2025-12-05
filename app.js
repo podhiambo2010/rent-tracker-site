@@ -756,8 +756,37 @@ const RR = apiArray(RR_raw);  // rent-roll
 
   // Make sure the Monthly collection summary card stays in sync
   loadCollectionSummaryMonth().catch(console.error);
-}
 
+    // ---- Ensure "Balance Due (month)" card uses unified balances API ----
+  try {
+    const bal = await jget(
+      `/balances/overview?month=${encodeURIComponent(month)}`
+    );
+
+    if (bal && typeof bal === "object") {
+      const totalBal =
+        Number(bal.balance_total || bal.balance_in_month || 0);
+
+      // Pick whichever ID exists in index.html
+      const balCardEl =
+        document.getElementById("cardBalanceDueMonth") ||
+        document.getElementById("balanceDueMonth");
+
+      if (balCardEl) {
+        balCardEl.textContent =
+          "Ksh " +
+          totalBal.toLocaleString("en-KE", {
+            maximumFractionDigits: 0,
+          });
+      }
+    }
+  } catch (err) {
+    console.error(
+      "loadOverview(): /balances/overview for Balance Due card failed",
+      err
+    );
+  }
+}
 
 /* ---- Monthly collection summary row (Overview card) ---- */
 
