@@ -682,110 +682,91 @@ function wireActions() {
 /* ---- Overview KPIs & tile ---- */
 
 async function loadOverview() {
-  const month = getSelectedMonth();
+  const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    const [L_raw, P_raw, RR_raw, perTenant, OV] = await Promise.all([
-  jget("/leases?limit=1000").catch(() => []),
-  jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
-  jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`).catch(() => []),
-  fetchOutstandingRows(month).catch(() => []),
-  fetchBalancesOverview(month).catch(() => null),
-]);
+    // Pull everything we need for the Overview at once
+    const [L_raw, P_raw, RR_raw, perTenantRaw, overviewRaw] = await Promise.all([
+      jget("/leases?limit=1000").catch(() => []),
+      jget(`/payments?month=${encodeURIComponent(month)}`).catch(() => []),
+      jget(`/rent-roll?month=${encodeURIComponent(month)}&limit=1000`).catch(() => []),
+      fetchOutstandingRows(month).catch(() => []),
+      fetchBalancesOverview(month).catch(() => null),
+    ]);
 
-// Normalise all the pieces we care about
-const L  = apiArray(L_raw);   // leases
-const P  = apiArray(P_raw);   // payments
-const RR = apiArray(RR_raw);  // rent-roll
+    // Normalise shapes
+    const L  = apiArray(L_raw);                       // leases
+    const P  = apiArray(P_raw);                       // payments
+    const RR = apiArray(RR_raw);                      // rent-roll
+    const perTenant = Array.isArray(perTenantRaw)     // outstanding by tenant
+      ? perTenantRaw
+      : [];
+    const OV =
+      overviewRaw && typeof overviewRaw === "object"  // unified balances overview
+        ? overviewRaw
+        : null;
 
-
-    // Total leases
+    /* ----- KPI: Total leases ----- */
     if ($("#kpiLeases")) {
-      $("#kpiLeases").textContent = (L || []).length;
+      $("#kpiLeases").textContent = L.length;
     }
 
-    // Open invoices for that month (rows not fully paid)
+    /* ----- KPI: Open invoices (month) ----- */
     if ($("#kpiOpen")) {
-      $("#kpiOpen").textContent = (RR || []).filter(
+      $("#kpiOpen").textContent = RR.filter(
         (r) => String(r.status || "").toLowerCase() !== "paid"
       ).length;
     }
 
-    // Payments KPI – prefer overview view, fall back to /payments
-    if (OV && typeof OV.total_paid === "number") {
-      if ($("#kpiPayments")) {
+    /* ----- KPI: Payments (month) ----- */
+    if ($("#kpiPayments")) {
+      if (OV && typeof OV.total_paid === "number") {
+        // Prefer the unified balances overview for paid this month
         $("#kpiPayments").textContent = OV.total_paid.toLocaleString("en-KE");
-      }
-    } else {
-      const pSum = (P || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-      if ($("#kpiPayments")) {
+      } else {
+        // Fallback: sum raw payments
+        const pSum = P.reduce(
+          (s, x) => s + (Number(x.amount) || 0),
+          0
+        );
         $("#kpiPayments").textContent =
-          pSum > 0 ? pSum.toLocaleString("en-KE") : (P || []).length;
+          pSum > 0 ? pSum.toLocaleString("en-KE") : P.length;
       }
     }
 
-    // Balance KPI – prefer overview view, fall back to per-tenant
-    if (OV && typeof OV.total_outstanding === "number") {
-      if ($("#kpiBalance")) {
-        $("#kpiBalance").textContent = ksh(OV.total_outstanding);
-      }
-    } else {
+    /* ----- KPI: Balance Due (month) ----- */
+    if ($("#kpiBalance")) {
       let balanceTotal = 0;
-      if (Array.isArray(perTenant) && perTenant.length) {
+
+      if (OV && typeof OV.balance_total === "number") {
+        // 🔴 KEY FIX: use balance_total from /balances/overview
+        balanceTotal = Number(OV.balance_total || 0);
+      } else if (perTenant.length) {
+        // Fallback: sum the per-tenant outstanding rows
         balanceTotal = perTenant.reduce(
           (s, r) => s + (Number(r.outstanding) || 0),
           0
         );
       } else {
-        balanceTotal = (RR || []).reduce(
+        // Final fallback: sum balances from rent-roll
+        balanceTotal = RR.reduce(
           (s, r) => s + (Number(r.balance ?? r.total_due) || 0),
           0
         );
       }
-      if ($("#kpiBalance")) {
-        $("#kpiBalance").textContent = ksh(balanceTotal);
-      }
+
+      $("#kpiBalance").textContent = ksh(balanceTotal);
     }
 
-    // Feed the “Outstanding by tenant” tile
-    renderOutstanding(Array.isArray(perTenant) ? perTenant : []);
+    /* ----- “Outstanding by tenant” tile on Overview ----- */
+    renderOutstanding(perTenant);
   } catch (e) {
-    console.error(e);
+    console.error("loadOverview failed", e);
     toast("Failed to load overview");
   }
 
-  // Make sure the Monthly collection summary card stays in sync
+  // Keep the Monthly collection summary row in sync
   loadCollectionSummaryMonth().catch(console.error);
-
-    // ---- Ensure "Balance Due (month)" card uses unified balances API ----
-  try {
-    const bal = await jget(
-      `/balances/overview?month=${encodeURIComponent(month)}`
-    );
-
-    if (bal && typeof bal === "object") {
-      const totalBal =
-        Number(bal.balance_total || bal.balance_in_month || 0);
-
-      // Pick whichever ID exists in index.html
-      const balCardEl =
-        document.getElementById("cardBalanceDueMonth") ||
-        document.getElementById("balanceDueMonth");
-
-      if (balCardEl) {
-        balCardEl.textContent =
-          "Ksh " +
-          totalBal.toLocaleString("en-KE", {
-            maximumFractionDigits: 0,
-          });
-      }
-    }
-  } catch (err) {
-    console.error(
-      "loadOverview(): /balances/overview for Balance Due card failed",
-      err
-    );
-  }
 }
 
 /* ---- Monthly collection summary row (Overview card) ---- */
