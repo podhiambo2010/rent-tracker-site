@@ -249,22 +249,21 @@ async function getInvoiceIdForLeaseMonth(lease_id, ym) {
   return json?.invoice?.id || null;
 }
 
-// New helper: get monthly totals from v_balances_monthly
+// New helper: get monthly totals from /balances/overview
 async function fetchBalancesOverview(month) {
   return jget(`/balances/overview?month=${encodeURIComponent(month)}`);
 }
 
-// New helper: per-tenant outstanding from v_monthly_outstanding
+// New helper: per-tenant outstanding – now uses /outstanding
 async function fetchOutstandingRows(month) {
   const ym = month || getSelectedMonth(); // "YYYY-MM"
 
   const res = await jget(
-    `/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`
+    `/outstanding?month=${encodeURIComponent(ym)}`
   );
 
   if (!res) return [];
 
-  // API returns { ok: true, data: [...] }
   if (Array.isArray(res)) return res;
   if (Array.isArray(res.data)) return res.data;
 
@@ -331,10 +330,7 @@ function renderOutstanding(rows) {
 
 /* ---- Balances tab: "Outstanding by tenant (this month)" ---- */
 async function loadOutstandingByTenant() {
-  const month =
-    typeof getSelectedMonthYYYYMM === "function"
-      ? getSelectedMonthYYYYMM()
-      : yyyymm();
+  const month = getSelectedMonth(); // "YYYY-MM"
 
   const tbody = document.getElementById("outstandingBody");
   const empty = document.getElementById("outstandingEmpty");
@@ -739,7 +735,7 @@ async function loadOverview() {
       let balanceTotal = 0;
 
       if (OV && typeof OV.balance_total === "number") {
-        // 🔴 KEY FIX: use balance_total from /balances/overview
+        // Use balance_total from /balances/overview
         balanceTotal = Number(OV.balance_total || 0);
       } else if (perTenant.length) {
         // Fallback: sum the per-tenant outstanding rows
@@ -775,10 +771,8 @@ async function loadCollectionSummaryMonth() {
   const month = getSelectedMonth(); // "YYYY-MM"
 
   try {
-    // Get the same aggregated numbers used by the Overview cards
-    const summary = await jget(
-      `/dashboard/overview?month=${encodeURIComponent(month)}`
-    );
+    // Use the same aggregated numbers as the Balances tab
+    const summary = await fetchBalancesOverview(month);
 
     const labelEl = document.getElementById("summaryMonthLabel");
     const dueEl   = document.getElementById("summaryMonthDue");
@@ -1160,15 +1154,14 @@ function canonicalTenantName(raw) {
 }
 
 async function exportBalancesCsv() {
-  // Use the same month the Balances tab is showing
-  const month = state.month || yyyymm();
+  // Use the same month the Balances tab / Overview are showing
+  const month = getSelectedMonth();
 
   try {
     const url = `${state.api}/balances/export?month=${encodeURIComponent(
       month
     )}`;
 
-    // Re-use your existing headers helper if it exists
     const headers =
       typeof makeHeaders === "function" ? makeHeaders() : {};
 
@@ -1179,7 +1172,6 @@ async function exportBalancesCsv() {
       throw new Error(text || "Export failed");
     }
 
-    // Convert response to a Blob and trigger a download
     const blob = await res.blob();
     const downloadUrl = window.URL.createObjectURL(blob);
 
@@ -1203,7 +1195,8 @@ async function exportBalancesCsv() {
 /* ---- Balances tab: totals card + main table ---- */
 
 async function loadBalances() {
-  const month = state.month || yyyymm(); // fallback to current month
+  // Always use the month picker
+  const month = getSelectedMonth(); // "YYYY-MM"
 
   /* ---------- 1) Totals card (This month totals) ---------- */
   try {
@@ -1428,7 +1421,7 @@ ensureExportButtons();
     });
   }
 
-    // Balances CSV export button
+  // Balances CSV export button
   const btnExportBalances = document.getElementById("btnExportBalances");
   if (btnExportBalances) {
     btnExportBalances.addEventListener("click", () => {
@@ -1438,7 +1431,6 @@ ensureExportButtons();
 
   // ---------------- Outstanding-by-tenant reload ----------------
   // Support either id, depending on what exists in index.html
-  // "Outstanding by tenant (this month)" reload
   ["#reloadOutstandingByTenant", "#reloadOutstanding"].forEach((sel) => {
     const btn = $(sel);
     if (!btn) return;
