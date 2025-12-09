@@ -362,14 +362,14 @@ async function loadBalances() {
   const ym = state.currentMonth;
 
   try {
-    const [balResp, dash, outstandingResp] = await Promise.all([
+    const [balResp, overview, outstandingResp] = await Promise.all([
       apiGet(`/balances?month=${encodeURIComponent(ym)}`),
-      apiGet(`/dashboard/overview?month=${encodeURIComponent(ym)}`),
+      apiGet(`/balances/overview?month=${encodeURIComponent(ym)}`),
       apiGet(`/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`),
     ]);
 
+    // ---------- per-tenant balances table ----------
     const rows = balResp.rows || [];
-
     if (!rows.length) empty.classList.remove("hidden");
 
     for (const r of rows) {
@@ -389,23 +389,26 @@ async function loadBalances() {
       body.appendChild(tr);
     }
 
-    // This month totals card
-    const monthLabel = formatMonthLabel(dash.month_start || ym);
+    // ---------- "This month totals" card ----------
+    const monthLabel = formatMonthLabel(
+      overview.month || overview.month_start || ym
+    );
     monthLabelEl.textContent = monthLabel;
 
-    const totalDue  = dash.total_due ?? dash.rent_due_total ?? dash.rent_subtotal_total ?? 0;
-    const totalPaid = dash.total_paid ?? dash.amount_paid_total ?? 0;
-    const balance   = dash.balance_total ?? dash.total_outstanding ?? 0;
-    const rate      = dash.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0);
+    const totalDue  = overview.total_due  ?? overview.rent_subtotal_total ?? 0;
+    const totalPaid = overview.total_paid ?? overview.amount_paid_total   ?? 0;
+    const balance   = overview.balance_total ?? overview.total_outstanding ?? 0;
+    const rate      =
+      overview.collection_rate_pct ??
+      (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0);
 
-    monthDueEl.textContent       = `${fmtKes(totalDue)} due`;
-    monthCollEl.textContent      = `${fmtKes(totalPaid)} collected`;
-    monthBalEl.textContent       = `${fmtKes(balance)} balance`;
-    monthRateEl.textContent      = `${fmtPct(rate)} collection rate`;
+    monthDueEl.textContent  = `${fmtKes(totalDue)} due`;
+    monthCollEl.textContent = `${fmtKes(totalPaid)} collected`;
+    monthBalEl.textContent  = `${fmtKes(balance)} balance`;
+    monthRateEl.textContent = `${fmtPct(rate)} collection rate`;
 
-    // Outstanding by tenant table
+    // ---------- Outstanding by tenant ----------
     const outData = outstandingResp && outstandingResp.data ? outstandingResp.data : [];
-
     if (!outData.length) {
       outstandingEmpty.classList.remove("hidden");
     } else {
