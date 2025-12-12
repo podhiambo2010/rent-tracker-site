@@ -748,25 +748,26 @@ document.addEventListener("DOMContentLoaded", () => {
   loadPayments(true);
   loadRentRoll(true);
   loadBalances();
+  loadBalancesByUnit(); // NEW
 
   // Reload buttons
   $("#reloadLeases")?.addEventListener("click", loadLeases);
-  $("#reloadBalances")?.addEventListener("click", loadBalances);
+  $("#reloadBalances")?.addEventListener("click", () => {
+    loadBalances();
+    loadBalancesByUnit(); // NEW – keep tables in sync
+  });
   $("#reloadOutstandingByTenant")?.addEventListener("click", loadBalances);
-
   $("#applyPayments")?.addEventListener("click", () => loadPayments());
   $("#clearPayments")?.addEventListener("click", () => {
     $("#paymentsTenant").value = "";
     $("#paymentsStatus").value = "";
     loadPayments();
   });
-
   $("#applyRentroll")?.addEventListener("click", () => loadRentRoll());
   $("#clearRentroll")?.addEventListener("click", () => {
     $("#rentrollTenant").value = "";
     $("#rentrollProperty").value = "";
     loadRentRoll();
   });
-
   $("#leaseSearch")?.addEventListener("input", () => loadLeases());
 });
