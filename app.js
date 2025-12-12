@@ -432,6 +432,54 @@ async function loadBalances() {
   }
 }
 
+// -------- NEW: per-unit balances ("By Unit") --------
+async function loadBalancesByUnit() {
+  const body = $("#balancesByUnitBody");
+  const empty = $("#balancesByUnitEmpty");
+
+  // If the section doesn't exist in HTML yet, just do nothing
+  if (!body) return;
+
+  body.innerHTML = "";
+  if (empty) empty.classList.add("hidden");
+
+  const ym = state.currentMonth;
+
+  try {
+    const resp = await apiGet(`/balances/by_unit?month=${encodeURIComponent(ym)}`);
+    const rows = (resp && resp.rows) || [];
+
+    if (!rows.length) {
+      if (empty) empty.classList.remove("hidden");
+      return;
+    }
+
+    for (const r of rows) {
+      const balance =
+        Number(r.balance ?? ((r.total_due || 0) - (r.paid_total || 0)));
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.unit_code || ""}</td>
+        <td>${r.month_start || ""}</td>
+        <td>${r.month_end || ""}</td>
+        <td class="text-right">${fmtKes(r.subtotal_rent || 0)}</td>
+        <td class="text-right">${fmtKes(r.late_fees || 0)}</td>
+        <td class="text-right">${fmtKes(r.credits || 0)}</td>
+        <td class="text-right">${fmtKes(r.total_due || 0)}</td>
+        <td class="text-right">${fmtKes(r.paid_total || 0)}</td>
+        <td class="text-right font-semibold">${fmtKes(balance)}</td>
+      `;
+      body.appendChild(tr);
+    }
+  } catch (err) {
+    console.error("loadBalancesByUnit error:", err);
+    body.innerHTML =
+      `<tr><td colspan="9">Error loading balances by unit.</td></tr>`;
+    if (empty) empty.classList.remove("hidden");
+  }
+}
+
 /* -------- WhatsApp ad-hoc builder -------- */
 function initWhatsAppBuilder() {
   const btn = $("#waBuild");
