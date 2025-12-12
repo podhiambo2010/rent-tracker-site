@@ -371,6 +371,43 @@
           </div>
         </div>
 
+        <!-- NEW: Balances by Unit (uses /balances/by_unit) -->
+<div class="mt-10">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-lg font-semibold text-slate-100">
+      Balances by Unit (This Month)
+    </h3>
+    <!-- We reuse the main Reload Balances button in JS,
+         but you can add a dedicated one if you like -->
+  </div>
+
+  <div class="overflow-x-auto rounded-2xl bg-slate-900/60 border border-slate-800">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-900/80 text-slate-400 uppercase text-xs">
+        <tr>
+          <th class="px-4 py-2 text-left">Unit</th>
+          <th class="px-4 py-2 text-left">Month start</th>
+          <th class="px-4 py-2 text-left">Month end</th>
+          <th class="px-4 py-2 text-right">Rent</th>
+          <th class="px-4 py-2 text-right">Late fees</th>
+          <th class="px-4 py-2 text-right">Credits</th>
+          <th class="px-4 py-2 text-right">Total due</th>
+          <th class="px-4 py-2 text-right">Paid</th>
+          <th class="px-4 py-2 text-right">Balance</th>
+        </tr>
+      </thead>
+      <tbody id="balancesByUnitBody" class="divide-y divide-slate-800 text-slate-100">
+        <!-- Filled by loadBalancesByUnit() -->
+      </tbody>
+    </table>
+
+    <p id="balancesByUnitEmpty"
+       class="px-4 py-3 text-sm text-slate-400 hidden">
+      No balances found for this month.
+    </p>
+  </div>
+</div>
+
         <!-- This month totals card (all tenants) -->
         <div style="margin-top:24px;">
           <h3>This month totals (all tenants)</h3>
