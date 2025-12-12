@@ -717,7 +717,6 @@ function initMonthPicker() {
   const mp = $("#monthPicker");
   const nowYm = yyyymm();
   state.currentMonth = nowYm;
-
   if (mp) {
     mp.value = nowYm;
     mp.addEventListener("change", () => {
@@ -728,6 +727,7 @@ function initMonthPicker() {
       loadPayments(); // reuse filters
       loadRentRoll();
       loadBalances();
+      loadBalancesByUnit(); // NEW
     });
   }
 }
