@@ -339,126 +339,119 @@
       </div>
 
       <!-- ===== Balances ===== -->
-      <div class="panel hidden" id="tab-balances">
-        <div class="bar-flex">
-          <h2>Balances (This Month)</h2>
-          <button id="reloadBalances" class="btn ghost">Reload</button>
-          <!-- Export now wired only via btnExportBalances + app.js -->
-          <button
-            id="btnExportBalances"
-            class="btn ghost"
-          >
-            Export CSV
-          </button>
-        </div>
+<div class="panel hidden" id="tab-balances">
+  <div class="bar-flex">
+    <h2>Balances</h2>
+    <button id="reloadBalances" class="btn ghost">Reload</button>
 
-        <!-- Per-tenant balances table -->
-        <div class="table-wrap" style="margin-top:12px;">
-          <table>
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th class="num">Rent due</th>
-                <th class="num">Paid</th>
-                <th class="num">Balance</th>
-                <th class="num">Collection rate</th>
-              </tr>
-            </thead>
-            <tbody id="balancesBody"></tbody>
-          </table>
-          <div id="balancesEmpty" class="empty hidden">
-            No balances to show yet.
-          </div>
-        </div>
-
-        <!-- NEW: Balances by Unit (uses /balances/by_unit) -->
-<div class="mt-10">
-  <div class="flex items-center justify-between mb-3">
-    <h3 class="text-lg font-semibold text-slate-100">
-      Balances by Unit (This Month)
-    </h3>
-    <!-- We reuse the main Reload Balances button in JS,
-         but you can add a dedicated one if you like -->
+    <!-- Export now wired only via btnExportBalances + app.js -->
+    <button id="btnExportBalances" class="btn ghost">
+      Export CSV
+    </button>
   </div>
 
-  <div class="overflow-x-auto rounded-2xl bg-slate-900/60 border border-slate-800">
-    <table class="min-w-full text-sm">
-      <thead class="bg-slate-900/80 text-slate-400 uppercase text-xs">
+  <!-- ✅ NEW: Month picker for Balances (fixes #balancesMonth null) -->
+  <div class="filters">
+    <select id="balancesMonth"></select>
+  </div>
+
+  <!-- Per-tenant balances table -->
+  <div class="table-wrap" style="margin-top:12px;">
+    <table>
+      <thead>
         <tr>
-          <th class="px-4 py-2 text-left">Unit</th>
-          <th class="px-4 py-2 text-left">Month start</th>
-          <th class="px-4 py-2 text-left">Month end</th>
-          <th class="px-4 py-2 text-right">Rent</th>
-          <th class="px-4 py-2 text-right">Late fees</th>
-          <th class="px-4 py-2 text-right">Credits</th>
-          <th class="px-4 py-2 text-right">Total due</th>
-          <th class="px-4 py-2 text-right">Paid</th>
-          <th class="px-4 py-2 text-right">Balance</th>
+          <th>Tenant</th>
+          <th class="num">Rent due</th>
+          <th class="num">Paid</th>
+          <th class="num">Balance</th>
+          <th class="num">Collection rate</th>
         </tr>
       </thead>
-      <tbody id="balancesByUnitBody" class="divide-y divide-slate-800 text-slate-100">
-        <!-- Filled by loadBalancesByUnit() -->
-      </tbody>
+      <tbody id="balancesBody"></tbody>
     </table>
+    <div id="balancesEmpty" class="empty hidden">
+      No balances to show yet.
+    </div>
+  </div>
 
-    <p id="balancesByUnitEmpty"
-       class="px-4 py-3 text-sm text-slate-400 hidden">
-      No balances found for this month.
+  <!-- NEW: Balances by Unit (uses /balances/by_unit) -->
+  <div class="mt-10">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-lg font-semibold text-slate-100">
+        Balances by Unit (This Month)
+      </h3>
+    </div>
+
+    <div class="overflow-x-auto rounded-2xl bg-slate-900/60 border border-slate-800">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-900/80 text-slate-400 uppercase text-xs">
+          <tr>
+            <th class="px-4 py-2 text-left">Unit</th>
+            <th class="px-4 py-2 text-left">Month start</th>
+            <th class="px-4 py-2 text-left">Month end</th>
+            <th class="px-4 py-2 text-right">Rent</th>
+            <th class="px-4 py-2 text-right">Late fees</th>
+            <th class="px-4 py-2 text-right">Credits</th>
+            <th class="px-4 py-2 text-right">Total due</th>
+            <th class="px-4 py-2 text-right">Paid</th>
+            <th class="px-4 py-2 text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody id="balancesByUnitBody" class="divide-y divide-slate-800 text-slate-100">
+          <!-- Filled by loadBalancesByUnit() -->
+        </tbody>
+      </table>
+
+      <p id="balancesByUnitEmpty"
+         class="px-4 py-3 text-sm text-slate-400 hidden">
+        No balances found for this month.
+      </p>
+    </div>
+  </div>
+
+  <!-- This month totals card (all tenants) -->
+  <div style="margin-top:24px;">
+    <h3>This month totals (all tenants)</h3>
+    <div id="balances-summary" class="kpi-row">
+      <div class="chip">
+        <strong id="balMonthLabel">—</strong>
+      </div>
+      <div class="chip" id="balMonthDue">KES 0 due</div>
+      <div class="chip" id="balMonthCollected">KES 0 collected</div>
+      <div class="chip" id="balMonthBalance">KES 0 balance</div>
+      <div class="chip" id="balMonthRate">0.0% collection rate</div>
+    </div>
+    <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">
+      Last updated: —
     </p>
   </div>
+
+  <!-- Outstanding by tenant (this month) -->
+  <div class="bar-flex" style="margin-top:24px;">
+    <h3>Outstanding by tenant (this month)</h3>
+    <span class="chip" id="outstandingMonthLabel">—</span>
+    <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
+  </div>
+  <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">
+    Last updated: —
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th style="text-align:right">Outstanding</th>
+          <th style="text-align:right">Collection rate</th>
+        </tr>
+      </thead>
+      <tbody id="outstandingBody"></tbody>
+    </table>
+    <div id="outstandingEmpty" class="empty hidden">
+      No outstanding balances this month 🎉
+    </div>
+  </div>
 </div>
-
-        <!-- This month totals card (all tenants) -->
-        <div style="margin-top:24px;">
-          <h3>This month totals (all tenants)</h3>
-          <div id="balances-summary" class="kpi-row">
-            <div class="chip">
-              <strong id="balMonthLabel">—</strong>
-            </div>
-            <div class="chip" id="balMonthDue">KES 0 due</div>
-            <div class="chip" id="balMonthCollected">KES 0 collected</div>
-            <div class="chip" id="balMonthBalance">KES 0 balance</div>
-            <div class="chip" id="balMonthRate">0.0% collection rate</div>
-          </div>
-          <p
-            id="balancesLastUpdated"
-            class="muted"
-            style="margin:6px 0 0 0;"
-          >
-            Last updated: —
-          </p>
-        </div>
-
-        <!-- Outstanding by tenant (this month) -->
-        <div class="bar-flex" style="margin-top:24px;">
-          <h3>Outstanding by tenant (this month)</h3>
-          <span class="chip" id="outstandingMonthLabel">—</span>
-          <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
-        </div>
-        <p
-          id="outstandingLastUpdated"
-          class="muted"
-          style="margin:4px 0 0 0;"
-        >
-          Last updated: —
-        </p>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th style="text-align:right">Outstanding</th>
-                <th style="text-align:right">Collection rate</th>
-              </tr>
-            </thead>
-            <tbody id="outstandingBody"></tbody>
-          </table>
-          <div id="outstandingEmpty" class="empty hidden">
-            No outstanding balances this month 🎉
-          </div>
-        </div>
-      </div>
 
       <!-- ===== WhatsApp (ad-hoc) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
