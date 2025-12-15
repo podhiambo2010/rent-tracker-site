@@ -42,6 +42,15 @@ function fmtPct(n) {
   return `${Number(n).toFixed(1)}%`;
 }
 
+function setText(sel, text) {
+  const el = typeof sel === "string" ? $(sel) : sel;
+  if (el) el.textContent = text;
+}
+
+function sum(rows, pick) {
+  return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
+}
+
 /* normalise KE phone similar to backend */
 function normalizePhone(raw) {
   const digits = (raw || "").replace(/\D+/g, "");
