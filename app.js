@@ -282,19 +282,22 @@ async function loadRentRoll(initial = false) {
 
   try {
     if (initial) {
-      // populate months selector once (works for 2026+ and for new months with no data yet)
+      // Populate months selector once (works for 2026+ and for new months with no data yet)
       const raw = await apiGet("/months"); // {"ok":true,"data":[...]} or ["2025-12",...]
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      const months = rows
+      const rawMonths = rows
         .map(r => (typeof r === "string" ? r : r?.ym))
         .filter(Boolean);
 
-      monthSelect.innerHTML = "";
+      // Ensure current month exists even if API doesn't return it yet (e.g., 2026-01)
+      if (state.currentMonth) rawMonths.push(state.currentMonth);
 
-      // ensure current month exists even if API doesn't return it yet (e.g., 2026-01)
-      if (state.currentMonth && !months.includes(state.currentMonth)) {
-        months.unshift(state.currentMonth);
-      }
+      // De-dupe + sort newest -> oldest
+      const months = Array.from(new Set(rawMonths))
+        .filter(m => /^\d{4}-\d{2}$/.test(m))  // keep only YYYY-MM
+        .sort((a, b) => b.localeCompare(a));   // lexicographic works for YYYY-MM
+
+      monthSelect.innerHTML = "";
 
       for (const ym of months) {
         const opt = document.createElement("option");
@@ -303,7 +306,7 @@ async function loadRentRoll(initial = false) {
         monthSelect.appendChild(opt);
       }
 
-      // pick a safe default
+      // Pick a safe default
       monthSelect.value = months.includes(state.currentMonth)
         ? state.currentMonth
         : (months[0] || state.currentMonth);
