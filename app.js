@@ -276,28 +276,30 @@ async function loadRentRoll(initial = false) {
   const propertyFilter = ($("#rentrollProperty").value || "").trim().toLowerCase();
   const body = $("#rentrollBody");
   const empty = $("#rentrollEmpty");
+  const countChip = $("#rentrollCount");
 
   body.innerHTML = "";
   empty.classList.add("hidden");
+  if (countChip) countChip.textContent = "—";
 
   try {
+    // 1) Initial load: populate month dropdown from /months
     if (initial) {
-      // populate months selector once (works for 2026+ and for new months with no data yet)
-      const raw = await apiGet("/months"); // returns {"ok":true,"data":[...]} or [...]
+      const raw = await apiGet("/months"); // may return {"ok":true,"data":[...]} or [...]
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      let months = rows
+      const months = rows
         .map(r => (typeof r === "string" ? r : r?.ym))
         .filter(Boolean);
 
-      // de-dupe + keep order (API usually returns newest-first)
-      months = Array.from(new Set(months));
-
       monthSelect.innerHTML = "";
 
-      // Ensure current month exists even if API doesn't return it yet (e.g., 2026-01)
+      // ensure state.currentMonth exists even if API doesn't return it yet
       if (state.currentMonth && !months.includes(state.currentMonth)) {
         months.unshift(state.currentMonth);
       }
+
+      // fallback: if API returned nothing, still show current month
+      if (!months.length && state.currentMonth) months.push(state.currentMonth);
 
       for (const ym of months) {
         const opt = document.createElement("option");
@@ -306,16 +308,17 @@ async function loadRentRoll(initial = false) {
         monthSelect.appendChild(opt);
       }
 
-      // Pick a safe default
       monthSelect.value = months.includes(state.currentMonth)
         ? state.currentMonth
         : (months[0] || state.currentMonth);
     }
 
+    // 2) Load rent roll rows for selected month
     const month = monthSelect.value || state.currentMonth;
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
-    const rows = resp && resp.data ? resp.data : [];
+    const rows = resp && resp.data ? resp.data : (Array.isArray(resp) ? resp : []);
 
+    // 3) Apply local filters
     const filtered = rows.filter((r) => {
       if (tenantFilter) {
         const t = (r.tenant || "").toLowerCase();
@@ -328,14 +331,20 @@ async function loadRentRoll(initial = false) {
       return true;
     });
 
+    // 4) Update count chip
+    if (countChip) countChip.textContent = String(filtered.length);
+
     if (!filtered.length) {
       empty.classList.remove("hidden");
       return;
     }
 
+    // 5) Render table
     for (const r of filtered) {
-      const period =
-        r.period_start ? formatMonthLabel(String(r.period_start).slice(0, 7)) : "";
+      const period = r.period_start
+        ? formatMonthLabel(String(r.period_start).slice(0, 7))
+        : "";
+
       const balance = Number(r.balance || 0);
       const status = (r.status || "").toLowerCase();
 
@@ -348,7 +357,9 @@ async function loadRentRoll(initial = false) {
         <td>${fmtKes(r.subtotal_rent || 0)}</td>
         <td>${fmtKes(r.late_fees || 0)}</td>
         <td>
-          <span class="status ${status === "paid" ? "ok" : "due"}">${status || "—"}</span>
+          <span class="status ${status === "paid" ? "ok" : "due"}">
+            ${status || "—"}
+          </span>
         </td>
         <td style="text-align:right">${fmtKes(balance)}</td>
         <td>
@@ -361,6 +372,7 @@ async function loadRentRoll(initial = false) {
     }
   } catch (err) {
     console.error("loadRentRoll error:", err);
+    if (countChip) countChip.textContent = "0";
     empty.textContent = "Error loading rent-roll.";
     empty.classList.remove("hidden");
   }
