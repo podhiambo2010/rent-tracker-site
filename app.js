@@ -208,19 +208,33 @@ async function loadPayments(initial = false) {
 
   try {
     if (initial) {
-      // populate months selector once
-      const months = await apiGet("/payments/months");
-      monthSelect.innerHTML = "";
-      for (const row of months) {
-        const opt = document.createElement("option");
-        opt.value = row.ym;
-        opt.textContent = formatMonthLabel(row.ym);
-        monthSelect.appendChild(opt);
-      }
-      if (!monthSelect.value && months[0]) {
-        monthSelect.value = state.currentMonth;
-      }
-    }
+  // populate months selector once
+  const resp = await apiGet("/payments/months");
+
+  // backend may return: { ok:true, data:["2025-12", ...] } or [{ym:"2025-12"}]
+  const rows = Array.isArray(resp) ? resp : (resp?.data || []);
+
+  const months = rows
+    .map(r => (typeof r === "string" ? r : r?.ym))
+    .filter(Boolean);
+
+  monthSelect.innerHTML = "";
+
+  for (const ym of months) {
+    const opt = document.createElement("option");
+    opt.value = ym;
+    opt.textContent = formatMonthLabel(ym);
+    monthSelect.appendChild(opt);
+  }
+
+  // keep state.currentMonth if available, otherwise default to first month
+  if (months.includes(state.currentMonth)) {
+    monthSelect.value = state.currentMonth;
+  } else if (months[0]) {
+    state.currentMonth = months[0];
+    monthSelect.value = months[0];
+  }
+}
 
     const month = monthSelect.value || state.currentMonth;
     const payments = await apiGet(`/payments?month=${encodeURIComponent(month)}`);
