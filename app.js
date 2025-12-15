@@ -287,16 +287,32 @@ async function loadRentRoll(initial = false) {
 
   try {
     if (initial) {
-      // simple month selector – use current + maybe 3 recent months from payments
-      if (!monthSelect.options.length) {
-        const ym = state.currentMonth;
-        const opt = document.createElement("option");
-        opt.value = ym;
-        opt.textContent = formatMonthLabel(ym);
-        monthSelect.appendChild(opt);
-        monthSelect.value = ym;
-      }
-    }
+  // populate month selector from API (/months)
+  const respMonths = await apiGet("/months");
+
+  // respMonths could be { ok:true, data:["2025-12","2025-11"] } or ["2025-12", ...]
+  const rows = Array.isArray(respMonths) ? respMonths : (respMonths?.data || []);
+  const months = rows
+    .map(r => (typeof r === "string" ? r : r?.ym))
+    .filter(Boolean);
+
+  monthSelect.innerHTML = "";
+
+  for (const ym of months) {
+    const opt = document.createElement("option");
+    opt.value = ym;
+    opt.textContent = formatMonthLabel(ym);
+    monthSelect.appendChild(opt);
+  }
+
+  // pick a default
+  if (months.includes(state.currentMonth)) {
+    monthSelect.value = state.currentMonth;
+  } else if (months[0]) {
+    state.currentMonth = months[0];
+    monthSelect.value = months[0];
+  }
+}
 
     const month = monthSelect.value || state.currentMonth;
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
