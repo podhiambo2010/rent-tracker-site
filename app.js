@@ -282,16 +282,16 @@ async function loadRentRoll(initial = false) {
 
   try {
     if (initial) {
-  // populate month selector from API (/months)
-  const respMonths = await apiGet("/months");
-
-  // respMonths could be { ok:true, data:["2025-12","2025-11"] } or ["2025-12", ...]
-  const rows = Array.isArray(respMonths) ? respMonths : (respMonths?.data || []);
-  const months = rows
-    .map(r => (typeof r === "string" ? r : r?.ym))
-    .filter(Boolean);
+  const raw = await apiGet("/months"); // your API returns {"ok":true,"data":[...]} or [...]
+  const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+  const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
 
   monthSelect.innerHTML = "";
+
+  // ensure current month exists even if API doesn't return it yet (e.g. 2026-01)
+  if (state.currentMonth && !months.includes(state.currentMonth)) {
+    months.unshift(state.currentMonth);
+  }
 
   for (const ym of months) {
     const opt = document.createElement("option");
@@ -300,13 +300,9 @@ async function loadRentRoll(initial = false) {
     monthSelect.appendChild(opt);
   }
 
-  // pick a default
-  if (months.includes(state.currentMonth)) {
-    monthSelect.value = state.currentMonth;
-  } else if (months[0]) {
-    state.currentMonth = months[0];
-    monthSelect.value = months[0];
-  }
+  monthSelect.value = months.includes(state.currentMonth)
+    ? state.currentMonth
+    : (months[0] || state.currentMonth);
 }
 
     const month = monthSelect.value || state.currentMonth;
