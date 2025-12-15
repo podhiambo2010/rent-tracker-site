@@ -393,7 +393,7 @@ async function loadBalances() {
 
   try {
     const [balResp, overview, outstandingResp] = await Promise.all([
-      apiGet(`/balances?month=${encodeURIComponent(ym)}`),
+      await apiGet(`/balances/outstanding?month=${encodeURIComponent(month)}`),
       apiGet(`/balances/overview?month=${encodeURIComponent(ym)}`),
       apiGet(`/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`),
     ]);
