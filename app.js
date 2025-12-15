@@ -266,10 +266,18 @@ async function loadPayments(initial = false) {
   const body = $("#paymentsBody");
   const empty = $("#paymentsEmpty");
 
+  // ✅ Totals chips (optional in HTML)
+  const countChip = $("#paymentsCountChip");
+  const totalChip = $("#paymentsTotalChip");
+
   if (!body) return;
 
   body.innerHTML = "";
   empty && empty.classList.add("hidden");
+
+  // ✅ Reset totals immediately (prevents stale totals on reload)
+  if (countChip) countChip.textContent = "0";
+  if (totalChip) totalChip.textContent = fmtKes(0);
 
   try {
     if (initial && monthSelect) {
@@ -310,6 +318,12 @@ async function loadPayments(initial = false) {
       return true;
     });
 
+    // ✅ Compute totals from filtered list
+    const totalPaid = filtered.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    if (countChip) countChip.textContent = String(filtered.length);
+    if (totalChip) totalChip.textContent = fmtKes(totalPaid);
+
+    // ✅ Show “no data” but keep totals visible (0 / KES 0)
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
       return;
