@@ -208,17 +208,16 @@ async function loadPayments(initial = false) {
 
   try {
     if (initial) {
-  // populate months selector once
-  const resp = await apiGet("/payments/months");
-
-  // backend may return: { ok:true, data:["2025-12", ...] } or [{ym:"2025-12"}]
-  const rows = Array.isArray(resp) ? resp : (resp?.data || []);
-
-  const months = rows
-    .map(r => (typeof r === "string" ? r : r?.ym))
-    .filter(Boolean);
+  const raw = await apiGet("/payments/months"); // may be {ok:true,data:[...]} or [...]
+  const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+  const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
 
   monthSelect.innerHTML = "";
+
+  // ensure current month exists even if not returned yet
+  if (state.currentMonth && !months.includes(state.currentMonth)) {
+    months.unshift(state.currentMonth);
+  }
 
   for (const ym of months) {
     const opt = document.createElement("option");
@@ -227,13 +226,9 @@ async function loadPayments(initial = false) {
     monthSelect.appendChild(opt);
   }
 
-  // keep state.currentMonth if available, otherwise default to first month
-  if (months.includes(state.currentMonth)) {
-    monthSelect.value = state.currentMonth;
-  } else if (months[0]) {
-    state.currentMonth = months[0];
-    monthSelect.value = months[0];
-  }
+  monthSelect.value = months.includes(state.currentMonth)
+    ? state.currentMonth
+    : (months[0] || state.currentMonth);
 }
 
     const month = monthSelect.value || state.currentMonth;
