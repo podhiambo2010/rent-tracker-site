@@ -281,25 +281,20 @@ async function loadRentRoll(initial = false) {
   empty.classList.add("hidden");
 
   try {
-    if (initial) {
-      // populate month selector from API (/months) — works for 2026+ and new months with no data yet
+    // ---------- Month picker (run once) ----------
+    if (initial && monthSelect) {
       const raw = await apiGet("/months"); // API returns {"ok":true,"data":[...]} or [...]
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
 
       // normalize + dedupe
-      let months = rows
-        .map(r => (typeof r === "string" ? r : r?.ym))
-        .filter(Boolean);
+      const months = [...new Set(
+        rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean)
+      )];
 
-      months = Array.from(new Set(months));
-
-      // ensure current month exists even if API doesn't return it yet (e.g. 2026-01)
+      // ensure current month exists even if API doesn't return it yet (e.g., future month like 2026-01)
       if (state.currentMonth && !months.includes(state.currentMonth)) {
         months.unshift(state.currentMonth);
       }
-
-      // (optional but nice) keep newest month first
-      months.sort((a, b) => b.localeCompare(a));
 
       monthSelect.innerHTML = "";
 
@@ -310,13 +305,14 @@ async function loadRentRoll(initial = false) {
         monthSelect.appendChild(opt);
       }
 
-      // Pick a safe default
+      // choose a safe default
       monthSelect.value = months.includes(state.currentMonth)
         ? state.currentMonth
         : (months[0] || state.currentMonth);
     }
 
-    const month = monthSelect.value || state.currentMonth;
+    // if monthSelect is missing for any reason, fall back safely
+    const month = (monthSelect && monthSelect.value) ? monthSelect.value : state.currentMonth;
 
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
     const rows = resp && resp.data ? resp.data : [];
