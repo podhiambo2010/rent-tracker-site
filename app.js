@@ -281,23 +281,34 @@ async function loadRentRoll(initial = false) {
   empty.classList.add("hidden");
 
   try {
-    // ---------- Month picker (run once) ----------
-    if (initial && monthSelect) {
-      const raw = await apiGet("/months"); // API returns {"ok":true,"data":[...]} or [...]
+    if (!monthSelect) {
+      console.warn("rentrollMonth select not found in DOM");
+      empty.textContent = "Rent Roll month selector missing.";
+      empty.classList.remove("hidden");
+      return;
+    }
+
+    if (initial) {
+      // Populate months selector once (works for 2026+ and months with no data yet)
+      const raw = await apiGet("/months"); // API returns {"ok":true,"data":[...]} OR [...]
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+      let months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
 
-      // normalize + dedupe
-      const months = [...new Set(
-        rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean)
-      )];
+      // De-duplicate while keeping order
+      const seen = new Set();
+      months = months.filter(m => (seen.has(m) ? false : (seen.add(m), true)));
 
-      // ensure current month exists even if API doesn't return it yet (e.g., future month like 2026-01)
+      // Ensure current month exists even if API doesn't return it yet (e.g. 2026-01)
       if (state.currentMonth && !months.includes(state.currentMonth)) {
         months.unshift(state.currentMonth);
       }
 
-      monthSelect.innerHTML = "";
+      // If still empty, fall back to current month
+      if (!months.length && state.currentMonth) {
+        months = [state.currentMonth];
+      }
 
+      monthSelect.innerHTML = "";
       for (const ym of months) {
         const opt = document.createElement("option");
         opt.value = ym;
@@ -305,15 +316,13 @@ async function loadRentRoll(initial = false) {
         monthSelect.appendChild(opt);
       }
 
-      // choose a safe default
+      // Pick a safe default
       monthSelect.value = months.includes(state.currentMonth)
         ? state.currentMonth
-        : (months[0] || state.currentMonth);
+        : (months[0] || state.currentMonth || "");
     }
 
-    // if monthSelect is missing for any reason, fall back safely
-    const month = (monthSelect && monthSelect.value) ? monthSelect.value : state.currentMonth;
-
+    const month = monthSelect.value || state.currentMonth;
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
     const rows = resp && resp.data ? resp.data : [];
 
