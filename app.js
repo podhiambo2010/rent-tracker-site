@@ -282,28 +282,32 @@ async function loadRentRoll(initial = false) {
 
   try {
     if (initial) {
-  const raw = await apiGet("/months"); // your API returns {"ok":true,"data":[...]} or [...]
-  const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-  const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
+      // populate months selector once (works for 2026+ and for new months with no data yet)
+      const raw = await apiGet("/months"); // {"ok":true,"data":[...]} or ["2025-12",...]
+      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+      const months = rows
+        .map(r => (typeof r === "string" ? r : r?.ym))
+        .filter(Boolean);
 
-  monthSelect.innerHTML = "";
+      monthSelect.innerHTML = "";
 
-  // ensure current month exists even if API doesn't return it yet (e.g. 2026-01)
-  if (state.currentMonth && !months.includes(state.currentMonth)) {
-    months.unshift(state.currentMonth);
-  }
+      // ensure current month exists even if API doesn't return it yet (e.g., 2026-01)
+      if (state.currentMonth && !months.includes(state.currentMonth)) {
+        months.unshift(state.currentMonth);
+      }
 
-  for (const ym of months) {
-    const opt = document.createElement("option");
-    opt.value = ym;
-    opt.textContent = formatMonthLabel(ym);
-    monthSelect.appendChild(opt);
-  }
+      for (const ym of months) {
+        const opt = document.createElement("option");
+        opt.value = ym;
+        opt.textContent = formatMonthLabel(ym);
+        monthSelect.appendChild(opt);
+      }
 
-  monthSelect.value = months.includes(state.currentMonth)
-    ? state.currentMonth
-    : (months[0] || state.currentMonth);
-}
+      // pick a safe default
+      monthSelect.value = months.includes(state.currentMonth)
+        ? state.currentMonth
+        : (months[0] || state.currentMonth);
+    }
 
     const month = monthSelect.value || state.currentMonth;
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
@@ -341,9 +345,9 @@ async function loadRentRoll(initial = false) {
         <td>${fmtKes(r.subtotal_rent || 0)}</td>
         <td>${fmtKes(r.late_fees || 0)}</td>
         <td>
-          <span class="status ${
-            status === "paid" ? "ok" : "due"
-          }">${status || "—"}</span>
+          <span class="status ${status === "paid" ? "ok" : "due"}">
+            ${status || "—"}
+          </span>
         </td>
         <td style="text-align:right">${fmtKes(balance)}</td>
         <td>
