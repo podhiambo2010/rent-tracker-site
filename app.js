@@ -283,7 +283,12 @@ async function loadPayments(initial = false) {
     if (initial && monthSelect) {
       const raw = await apiGetFirst(["/payments/months", "/months"]);
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
+      let months = rows
+  .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
+  .filter(Boolean);
+
+// dedupe + newest first
+months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
       monthSelect.innerHTML = "";
 
