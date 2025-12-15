@@ -281,34 +281,24 @@ async function loadRentRoll(initial = false) {
   empty.classList.add("hidden");
 
   try {
-    if (!monthSelect) {
-      console.warn("rentrollMonth select not found in DOM");
-      empty.textContent = "Rent Roll month selector missing.";
-      empty.classList.remove("hidden");
-      return;
-    }
-
     if (initial) {
-      // Populate months selector once (works for 2026+ and months with no data yet)
-      const raw = await apiGet("/months"); // API returns {"ok":true,"data":[...]} OR [...]
+      // populate months selector once (works for 2026+ and for new months with no data yet)
+      const raw = await apiGet("/months"); // returns {"ok":true,"data":[...]} or [...]
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      let months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
+      let months = rows
+        .map(r => (typeof r === "string" ? r : r?.ym))
+        .filter(Boolean);
 
-      // De-duplicate while keeping order
-      const seen = new Set();
-      months = months.filter(m => (seen.has(m) ? false : (seen.add(m), true)));
+      // de-dupe + keep order (API usually returns newest-first)
+      months = Array.from(new Set(months));
 
-      // Ensure current month exists even if API doesn't return it yet (e.g. 2026-01)
+      monthSelect.innerHTML = "";
+
+      // Ensure current month exists even if API doesn't return it yet (e.g., 2026-01)
       if (state.currentMonth && !months.includes(state.currentMonth)) {
         months.unshift(state.currentMonth);
       }
 
-      // If still empty, fall back to current month
-      if (!months.length && state.currentMonth) {
-        months = [state.currentMonth];
-      }
-
-      monthSelect.innerHTML = "";
       for (const ym of months) {
         const opt = document.createElement("option");
         opt.value = ym;
@@ -319,7 +309,7 @@ async function loadRentRoll(initial = false) {
       // Pick a safe default
       monthSelect.value = months.includes(state.currentMonth)
         ? state.currentMonth
-        : (months[0] || state.currentMonth || "");
+        : (months[0] || state.currentMonth);
     }
 
     const month = monthSelect.value || state.currentMonth;
