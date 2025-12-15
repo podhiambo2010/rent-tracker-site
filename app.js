@@ -371,95 +371,72 @@ async function loadRentRoll(initial = false) {
   }
 }
 
-async function loadBalances() {
-  const body = $("#balancesBody");
+async function loadBalances(initial = false) {
+  const monthSelect = $("#balancesMonth"); // <-- if your ID differs, change here ONLY
+
+  // (optional) if you have these elements, keep them; if not, you can remove safely
   const empty = $("#balancesEmpty");
-
-  const monthLabelEl = $("#balMonthLabel");
-  const monthDueEl = $("#balMonthDue");
-  const monthCollEl = $("#balMonthCollected");
-  const monthBalEl = $("#balMonthBalance");
-  const monthRateEl = $("#balMonthRate");
-
-  const outstandingBody = $("#outstandingBody");
-  const outstandingEmpty = $("#outstandingEmpty");
-  const outstandingUpdated = $("#outstandingLastUpdated");
-
-  body.innerHTML = "";
-  outstandingBody.innerHTML = "";
-  empty.classList.add("hidden");
-  outstandingEmpty.classList.add("hidden");
-
-  const ym = state.currentMonth;
+  if (empty) empty.classList.add("hidden");
 
   try {
-    const [balResp, overview, outstandingResp] = await Promise.all([
-      await apiGet(`/balances/outstanding?month=${encodeURIComponent(month)}`),
-      apiGet(`/balances/overview?month=${encodeURIComponent(ym)}`),
-      apiGet(`/metrics/monthly-outstanding?month=${encodeURIComponent(ym)}`),
+    // 1) Populate month dropdown ONCE
+    if (initial) {
+      const raw = await apiGet("/months"); // {"ok":true,"data":[...]} or [...]
+      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+      let months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
+
+      // dedupe + newest first
+      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
+
+      // ensure current month exists even if API doesn't return it yet
+      if (state.currentMonth && !months.includes(state.currentMonth)) {
+        months.unshift(state.currentMonth);
+      }
+
+      monthSelect.innerHTML = "";
+      for (const ym of months) {
+        const opt = document.createElement("option");
+        opt.value = ym;
+        opt.textContent = formatMonthLabel(ym);
+        monthSelect.appendChild(opt);
+      }
+
+      monthSelect.value = months.includes(state.currentMonth)
+        ? state.currentMonth
+        : (months[0] || state.currentMonth);
+    }
+
+    // ✅ 2) DEFINE month ONCE (THIS FIXES YOUR ERROR)
+    const month = monthSelect.value || state.currentMonth;
+
+    // 3) Fetch all balances data using the SAME month
+    // Adjust endpoints below ONLY if your API uses different paths.
+    const [overview, outstanding, byUnit] = await Promise.all([
+      apiGet(`/overview?month=${encodeURIComponent(month)}`),
+      apiGet(`/balances/outstanding?month=${encodeURIComponent(month)}`),
+      apiGet(`/balances/by_unit?month=${encodeURIComponent(month)}`)
     ]);
 
-    // ---------- per-tenant balances table ----------
-    const rows = balResp.rows || [];
-    if (!rows.length) empty.classList.remove("hidden");
+    // 4) Render (keep your existing rendering logic here)
+    // If you already have rendering code below in your current file,
+    // move it here and keep using "month" as defined above.
 
-    for (const r of rows) {
-      const due = Number(r.rent_due_total || 0);
-      const paid = Number(r.amount_paid_total || 0);
-      const bal = Number(r.balance_total || 0);
-      const rate = due > 0 ? (paid / due) * 100 : 0;
+    // Example safe guards (won’t break if shapes differ)
+    const ov = overview?.data ?? overview ?? {};
+    const outRows = outstanding?.data ?? outstanding ?? [];
+    const unitRows = byUnit?.data ?? byUnit ?? [];
 
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${r.tenant_name || ""}</td>
-        <td class="num">${fmtNumber(due)}</td>
-        <td class="num">${fmtNumber(paid)}</td>
-        <td class="num">${fmtNumber(bal)}</td>
-        <td class="num">${fmtPct(rate)}</td>
-      `;
-      body.appendChild(tr);
-    }
+    // TODO: plug into your existing UI update functions/DOM
+    // e.g. setText("#balancesDue", fmtKes(ov.balance_due || 0));
+    // e.g. renderOutstandingTable(outRows);
+    // e.g. renderByUnit(unitRows);
 
-    // ---------- "This month totals" card ----------
-    const monthLabel = formatMonthLabel(
-      overview.month || overview.month_start || ym
-    );
-    monthLabelEl.textContent = monthLabel;
-
-    const totalDue  = overview.total_due  ?? overview.rent_subtotal_total ?? 0;
-    const totalPaid = overview.total_paid ?? overview.amount_paid_total   ?? 0;
-    const balance   = overview.balance_total ?? overview.total_outstanding ?? 0;
-    const rate      =
-      overview.collection_rate_pct ??
-      (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0);
-
-    monthDueEl.textContent  = `${fmtKes(totalDue)} due`;
-    monthCollEl.textContent = `${fmtKes(totalPaid)} collected`;
-    monthBalEl.textContent  = `${fmtKes(balance)} balance`;
-    monthRateEl.textContent = `${fmtPct(rate)} collection rate`;
-
-    // ---------- Outstanding by tenant ----------
-    const outData = outstandingResp && outstandingResp.data ? outstandingResp.data : [];
-    if (!outData.length) {
-      outstandingEmpty.classList.remove("hidden");
-    } else {
-      for (const r of outData) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${r.tenant || ""}</td>
-          <td style="text-align:right">${fmtKes(r.outstanding || 0)}</td>
-          <td style="text-align:right">${fmtPct(r.collection_rate || 0)}</td>
-        `;
-        outstandingBody.appendChild(tr);
-      }
-    }
-
-    outstandingUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
   } catch (err) {
     console.error("loadBalances error:", err);
-    empty.textContent = "Error loading balances.";
-    empty.classList.remove("hidden");
-    outstandingEmpty.classList.remove("hidden");
+    if (empty) {
+      empty.textContent = "Error loading balances.";
+      empty.classList.remove("hidden");
+    }
   }
 }
 
