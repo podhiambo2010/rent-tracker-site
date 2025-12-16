@@ -782,13 +782,22 @@ document.addEventListener("DOMContentLoaded", () => {
   } else {
     console.warn("loadBalances() is not defined — skipping initial balances load");
   }
-  loadBalancesByUnit();
+  if (typeof loadBalancesByUnit === "function") {
+    loadBalancesByUnit();
+  } else {
+    console.warn("loadBalancesByUnit() is not defined — skipping balances-by-unit load");
+  }
 
   // Reload buttons
   $("#reloadLeases")?.addEventListener("click", loadLeases);
   $("#reloadBalances")?.addEventListener("click", () => {
     if (typeof loadBalances === "function") loadBalances();
+    if (typeof loadBalancesByUnit === "function") {
     loadBalancesByUnit();
+  } else {
+    console.warn("loadBalancesByUnit() is not defined — skipping balances-by-unit load");
+  }
+
   });
   
   $("#reloadOutstandingByTenant")?.addEventListener("click", () => {
