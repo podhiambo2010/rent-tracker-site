@@ -847,7 +847,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Reload buttons
   $("#reloadLeases")?.addEventListener("click", loadLeases);
   $("#reloadBalances")?.addEventListener("click", () => {
-    loadBalances();
+    if (typeof loadBalances === "function") loadBalances();
     loadBalancesByUnit();
   });
   $("#reloadOutstandingByTenant")?.addEventListener("click", loadBalances);
