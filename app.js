@@ -762,6 +762,73 @@ function initMonthPicker() {
   }
 }
 
+// -------- per-unit balances ("By Unit") --------
+async function loadBalancesByUnit() {
+  const body = $("#balancesByUnitBody");
+  const empty = $("#balancesByUnitEmpty");
+
+  // If the HTML doesn't have this section yet, just exit quietly.
+  if (!body) return;
+
+  body.innerHTML = "";
+  empty && empty.classList.add("hidden");
+
+  // Use balancesMonth if present, otherwise current global month
+  const ym = ($("#balancesMonth")?.value || state.currentMonth || yyyymm());
+
+  const toNum = (v) => {
+    if (v === null || v === undefined) return 0;
+    const n = Number(String(v).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  try {
+    // Try multiple endpoints (backwards/forwards compatible)
+    const resp = await apiGetFirst([
+      `/balances/by-unit?month=${encodeURIComponent(ym)}`,
+      `/balances/by_unit?month=${encodeURIComponent(ym)}`,
+      `/balances/byunit?month=${encodeURIComponent(ym)}`
+    ]);
+
+    const rows = resp?.data ?? (Array.isArray(resp) ? resp : []);
+    const list = Array.isArray(rows) ? rows : [];
+
+    if (!list.length) {
+      empty && empty.classList.remove("hidden");
+      return;
+    }
+
+    for (const r of list) {
+      const property = r.property_name || r.property || "";
+      const unit = r.unit_code || r.unit || "";
+      const tenant = r.tenant || r.tenant_name || "";
+
+      const due = (r.due ?? r.total_due ?? r.rent_due);
+      const paid = (r.paid ?? r.total_paid ?? r.amount_paid);
+      const bal = (r.balance ?? r.outstanding ?? 0);
+
+      const rate =
+        (r.collection_rate ?? r.rate ?? (toNum(due) > 0 ? (toNum(paid) / toNum(due)) : 0));
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${property}</td>
+        <td>${unit}</td>
+        <td>${tenant}</td>
+        <td class="num">${fmtKes(toNum(due))}</td>
+        <td class="num">${fmtKes(toNum(paid))}</td>
+        <td class="num">${fmtKes(toNum(bal))}</td>
+        <td class="num">${fmtPct(rate)}</td>
+      `;
+      body.appendChild(tr);
+    }
+  } catch (err) {
+    console.error("loadBalancesByUnit error:", err);
+    empty && (empty.textContent = "Error loading balances-by-unit.");
+    empty && empty.classList.remove("hidden");
+  }
+}
+
  /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
