@@ -531,10 +531,11 @@ async function loadBalances(initial = false) {
   empty && empty.classList.add("hidden");
 
   // Optional UI elements if you have them
-  const labelEl = $("#balancesMonthLabel");
-  const dueEl   = $("#balancesTotalDue");
-  const paidEl  = $("#balancesTotalPaid");
-  const balEl   = $("#balancesTotalBalance");
+  const labelEl = $("#balMonthLabel");
+  const dueEl   = $("#balMonthDue");
+  const paidEl  = $("#balMonthCollected");
+  const balEl   = $("#balMonthBalance");
+  const rateEl  = $("#balMonthRate");
 
   // Outstanding-by-tenant table body (support common IDs)
   const outBody =
