@@ -355,6 +355,7 @@ months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
   }
 }
 
+
 async function loadRentRoll(initial = false) {
   const monthSelect = $("#rentrollMonth");
   const tenantFilter = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
@@ -375,7 +376,14 @@ async function loadRentRoll(initial = false) {
     if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
+
+      // accept {ym} OR {month} OR plain strings
+      let months = rows
+        .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
+        .filter(Boolean);
+
+      // newest first
+      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
       monthSelect.innerHTML = "";
 
@@ -415,76 +423,77 @@ async function loadRentRoll(initial = false) {
 
     if (countChip) countChip.textContent = String(filtered.length);
 
-     // ✅ Rent Roll totals chips (support multiple possible HTML IDs)
-const rrCountEl =
-  $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
+    // ✅ Rent Roll totals chips (match EXACT words used in app.js / HTML)
+    const rrCountEl =
+      $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
 
-const rrDueEl =
-  $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
+    const rrDueEl =
+      $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
 
-const rrPaidEl =
-  $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
+    const rrPaidEl =
+      $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
 
-const rrBalEl =
-  $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
+    const rrBalEl =
+      $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
 
-  const toNum = (v) => {
-    if (v === null || v === undefined) return 0;
-    const n = Number(String(v).replace(/,/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
+    const toNum = (v) => {
+      if (v === null || v === undefined) return 0;
+      const n = Number(String(v).replace(/,/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
 
-  // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
-  const fmtNumOnly = (n) => {
-    const s = (typeof fmtKes === "function")
-      ? String(fmtKes(n))
-      : String(Number(toNum(n)).toLocaleString());
-    return s.replace(/^KES\s*/i, "").trim();
-  };
+    // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
+    const fmtNumOnly = (n) => {
+      const s = (typeof fmtKes === "function")
+        ? String(fmtKes(n))
+        : String(Number(toNum(n)).toLocaleString());
+      return s.replace(/^KES\s*/i, "").trim();
+    };
 
-  const rrCount = filtered.length;
+    const rrCount = filtered.length;
 
-  let due = 0;
-  let paid = 0;
-  let outstanding = 0; // balances > 0
-  let credit = 0;      // balances < 0 turned positive
+    let due = 0;
+    let paid = 0;
+    let outstanding = 0; // balances > 0
+    let credit = 0;      // balances < 0 turned positive
 
-  for (const r of filtered) {
-    const subtotal = toNum(r.subtotal_rent);
-    const late     = toNum(r.late_fees);
+    for (const r of filtered) {
+      const subtotal = toNum(r.subtotal_rent);
+      const late     = toNum(r.late_fees);
 
-    const creditsField =
-      (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
+      const creditsField =
+        (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
 
-    const rowDueRaw =
-      (r.total_due !== undefined && r.total_due !== null)
-        ? toNum(r.total_due)
-        : (subtotal + late - creditsField);
+      const rowDueRaw =
+        (r.total_due !== undefined && r.total_due !== null)
+          ? toNum(r.total_due)
+          : (subtotal + late - creditsField);
 
-    const rowDue = Math.max(0, rowDueRaw);
-    const b = toNum(r.balance);
+      const rowDue = Math.max(0, rowDueRaw);
+      const b = toNum(r.balance);
 
-    due += rowDue;
+      due += rowDue;
 
-    if (b >= 0) {
-      outstanding += b;
-      paid += Math.max(0, rowDue - b);
-    } else {
-      paid += rowDue;
-      credit += (-b);
+      if (b >= 0) {
+        outstanding += b;
+        paid += Math.max(0, rowDue - b);
+      } else {
+        // negative balance = credit
+        paid += rowDue;
+        credit += (-b);
+      }
     }
-  }
 
-  if (rrCountEl) rrCountEl.textContent = String(rrCount);
-  if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtNumOnly(due)} due`;
-  if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtNumOnly(paid)} paid`;
+    if (rrCountEl) rrCountEl.textContent = String(rrCount);
+    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtNumOnly(due)} due`;
+    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtNumOnly(paid)} paid`;
 
-  if (rrBalEl) {
-    rrBalEl.textContent =
-      outstanding > 0 ? `KES ${fmtNumOnly(outstanding)} balance`
-      : credit > 0    ? `KES ${fmtNumOnly(credit)} credit`
-      : `KES 0 balance`;
-  }
+    if (rrBalEl) {
+      rrBalEl.textContent =
+        outstanding > 0 ? `KES ${fmtNumOnly(outstanding)} balance`
+        : credit > 0    ? `KES ${fmtNumOnly(credit)} credit`
+        : `KES 0 balance`;
+    }
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
@@ -526,117 +535,6 @@ const rrBalEl =
     if (countChip) countChip.textContent = "0";
     if (empty) {
       empty.textContent = "Error loading rent-roll.";
-      empty.classList.remove("hidden");
-    }
-  }
-}
-
-async function loadBalances(initial = false) {
-  const monthSelect = $("#balancesMonth"); // must match your HTML ID
-  const empty = $("#balancesEmpty");
-  empty && empty.classList.add("hidden");
-
-  // Optional UI elements if you have them
-  const labelEl = $("#balMonthLabel");
-  const dueEl   = $("#balMonthDue");
-  const paidEl  = $("#balMonthCollected");
-  const balEl   = $("#balMonthBalance");
-  const rateEl  = $("#balMonthRate"); // ✅ already correct
-
-  // Outstanding-by-tenant table body (support common IDs)
-  const outBody =
-    $("#outstandingByTenantBody") ||
-    $("#balancesOutstandingBody") ||
-    $("#outstandingBody");
-
-  try {
-    // ✅ IMPORTANT: if dropdown is empty, treat as initial load
-    const needMonths = !!monthSelect && monthSelect.options.length === 0;
-
-    if ((initial || needMonths) && monthSelect) {
-      const raw = await apiGet("/months");
-      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      let months = rows
-        .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
-        .filter(Boolean);
-
-      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
-
-      if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
-      if (!months.length && state.currentMonth) months.push(state.currentMonth);
-      if (!months.length) months.push(yyyymm()); // final fallback
-
-      monthSelect.innerHTML = "";
-      for (const ym of months) {
-        const opt = document.createElement("option");
-        opt.value = ym;
-        opt.textContent = formatMonthLabel(ym);
-        monthSelect.appendChild(opt);
-      }
-
-      monthSelect.value = state.currentMonth || months[0] || yyyymm();
-      wireMonthSelect(monthSelect);
-    }
-
-    // ✅ NEVER allow undefined month
-    const month = (monthSelect?.value || state.currentMonth || yyyymm());
-    if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
-
-    const [overview, outstanding] = await Promise.all([
-      apiGetFirst([
-        `/dashboard/overview?month=${encodeURIComponent(month)}`,
-        `/overview?month=${encodeURIComponent(month)}`
-      ]),
-      apiGetFirst([
-        `/balances/outstanding?month=${encodeURIComponent(month)}`,
-        `/balances/outstanding_by_tenant?month=${encodeURIComponent(month)}`
-      ]).catch(() => ({ data: [] }))
-    ]);
-
-    const ov = overview?.data ?? overview ?? {};
-    const outRows = outstanding?.data ?? outstanding?.rows ?? outstanding ?? [];
-
-    if (labelEl) labelEl.textContent = formatMonthLabel(month);
-
-    const totalDue  = ov.total_due ?? ov.rent_due_total ?? 0;
-    const totalPaid = ov.total_paid ?? ov.amount_paid_total ?? 0;
-    const balance   = ov.balance_total ?? ov.total_outstanding ?? (totalDue - totalPaid);
-
-    if (dueEl)  dueEl.textContent  = fmtKes(totalDue);
-    if (paidEl) paidEl.textContent = fmtKes(totalPaid);
-    if (balEl)  balEl.textContent  = fmtKes(balance);
-
-    // ✅ ADD THIS (rate display)
-    if (rateEl) {
-      const dueN  = Number(totalDue)  || 0;
-      const paidN = Number(totalPaid) || 0;
-      const rate = (dueN > 0) ? ((paidN / dueN) * 100) : 0;
-      rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
-    }
-
-    if (outBody) {
-      outBody.innerHTML = "";
-      for (const r of (outRows || [])) {
-        const tr = document.createElement("tr");
-        const tenant = r.tenant ?? r.tenant_name ?? r.payer_name ?? "";
-        const unit   = r.unit_code ?? r.unit ?? "";
-        const due    = Number(r.total_due ?? r.due_total ?? r.rent_due ?? 0);
-        const paid   = Number(r.paid_total ?? r.total_paid ?? r.amount_paid ?? 0);
-        const bal    = Number(r.balance ?? (due - paid));
-        tr.innerHTML = `
-          <td>${tenant}</td>
-          <td>${unit}</td>
-          <td class="text-right">${fmtKes(due)}</td>
-          <td class="text-right">${fmtKes(paid)}</td>
-          <td class="text-right font-semibold">${fmtKes(bal)}</td>
-        `;
-        outBody.appendChild(tr);
-      }
-    }
-  } catch (err) {
-    console.error("loadBalances error:", err);
-    if (empty) {
-      empty.textContent = "Error loading balances.";
       empty.classList.remove("hidden");
     }
   }
