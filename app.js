@@ -837,7 +837,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadLeases();
   loadPayments(true);
   loadRentRoll(true);
-  loadBalances(true);
+  if (typeof loadBalances === "function") loadBalances(true);
   loadBalancesByUnit();
 
   // Reload buttons
