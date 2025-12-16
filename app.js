@@ -416,45 +416,51 @@ async function loadRentRoll(initial = false) {
     $("#rentrollPaidChip")  && ($("#rentrollPaidChip").textContent  = "KES 0 paid");
     $("#rentrollBalChip")   && ($("#rentrollBalChip").textContent   = "KES 0 balance");
 
+    // ✅ Rent Roll totals (credit-aware, for the currently displayed/filtered rows)
+    const rrCountEl = $("#rentrollCountChip");
+    const rrDueEl   = $("#rentrollDueChip");
+    const rrPaidEl  = $("#rentrollPaidChip");
+    const rrBalEl   = $("#rentrollBalChip");
 
-        // ✅ Rent Roll totals (transparent: separates credits vs cash paid)
-const rrCountEl  = $("#rentrollCountChip");
-const rrDueEl    = $("#rentrollDueChip");
-const rrPaidEl   = $("#rentrollPaidChip");
-const rrBalEl    = $("#rentrollBalChip");
+    const toNum = (v) => {
+      if (v === null || v === undefined) return 0;
+      const n = Number(String(v).replace(/,/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
 
-// optional (only if your API returns credits)
-const toNum = (v) => {
-  if (v === null || v === undefined) return 0;
-  const n = Number(String(v).replace(/,/g, ""));
-  return Number.isFinite(n) ? n : 0;
-};
+    const rrCount = filtered.length;
 
-const rrCount = filtered.length;
+    // Prefer backend total_due if present
+    const rrDue = filtered.reduce((s, r) => {
+      const td = (r.total_due !== undefined && r.total_due !== null)
+        ? toNum(r.total_due)
+        : (toNum(r.subtotal_rent) + toNum(r.late_fees));
+      return s + td;
+    }, 0);
 
-// Prefer backend totals if they exist (this avoids counting opening credits as “paid”)
-const hasTotalDue  = filtered.some(r => r.total_due != null);
-const hasPaidTotal = filtered.some(r => r.paid_total != null);
+    // Split balance into outstanding vs credit
+    let outstanding = 0;
+    let credit = 0;
 
-const rrDue = hasTotalDue
-  ? filtered.reduce((s,r) => s + toNum(r.total_due), 0)
-  : filtered.reduce((s,r) => s + toNum(r.subtotal_rent) + toNum(r.late_fees), 0);
+    for (const r of filtered) {
+      const b = toNum(r.balance);
+      if (b >= 0) outstanding += b;
+      else credit += (-b);
+    }
 
-const rrBal = filtered.reduce((s,r) => s + toNum(r.balance), 0);
+    // Paid toward THIS MONTH = due - outstanding (never exceeds due)
+    const rrPaid = Math.max(0, rrDue - outstanding);
 
-// cash paid should come from backend if possible
-const rrPaid = hasPaidTotal
-  ? filtered.reduce((s,r) => s + toNum(r.paid_total), 0)
-  : Math.max(0, rrDue - rrBal);
+    if (rrCountEl) rrCountEl.textContent = String(rrCount);
+    if (rrDueEl)   rrDueEl.textContent   = `${fmtKes(rrDue)} due`;
+    if (rrPaidEl)  rrPaidEl.textContent  = `${fmtKes(rrPaid)} paid`;
 
-if (rrCountEl) rrCountEl.textContent = String(rrCount);
-if (rrDueEl)   rrDueEl.textContent   = `KES ${Number(rrDue).toLocaleString()} due`;
-if (rrPaidEl)  rrPaidEl.textContent  = `KES ${Number(rrPaid).toLocaleString()} paid`;
-if (rrBalEl)   rrBalEl.textContent   = `KES ${Number(rrBal).toLocaleString()} balance`;
-
-    if (!filtered.length) {
-      empty && empty.classList.remove("hidden");
-      return;
+    // Show balance OR credit (never show negative "balance")
+    if (rrBalEl) {
+      rrBalEl.textContent =
+        outstanding > 0 ? `${fmtKes(outstanding)} balance`
+        : credit > 0    ? `${fmtKes(credit)} credit`
+        : `${fmtKes(0)} balance`;
     }
 
     for (const r of filtered) {
