@@ -306,10 +306,18 @@ months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
       wireMonthSelect(monthSelect);
     }
 
-    const month = (monthSelect?.value || state.currentMonth);
+        // Always have a month (prevents month=undefined)
+    let month = (monthSelect?.value || state.currentMonth || yyyymm());
+
+    // If the select exists but is blank, fall back to its first option
+    if (monthSelect && !monthSelect.value && monthSelect.options.length > 0) {
+      monthSelect.value = monthSelect.options[0].value;
+      month = monthSelect.value;
+    }
+
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
-    const payments = await apiGet(`/payments?month=${encodeURIComponent(month)}`);
+    const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
 
     const filtered = (payments || []).filter((p) => {
       if (tenantFilter) {
