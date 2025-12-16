@@ -357,65 +357,33 @@ months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
 
 async function loadRentRoll(initial = false) {
-  const monthSelect    = $("#rentrollMonth");
-  const tenantFilter   = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
+  const monthSelect = $("#rentrollMonth");
+  const tenantFilter = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
   const propertyFilter = ($("#rentrollProperty")?.value || "").trim().toLowerCase();
-  const body           = $("#rentrollBody");
-  const empty          = $("#rentrollEmpty");
-  const countChip      = $("#rentrollCount");
+  const body = $("#rentrollBody");
+  const empty = $("#rentrollEmpty");
+  const countChip = $("#rentrollCount");
 
   if (!body) return;
 
   body.innerHTML = "";
-  if (empty) empty.classList.add("hidden");
+  empty && empty.classList.add("hidden");
   if (countChip) countChip.textContent = "—";
-
-  // ✅ Rent Roll totals chips (support multiple possible HTML IDs)
-  const rrCountEl =
-    $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
-
-  const rrDueEl =
-    $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
-
-  const rrPaidEl =
-    $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
-
-  const rrBalEl =
-    $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
-
-  const toNum = (v) => {
-    if (v === null || v === undefined) return 0;
-    const n = Number(String(v).replace(/,/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
-  const fmtNumOnly = (n) => {
-    const s = (typeof fmtKes === "function")
-      ? String(fmtKes(n))
-      : String(Number(toNum(n)).toLocaleString());
-    return s.replace(/^KES\s*/i, "").trim();
-  };
 
   try {
     // ✅ IMPORTANT: if month dropdown is empty, treat as initial load
     const needMonths = !!monthSelect && monthSelect.options.length === 0;
-
     if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+      const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
 
-      let months = rows
-        .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
-        .filter(Boolean);
-
-      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
+      monthSelect.innerHTML = "";
 
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
       if (!months.length && state.currentMonth) months.push(state.currentMonth);
       if (!months.length) months.push(yyyymm()); // final fallback
 
-      monthSelect.innerHTML = "";
       for (const ym of months) {
         const opt = document.createElement("option");
         opt.value = ym;
@@ -428,7 +396,7 @@ async function loadRentRoll(initial = false) {
     }
 
     // ✅ ALWAYS have a usable month (never blank/undefined)
-    const month = (monthSelect?.value || state.currentMonth || yyyymm());
+    let month = (monthSelect?.value || state.currentMonth || yyyymm());
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
@@ -448,8 +416,39 @@ async function loadRentRoll(initial = false) {
 
     if (countChip) countChip.textContent = String(filtered.length);
 
-    // ✅ totals from filtered rows
+    // ✅ Rent Roll totals chips (support multiple possible HTML IDs)
+    const rrCountEl =
+      $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
+
+    const rrDueEl =
+      $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
+
+    const rrPaidEl =
+      $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
+
+    const rrBalEl =
+      $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
+
+    // ✅ NEW: Credit chip
+    const rrCreditEl =
+      $("#rentrollCreditChip") || $("#rentrollCredit") || $("#rentRollCredit") || $("#rrCreditChip");
+
+    const toNum = (v) => {
+      if (v === null || v === undefined) return 0;
+      const n = Number(String(v).replace(/,/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
+    const fmtNumOnly = (n) => {
+      const s = (typeof fmtKes === "function")
+        ? String(fmtKes(n))
+        : String(Number(toNum(n)).toLocaleString());
+      return s.replace(/^KES\s*/i, "").trim();
+    };
+
     const rrCount = filtered.length;
+
     let due = 0;
     let paid = 0;
     let outstanding = 0; // balances > 0
@@ -457,7 +456,7 @@ async function loadRentRoll(initial = false) {
 
     for (const r of filtered) {
       const subtotal = toNum(r.subtotal_rent);
-      const late     = toNum(r.late_fees);
+      const late = toNum(r.late_fees);
 
       const creditsField =
         (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
@@ -476,23 +475,24 @@ async function loadRentRoll(initial = false) {
         outstanding += b;
         paid += Math.max(0, rowDue - b);
       } else {
+        // negative balance = credit
         paid += rowDue;
         credit += (-b);
       }
     }
 
     if (rrCountEl) rrCountEl.textContent = String(rrCount);
-    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtNumOnly(due)} due`;
-    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtNumOnly(paid)} paid`;
-    if (rrBalEl) {
-      rrBalEl.textContent =
-        outstanding > 0 ? `KES ${fmtNumOnly(outstanding)} balance`
-        : credit > 0    ? `KES ${fmtNumOnly(credit)} credit`
-        : `KES 0 balance`;
-    }
+    if (rrDueEl) rrDueEl.textContent = `KES ${fmtNumOnly(due)} due`;
+    if (rrPaidEl) rrPaidEl.textContent = `KES ${fmtNumOnly(paid)} paid`;
+
+    // ✅ Balance chip ALWAYS shows balance
+    if (rrBalEl) rrBalEl.textContent = `KES ${fmtNumOnly(outstanding)} balance`;
+
+    // ✅ Credit chip ALWAYS shows credit
+    if (rrCreditEl) rrCreditEl.textContent = `KES ${fmtNumOnly(credit)} credit`;
 
     if (!filtered.length) {
-      if (empty) empty.classList.remove("hidden");
+      empty && empty.classList.remove("hidden");
       return;
     }
 
@@ -531,170 +531,6 @@ async function loadRentRoll(initial = false) {
     if (countChip) countChip.textContent = "0";
     if (empty) {
       empty.textContent = "Error loading rent-roll.";
-      empty.classList.remove("hidden");
-    }
-  }
-}
-
-// -------- per-unit balances ("By Unit") --------
-async function loadBalancesByUnit() {
-  const body = $("#balancesByUnitBody");
-  const empty = $("#balancesByUnitEmpty");
-  if (!body) return;
-
-  body.innerHTML = "";
-  empty && empty.classList.add("hidden");
-
-  // IMPORTANT: use balancesMonth if present, otherwise global month
-  const ym = ($("#balancesMonth")?.value || state.currentMonth);
-
-  try {
-    const resp = await apiGetFirst([
-      `/balances/by_unit?month=${encodeURIComponent(ym)}`,
-      `/balances/by-unit?month=${encodeURIComponent(ym)}`
-    ]);
-
-    const rows = resp?.data ?? resp?.rows ?? resp ?? [];
-
-    if (!rows.length) {
-      empty && empty.classList.remove("hidden");
-      return;
-    }
-
-    for (const r of rows) {
-      const balance = Number(r.balance ?? ((r.total_due || 0) - (r.paid_total || 0)));
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${r.unit_code || ""}</td>
-        <td>${r.month_start || ""}</td>
-        <td>${r.month_end || ""}</td>
-        <td class="text-right">${fmtKes(r.subtotal_rent || 0)}</td>
-        <td class="text-right">${fmtKes(r.late_fees || 0)}</td>
-        <td class="text-right">${fmtKes(r.credits || 0)}</td>
-        <td class="text-right">${fmtKes(r.total_due || 0)}</td>
-        <td class="text-right">${fmtKes(r.paid_total || 0)}</td>
-        <td class="text-right font-semibold">${fmtKes(balance)}</td>
-      `;
-      body.appendChild(tr);
-    }
-  } catch (err) {
-    console.error("loadBalancesByUnit error:", err);
-    body.innerHTML = `<tr><td colspan="9">Error loading balances by unit.</td></tr>`;
-    empty && empty.classList.remove("hidden");
-  }
-}
-
-// ---------- Balances (summary + outstanding-by-tenant) ----------
-async function loadBalances(initial = false) {
-  const monthSelect = $("#balancesMonth"); // balances month dropdown (if present)
-  const empty = $("#balancesEmpty");
-  empty && empty.classList.add("hidden");
-
-  // Optional UI elements
-  const labelEl = $("#balMonthLabel");
-  const dueEl   = $("#balMonthDue");
-  const paidEl  = $("#balMonthCollected");
-  const balEl   = $("#balMonthBalance");
-  const rateEl  = $("#balMonthRate");
-
-  // Outstanding-by-tenant table body (support common IDs)
-  const outBody =
-    $("#outstandingByTenantBody") ||
-    $("#balancesOutstandingBody") ||
-    $("#outstandingBody");
-
-  try {
-    // If dropdown is empty, treat as initial load
-    const needMonths = !!monthSelect && monthSelect.options.length === 0;
-
-    if ((initial || needMonths) && monthSelect) {
-      const raw = await apiGet("/months");
-      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      let months = rows
-        .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
-        .filter(Boolean);
-
-      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
-
-      if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
-      if (!months.length && state.currentMonth) months.push(state.currentMonth);
-      if (!months.length) months.push(yyyymm()); // final fallback
-
-      monthSelect.innerHTML = "";
-      for (const ym of months) {
-        const opt = document.createElement("option");
-        opt.value = ym;
-        opt.textContent = formatMonthLabel(ym);
-        monthSelect.appendChild(opt);
-      }
-
-      monthSelect.value = state.currentMonth || months[0] || yyyymm();
-      wireMonthSelect(monthSelect);
-    }
-
-    // Never allow undefined month
-    const month = (monthSelect?.value || state.currentMonth || yyyymm());
-    if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
-
-    const [overview, outstanding] = await Promise.all([
-      apiGetFirst([
-        `/dashboard/overview?month=${encodeURIComponent(month)}`,
-        `/overview?month=${encodeURIComponent(month)}`
-      ]),
-      apiGetFirst([
-        `/balances/outstanding?month=${encodeURIComponent(month)}`,
-        `/balances/outstanding_by_tenant?month=${encodeURIComponent(month)}`
-      ]).catch(() => ({ data: [] }))
-    ]);
-
-    const ov = overview?.data ?? overview ?? {};
-    const outRows = outstanding?.data ?? outstanding?.rows ?? outstanding ?? [];
-
-    if (labelEl) labelEl.textContent = formatMonthLabel(month);
-
-    const totalDue  = ov.total_due ?? ov.rent_due_total ?? 0;
-    const totalPaid = ov.total_paid ?? ov.amount_paid_total ?? 0;
-
-    // prefer API's balance, else compute
-    const balance = ov.balance_total ?? ov.total_outstanding ?? (Number(totalDue) - Number(totalPaid));
-
-    if (dueEl)  dueEl.textContent  = fmtKes(totalDue);
-    if (paidEl) paidEl.textContent = fmtKes(totalPaid);
-    if (balEl)  balEl.textContent  = fmtKes(balance);
-
-    if (rateEl) {
-      const dueN  = Number(totalDue)  || 0;
-      const paidN = Number(totalPaid) || 0;
-      const rate = (dueN > 0) ? ((paidN / dueN) * 100) : 0;
-      rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
-    }
-
-    // Render outstanding-by-tenant table
-    if (outBody) {
-      outBody.innerHTML = "";
-      for (const r of (outRows || [])) {
-        const tr = document.createElement("tr");
-        const tenant = r.tenant ?? r.tenant_name ?? r.payer_name ?? "";
-        const unit   = r.unit_code ?? r.unit ?? "";
-        const due    = Number(r.total_due ?? r.due_total ?? r.rent_due ?? 0);
-        const paid   = Number(r.paid_total ?? r.total_paid ?? r.amount_paid ?? 0);
-        const bal    = Number(r.balance ?? (due - paid));
-
-        tr.innerHTML = `
-          <td>${tenant}</td>
-          <td>${unit}</td>
-          <td class="text-right">${fmtKes(due)}</td>
-          <td class="text-right">${fmtKes(paid)}</td>
-          <td class="text-right font-semibold">${fmtKes(bal)}</td>
-        `;
-        outBody.appendChild(tr);
-      }
-    }
-  } catch (err) {
-    console.error("loadBalances error:", err);
-    if (empty) {
-      empty.textContent = "Error loading balances.";
       empty.classList.remove("hidden");
     }
   }
