@@ -417,7 +417,7 @@ async function loadRentRoll(initial = false) {
     $("#rentrollBalChip")   && ($("#rentrollBalChip").textContent   = "KES 0 balance");
 
 
-    // ✅ PASTE START: Rent Roll totals (for the currently displayed/filtered rows)
+        // ✅ Rent Roll totals (for the currently displayed/filtered rows)
     const rrCountEl = $("#rentrollCountChip");
     const rrDueEl   = $("#rentrollDueChip");
     const rrPaidEl  = $("#rentrollPaidChip");
@@ -431,20 +431,37 @@ async function loadRentRoll(initial = false) {
 
     const rrCount = filtered.length;
 
-    // due = rent + late_fees (credits not shown in table, so we keep it simple)
-    const rrDue = filtered.reduce((s, r) =>
-      s + toNum(r.subtotal_rent) + toNum(r.late_fees), 0);
+    // Prefer total_due if API provides it (it usually does)
+    const rrDue = filtered.reduce((s, r) => {
+      const td = (r.total_due !== undefined && r.total_due !== null)
+        ? toNum(r.total_due)
+        : (toNum(r.subtotal_rent) + toNum(r.late_fees));
+      return s + td;
+    }, 0);
 
-    const rrBal = filtered.reduce((s, r) => s + toNum(r.balance), 0);
+    // Split balances into outstanding vs credit
+    let outstanding = 0;
+    let credit = 0;
+    for (const r of filtered) {
+      const b = toNum(r.balance);
+      if (b >= 0) outstanding += b;
+      else credit += (-b);
+    }
 
-    // paid = due - balance (clamped at >=0)
-    const rrPaid = Math.max(0, rrDue - rrBal);
+    // Paid applied toward THIS MONTH's due (never exceeds due)
+    const rrPaid = Math.max(0, rrDue - outstanding);
 
     if (rrCountEl) rrCountEl.textContent = String(rrCount);
-    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtKes(rrDue)} due`;
-    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtKes(rrPaid)} paid`;
-    if (rrBalEl)   rrBalEl.textContent   = `KES ${fmtKes(rrBal)} balance`;
-    // ✅ PASTE END
+    if (rrDueEl)   rrDueEl.textContent   = `${fmtKes(rrDue)} due`;
+    if (rrPaidEl)  rrPaidEl.textContent  = `${fmtKes(rrPaid)} paid`;
+
+    // Show either balance OR credit (more intuitive than negative balance)
+    if (rrBalEl) {
+      rrBalEl.textContent =
+        outstanding > 0 ? `${fmtKes(outstanding)} balance`
+        : credit > 0    ? `${fmtKes(credit)} credit`
+        : `${fmtKes(0)} balance`;
+    }
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
