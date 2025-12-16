@@ -837,7 +837,11 @@ document.addEventListener("DOMContentLoaded", () => {
   loadLeases();
   loadPayments(true);
   loadRentRoll(true);
-  if (typeof loadBalances === "function") loadBalances(true);
+  if (typeof loadBalances === "function") {
+  loadBalances(true);
+  } else {
+    console.warn("loadBalances() is not defined — skipping initial balances load");
+  }
   loadBalancesByUnit();
 
   // Reload buttons
