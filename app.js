@@ -409,7 +409,42 @@ async function loadRentRoll(initial = false) {
       return true;
     });
 
-    if (countChip) countChip.textContent = String(filtered.length);
+        if (countChip) countChip.textContent = String(filtered.length);
+
+        $("#rentrollCountChip") && ($("#rentrollCountChip").textContent = "0");
+    $("#rentrollDueChip")   && ($("#rentrollDueChip").textContent   = "KES 0 due");
+    $("#rentrollPaidChip")  && ($("#rentrollPaidChip").textContent  = "KES 0 paid");
+    $("#rentrollBalChip")   && ($("#rentrollBalChip").textContent   = "KES 0 balance");
+
+
+    // ✅ PASTE START: Rent Roll totals (for the currently displayed/filtered rows)
+    const rrCountEl = $("#rentrollCountChip");
+    const rrDueEl   = $("#rentrollDueChip");
+    const rrPaidEl  = $("#rentrollPaidChip");
+    const rrBalEl   = $("#rentrollBalChip");
+
+    const toNum = (v) => {
+      if (v === null || v === undefined) return 0;
+      const n = Number(String(v).replace(/,/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const rrCount = filtered.length;
+
+    // due = rent + late_fees (credits not shown in table, so we keep it simple)
+    const rrDue = filtered.reduce((s, r) =>
+      s + toNum(r.subtotal_rent) + toNum(r.late_fees), 0);
+
+    const rrBal = filtered.reduce((s, r) => s + toNum(r.balance), 0);
+
+    // paid = due - balance (clamped at >=0)
+    const rrPaid = Math.max(0, rrDue - rrBal);
+
+    if (rrCountEl) rrCountEl.textContent = String(rrCount);
+    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtKes(rrDue)} due`;
+    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtKes(rrPaid)} paid`;
+    if (rrBalEl)   rrBalEl.textContent   = `KES ${fmtKes(rrBal)} balance`;
+    // ✅ PASTE END
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
