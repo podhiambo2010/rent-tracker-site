@@ -827,7 +827,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadPayments(true);
   loadRentRoll(true);
   if (typeof loadBalances === "function") {
-  loadBalances(true);
+    loadBalances(true);
   } else {
     console.warn("loadBalances() is not defined — skipping initial balances load");
   }
