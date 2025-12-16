@@ -772,16 +772,28 @@ document.addEventListener("DOMContentLoaded", () => {
   initExports();
   initRowWhatsAppButtons();
 
+  /* -------- initial load -------- */
+document.addEventListener("DOMContentLoaded", () => {
+  initTabs();
+  initApiBaseControls();
+  initMonthPicker();
+  initWhatsAppBuilder();
+  initInvoiceActions();
+  initExports();
+  initRowWhatsAppButtons();
+
   // initial data load
   loadOverview();
   loadLeases();
   loadPayments(true);
   loadRentRoll(true);
+
   if (typeof loadBalances === "function") {
     loadBalances(true);
   } else {
     console.warn("loadBalances() is not defined — skipping initial balances load");
   }
+
   if (typeof loadBalancesByUnit === "function") {
     loadBalancesByUnit();
   } else {
@@ -790,16 +802,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Reload buttons
   $("#reloadLeases")?.addEventListener("click", loadLeases);
+
   $("#reloadBalances")?.addEventListener("click", () => {
     if (typeof loadBalances === "function") loadBalances();
-    if (typeof loadBalancesByUnit === "function") {
-    loadBalancesByUnit();
-  } else {
-    console.warn("loadBalancesByUnit() is not defined — skipping balances-by-unit load");
-  }
+    else console.warn("loadBalances() is not defined — skipping balances load");
 
+    if (typeof loadBalancesByUnit === "function") loadBalancesByUnit();
+    else console.warn("loadBalancesByUnit() is not defined — skipping balances-by-unit load");
   });
-  
+
   $("#reloadOutstandingByTenant")?.addEventListener("click", () => {
     if (typeof loadBalances === "function") loadBalances();
     else console.warn("loadBalances() is not defined — cannot reload outstanding-by-tenant");
