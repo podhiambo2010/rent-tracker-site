@@ -585,6 +585,121 @@ async function loadBalancesByUnit() {
   }
 }
 
+// ---------- Balances (summary + outstanding-by-tenant) ----------
+async function loadBalances(initial = false) {
+  const monthSelect = $("#balancesMonth"); // balances month dropdown (if present)
+  const empty = $("#balancesEmpty");
+  empty && empty.classList.add("hidden");
+
+  // Optional UI elements
+  const labelEl = $("#balMonthLabel");
+  const dueEl   = $("#balMonthDue");
+  const paidEl  = $("#balMonthCollected");
+  const balEl   = $("#balMonthBalance");
+  const rateEl  = $("#balMonthRate");
+
+  // Outstanding-by-tenant table body (support common IDs)
+  const outBody =
+    $("#outstandingByTenantBody") ||
+    $("#balancesOutstandingBody") ||
+    $("#outstandingBody");
+
+  try {
+    // If dropdown is empty, treat as initial load
+    const needMonths = !!monthSelect && monthSelect.options.length === 0;
+
+    if ((initial || needMonths) && monthSelect) {
+      const raw = await apiGet("/months");
+      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+      let months = rows
+        .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
+        .filter(Boolean);
+
+      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
+
+      if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
+      if (!months.length && state.currentMonth) months.push(state.currentMonth);
+      if (!months.length) months.push(yyyymm()); // final fallback
+
+      monthSelect.innerHTML = "";
+      for (const ym of months) {
+        const opt = document.createElement("option");
+        opt.value = ym;
+        opt.textContent = formatMonthLabel(ym);
+        monthSelect.appendChild(opt);
+      }
+
+      monthSelect.value = state.currentMonth || months[0] || yyyymm();
+      wireMonthSelect(monthSelect);
+    }
+
+    // Never allow undefined month
+    const month = (monthSelect?.value || state.currentMonth || yyyymm());
+    if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
+
+    const [overview, outstanding] = await Promise.all([
+      apiGetFirst([
+        `/dashboard/overview?month=${encodeURIComponent(month)}`,
+        `/overview?month=${encodeURIComponent(month)}`
+      ]),
+      apiGetFirst([
+        `/balances/outstanding?month=${encodeURIComponent(month)}`,
+        `/balances/outstanding_by_tenant?month=${encodeURIComponent(month)}`
+      ]).catch(() => ({ data: [] }))
+    ]);
+
+    const ov = overview?.data ?? overview ?? {};
+    const outRows = outstanding?.data ?? outstanding?.rows ?? outstanding ?? [];
+
+    if (labelEl) labelEl.textContent = formatMonthLabel(month);
+
+    const totalDue  = ov.total_due ?? ov.rent_due_total ?? 0;
+    const totalPaid = ov.total_paid ?? ov.amount_paid_total ?? 0;
+
+    // prefer API's balance, else compute
+    const balance = ov.balance_total ?? ov.total_outstanding ?? (Number(totalDue) - Number(totalPaid));
+
+    if (dueEl)  dueEl.textContent  = fmtKes(totalDue);
+    if (paidEl) paidEl.textContent = fmtKes(totalPaid);
+    if (balEl)  balEl.textContent  = fmtKes(balance);
+
+    if (rateEl) {
+      const dueN  = Number(totalDue)  || 0;
+      const paidN = Number(totalPaid) || 0;
+      const rate = (dueN > 0) ? ((paidN / dueN) * 100) : 0;
+      rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+    }
+
+    // Render outstanding-by-tenant table
+    if (outBody) {
+      outBody.innerHTML = "";
+      for (const r of (outRows || [])) {
+        const tr = document.createElement("tr");
+        const tenant = r.tenant ?? r.tenant_name ?? r.payer_name ?? "";
+        const unit   = r.unit_code ?? r.unit ?? "";
+        const due    = Number(r.total_due ?? r.due_total ?? r.rent_due ?? 0);
+        const paid   = Number(r.paid_total ?? r.total_paid ?? r.amount_paid ?? 0);
+        const bal    = Number(r.balance ?? (due - paid));
+
+        tr.innerHTML = `
+          <td>${tenant}</td>
+          <td>${unit}</td>
+          <td class="text-right">${fmtKes(due)}</td>
+          <td class="text-right">${fmtKes(paid)}</td>
+          <td class="text-right font-semibold">${fmtKes(bal)}</td>
+        `;
+        outBody.appendChild(tr);
+      }
+    }
+  } catch (err) {
+    console.error("loadBalances error:", err);
+    if (empty) {
+      empty.textContent = "Error loading balances.";
+      empty.classList.remove("hidden");
+    }
+  }
+}
+
 /* -------- WhatsApp ad-hoc builder -------- */
 function initWhatsAppBuilder() {
   const btn = $("#waBuild");
