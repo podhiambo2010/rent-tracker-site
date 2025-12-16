@@ -415,11 +415,18 @@ async function loadRentRoll(initial = false) {
 
     if (countChip) countChip.textContent = String(filtered.length);
 
-   // ✅ Rent Roll totals (credits-safe, paid never exceeds due)
-  const rrCountEl = $("#rentrollCountChip");
-  const rrDueEl   = $("#rentrollDueChip");
-  const rrPaidEl  = $("#rentrollPaidChip");
-  const rrBalEl   = $("#rentrollBalChip");
+     // ✅ Rent Roll totals chips (support multiple possible HTML IDs)
+const rrCountEl =
+  $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
+
+const rrDueEl =
+  $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
+
+const rrPaidEl =
+  $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
+
+const rrBalEl =
+  $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
 
   const toNum = (v) => {
     if (v === null || v === undefined) return 0;
