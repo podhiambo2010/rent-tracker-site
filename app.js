@@ -113,7 +113,7 @@ function reloadAllMonthViews() {
   loadOverview();
   loadPayments();
   loadRentRoll();
-  loadBalances();
+  if (typeof loadBalances === "function") loadBalances();
   loadBalancesByUnit();
 }
 
