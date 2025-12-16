@@ -91,28 +91,10 @@
       min-width: 150px;
     }
 
-    /* You were using this class but it wasn't defined */
-    .kpi-row{
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-      align-items:center;
-    }
-
     .bar-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .chip{background:var(--chip);border:1px solid var(--bd);padding:7px 10px;border-radius:999px;color:#cfe0ff}
     .muted{color:var(--muted)}
     .hidden{display:none!important}
-
-    /* Simple pill style (used in summaries) */
-    .pill{
-      background:var(--panel-2);
-      border:1px solid var(--bd);
-      border-radius:999px;
-      padding:6px 10px;
-      font-size:13px;
-      color:var(--text);
-    }
 
     /* Tables */
     .table-wrap{max-height:60vh;overflow:auto;border-radius:12px}
@@ -143,14 +125,14 @@
     .status.ok{background:rgba(34,197,94,.08);color:#86efac}
     .status.due{background:rgba(239,68,68,.08);color:#fecaca}
 
-    .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px;align-items:center}
+    .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
 
     /* Payments totals chips (right side of filters row) */
     .payments-totals{
       display:flex;
       gap:10px;
       align-items:center;
-      margin-left:auto; /* pushes to the far right in the flex row */
+      margin-left:auto;
     }
 
     /* Rent Roll totals chips (right side of filters row) */
@@ -158,7 +140,7 @@
       display:flex;
       gap:10px;
       align-items:center;
-      margin-left:auto; /* pushes to the far right in the flex row */
+      margin-left:auto;
     }
 
     .filters input,.filters select{
@@ -187,14 +169,6 @@
     }
     #monthPicker::-webkit-calendar-picker-indicator{
       filter:invert(1);
-    }
-
-    /* Logs / previews */
-    #dunningLog,#dunningOut{
-      max-height:40vh;overflow:auto;
-      background:#0b1020;color:#e6edf3;
-      border:1px solid rgba(255,255,255,.18);
-      border-radius:12px;padding:12px
     }
 
     @media (max-width:980px){
@@ -271,7 +245,6 @@
           <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
         </div>
 
-        <!-- Monthly Collection Summary (Overview card) -->
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
         <div id="collection-summary-month">
           <div><strong id="summaryMonthLabel">—</strong></div>
@@ -340,7 +313,6 @@
         <div class="bar-flex">
           <h2>Rent Roll</h2><span class="chip" id="rentrollCount">—</span>
         </div>
-
         <div class="filters">
           <select id="rentrollMonth"></select>
           <input id="rentrollTenant" placeholder="Tenant contains…"/>
@@ -390,7 +362,6 @@
           <select id="balancesMonth"></select>
         </div>
 
-        <!-- Per-tenant balances table -->
         <div class="table-wrap" style="margin-top:12px;">
           <table>
             <thead>
@@ -407,33 +378,6 @@
         </div>
         <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
 
-        <!-- Balances by Unit (This Month) -->
-        <div style="margin-top:24px;">
-          <h3>Balances by Unit (This Month)</h3>
-
-          <div class="table-wrap" style="margin-top:12px;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Unit</th>
-                  <th>Month start</th>
-                  <th>Month end</th>
-                  <th class="num">Rent</th>
-                  <th class="num">Late fees</th>
-                  <th class="num">Credits</th>
-                  <th class="num">Total due</th>
-                  <th class="num">Paid</th>
-                  <th class="num">Balance</th>
-                </tr>
-              </thead>
-              <tbody id="balancesByUnitBody"></tbody>
-            </table>
-          </div>
-
-          <div id="balancesByUnitEmpty" class="empty hidden">No balances found for this month.</div>
-        </div>
-
-        <!-- This month totals card (all tenants) -->
         <div style="margin-top:24px;">
           <h3>This month totals (all tenants)</h3>
           <div id="balances-summary" class="kpi-row">
@@ -443,20 +387,15 @@
             <div class="chip" id="balMonthBalance">KES 0 balance</div>
             <div class="chip" id="balMonthRate">0.0% collection rate</div>
           </div>
-          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">
-            Last updated: —
-          </p>
+          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
         </div>
 
-        <!-- Outstanding by tenant (this month) -->
         <div class="bar-flex" style="margin-top:24px;">
           <h3>Outstanding by tenant (this month)</h3>
           <span class="chip" id="outstandingMonthLabel">—</span>
           <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
         </div>
-        <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">
-          Last updated: —
-        </p>
+        <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
 
         <div class="table-wrap">
           <table>
@@ -509,22 +448,32 @@
   </main>
 </div>
 
-<!-- Small helpers available before app.js -->
+<!-- Safe helpers available before app.js (NO API_BASE const here to avoid crashes) -->
 <script>
-  const API_BASE = "https://rent-tracker-api-16i0.onrender.com";
-  function getAdminToken(){
+(function(){
+  // Provide safe token helpers without redeclaring app.js globals
+  window.getAdminToken = window.getAdminToken || function(){
     let t = localStorage.getItem("admin_token");
     if(!t){
       t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
       if(t) localStorage.setItem("admin_token", t);
     }
     return t || "";
+  };
+  window.setAdminToken = window.setAdminToken || function(t){
+    localStorage.setItem("admin_token", t);
+  };
+
+  // Bind Admin Token button once
+  const btn = document.getElementById("setAdminTokenBtn");
+  if(btn && !btn.dataset.bound){
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", ()=>{
+      const t = prompt("Paste ADMIN_TOKEN");
+      if(t) window.setAdminToken(t);
+    });
   }
-  function setAdminToken(t){ localStorage.setItem("admin_token", t); }
-  document.getElementById("setAdminTokenBtn")?.addEventListener("click", ()=>{
-    const t = prompt("Paste ADMIN_TOKEN");
-    if(t) setAdminToken(t);
-  });
+})();
 </script>
 
 <!-- App logic (must be last) -->
