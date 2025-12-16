@@ -762,17 +762,7 @@ function initMonthPicker() {
   }
 }
 
-/* -------- initial load -------- */
-document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
-  initApiBaseControls();
-  initMonthPicker();
-  initWhatsAppBuilder();
-  initInvoiceActions();
-  initExports();
-  initRowWhatsAppButtons();
-
-  /* -------- initial load -------- */
+ /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initApiBaseControls();
