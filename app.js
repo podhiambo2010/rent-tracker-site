@@ -535,7 +535,7 @@ async function loadBalances(initial = false) {
   const dueEl   = $("#balMonthDue");
   const paidEl  = $("#balMonthCollected");
   const balEl   = $("#balMonthBalance");
-  const rateEl  = $("#balMonthRate");
+  const rateEl  = $("#balMonthRate"); // ✅ already correct
 
   // Outstanding-by-tenant table body (support common IDs)
   const outBody =
@@ -550,7 +550,10 @@ async function loadBalances(initial = false) {
     if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      let months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
+      let months = rows
+        .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
+        .filter(Boolean);
+
       months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
@@ -596,6 +599,14 @@ async function loadBalances(initial = false) {
     if (dueEl)  dueEl.textContent  = fmtKes(totalDue);
     if (paidEl) paidEl.textContent = fmtKes(totalPaid);
     if (balEl)  balEl.textContent  = fmtKes(balance);
+
+    // ✅ ADD THIS (rate display)
+    if (rateEl) {
+      const dueN  = Number(totalDue)  || 0;
+      const paidN = Number(totalPaid) || 0;
+      const rate = (dueN > 0) ? ((paidN / dueN) * 100) : 0;
+      rateEl.textContent = `${rate.toFixed(1)}% collection rate`;
+    }
 
     if (outBody) {
       outBody.innerHTML = "";
