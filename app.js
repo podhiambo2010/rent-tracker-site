@@ -829,6 +829,112 @@ async function loadBalancesByUnit() {
   }
 }
 
+/* -------- balances (tenant + outstanding) -------- */
+async function loadBalances(initial = false) {
+  // If balances tab elements are missing, do nothing (safe)
+  const balancesBody = $("#balancesBody");
+  const outstandingBody = $("#outstandingBody");
+
+  // Even if one section doesn't exist, try the other
+  const ym = ($("#balancesMonth")?.value || state.currentMonth);
+  if (!ym) return;
+
+  // 1) Load "Balances" table (Tenant, Due, Paid, Balance, Rate)
+  if (balancesBody) {
+    const empty = $("#balancesEmpty");
+    balancesBody.innerHTML = "";
+    empty && empty.classList.add("hidden");
+
+    try {
+      const resp = await apiGetFirst([
+        `/balances?month=${encodeURIComponent(ym)}`,
+        `/balances/by_tenant?month=${encodeURIComponent(ym)}`,
+        `/balances/tenants?month=${encodeURIComponent(ym)}`
+      ]);
+
+      const rows = Array.isArray(resp) ? resp : (resp.rows || resp.data || resp.items || []);
+      if (!rows.length) {
+        empty && empty.classList.remove("hidden");
+      } else {
+        let totalDue = 0, totalPaid = 0, totalBal = 0;
+
+        for (const r of rows) {
+          const tenant = r.tenant ?? r.tenant_name ?? r.payer_name ?? "—";
+          const due = Number(r.rent_due ?? r.due ?? r.total_due ?? 0) || 0;
+          const paid = Number(r.paid ?? r.paid_total ?? r.collected ?? 0) || 0;
+          const bal = Number(r.balance ?? (due - paid)) || 0;
+          const rate = (due > 0) ? (paid / due) : 0;
+
+          totalDue += due;
+          totalPaid += paid;
+          totalBal += bal;
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${tenant}</td>
+            <td class="num">${fmtKes(due)}</td>
+            <td class="num">${fmtKes(paid)}</td>
+            <td class="num">${fmtKes(bal)}</td>
+            <td class="num">${fmtPct(rate)}</td>
+          `;
+          balancesBody.appendChild(tr);
+        }
+
+        // Update "This month totals (all tenants)" chips if present
+        $("#balMonthLabel") && ($("#balMonthLabel").textContent = formatMonthLabel(ym));
+        $("#balMonthDue") && ($("#balMonthDue").textContent = `${fmtKes(totalDue)} due`);
+        $("#balMonthCollected") && ($("#balMonthCollected").textContent = `${fmtKes(totalPaid)} collected`);
+        $("#balMonthBalance") && ($("#balMonthBalance").textContent = `${fmtKes(totalBal)} balance`);
+        $("#balMonthRate") && ($("#balMonthRate").textContent = `${fmtPct(totalDue > 0 ? totalPaid / totalDue : 0)} collection rate`);
+        $("#balancesLastUpdated") && ($("#balancesLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
+      }
+    } catch (e) {
+      console.error("loadBalances: failed to load balances table", e);
+      empty && empty.classList.remove("hidden");
+    }
+  }
+
+  // 2) Load "Outstanding by tenant" table
+  if (outstandingBody) {
+    const empty = $("#outstandingEmpty");
+    outstandingBody.innerHTML = "";
+    empty && empty.classList.add("hidden");
+
+    try {
+      const resp = await apiGetFirst([
+        `/outstanding/by_tenant?month=${encodeURIComponent(ym)}`,
+        `/balances/outstanding_by_tenant?month=${encodeURIComponent(ym)}`,
+        `/balances/outstanding?month=${encodeURIComponent(ym)}`
+      ]);
+
+      const rows = Array.isArray(resp) ? resp : (resp.rows || resp.data || resp.items || []);
+      if (!rows.length) {
+        empty && empty.classList.remove("hidden");
+      } else {
+        for (const r of rows) {
+          const tenant = r.tenant ?? r.tenant_name ?? "—";
+          const amt = Number(r.outstanding ?? r.balance ?? r.amount ?? 0) || 0;
+          const rate = Number(r.collection_rate ?? r.rate ?? 0) || 0;
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${tenant}</td>
+            <td class="num">${fmtKes(amt)}</td>
+            <td class="num">${fmtPct(rate)}</td>
+          `;
+          outstandingBody.appendChild(tr);
+        }
+
+        $("#outstandingMonthLabel") && ($("#outstandingMonthLabel").textContent = formatMonthLabel(ym));
+        $("#outstandingLastUpdated") && ($("#outstandingLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
+      }
+    } catch (e) {
+      console.error("loadBalances: failed to load outstanding-by-tenant", e);
+      empty && empty.classList.remove("hidden");
+    }
+  }
+}
+
  /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
