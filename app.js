@@ -370,7 +370,9 @@ async function loadRentRoll(initial = false) {
   if (countChip) countChip.textContent = "—";
 
   try {
-    if (initial && monthSelect) {
+    // ✅ IMPORTANT: if month dropdown is empty, treat as initial load
+    const needMonths = !!monthSelect && monthSelect.options.length === 0;
+    if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
       const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
@@ -379,6 +381,7 @@ async function loadRentRoll(initial = false) {
 
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
       if (!months.length && state.currentMonth) months.push(state.currentMonth);
+      if (!months.length) months.push(yyyymm()); // final fallback
 
       for (const ym of months) {
         const opt = document.createElement("option");
@@ -391,7 +394,8 @@ async function loadRentRoll(initial = false) {
       wireMonthSelect(monthSelect);
     }
 
-    const month = (monthSelect?.value || state.currentMonth);
+    // ✅ ALWAYS have a usable month (never blank/undefined)
+    let month = (monthSelect?.value || state.currentMonth || yyyymm());
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
@@ -409,67 +413,62 @@ async function loadRentRoll(initial = false) {
       return true;
     });
 
-        if (countChip) countChip.textContent = String(filtered.length);
-
-        $("#rentrollCountChip") && ($("#rentrollCountChip").textContent = "0");
-    $("#rentrollDueChip")   && ($("#rentrollDueChip").textContent   = "KES 0 due");
-    $("#rentrollPaidChip")  && ($("#rentrollPaidChip").textContent  = "KES 0 paid");
-    $("#rentrollBalChip")   && ($("#rentrollBalChip").textContent   = "KES 0 balance");
+    if (countChip) countChip.textContent = String(filtered.length);
 
     // ✅ Rent Roll totals (credits-safe, paid never exceeds due)
-  const rrCountEl = $("#rentrollCountChip");
-  const rrDueEl   = $("#rentrollDueChip");
-  const rrPaidEl  = $("#rentrollPaidChip");
-  const rrBalEl   = $("#rentrollBalChip");
+    const rrCountEl = $("#rentrollCountChip");
+    const rrDueEl   = $("#rentrollDueChip");
+    const rrPaidEl  = $("#rentrollPaidChip");
+    const rrBalEl   = $("#rentrollBalChip");
 
-  const toNum = (v) => {
-    if (v === null || v === undefined) return 0;
-    const n = Number(String(v).replace(/,/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
+    const toNum = (v) => {
+      if (v === null || v === undefined) return 0;
+      const s = String(v).replace(/KES/gi, "").replace(/[^\d.-]/g, "");
+      const n = Number(s);
+      return Number.isFinite(n) ? n : 0;
+    };
 
-  const rrCount = filtered.length;
+    const rrCount = filtered.length;
 
-  let due = 0;
-  let paid = 0;
-  let outstanding = 0; // balances > 0
-  let credit = 0;      // balances < 0 converted to positive
+    let due = 0;
+    let paid = 0;
+    let outstanding = 0; // balances > 0
+    let credit = 0;      // balances < 0 converted to positive
 
-  for (const r of filtered) {
-    const subtotal = toNum(r.subtotal_rent);
-    const late     = toNum(r.late_fees);
+    for (const r of filtered) {
+      const subtotal = toNum(r.subtotal_rent);
+      const late     = toNum(r.late_fees);
 
-    // Prefer total_due if provided; otherwise derive (subtract credits if present)
-    const hasTD = (r.total_due !== undefined && r.total_due !== null);
-    const creditsField = (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
+      const hasTD = (r.total_due !== undefined && r.total_due !== null);
+      const creditsField = (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
 
-    let rowDue = hasTD ? toNum(r.total_due) : (subtotal + late - creditsField);
-    if (!Number.isFinite(rowDue)) rowDue = 0;
-    if (rowDue < 0) rowDue = 0;
+      let rowDue = hasTD ? toNum(r.total_due) : (subtotal + late - creditsField);
+      if (!Number.isFinite(rowDue)) rowDue = 0;
+      if (rowDue < 0) rowDue = 0;
 
-    const b = toNum(r.balance);
+      const b = toNum(r.balance);
 
-    due += rowDue;
+      due += rowDue;
 
-    if (b >= 0) {
-      outstanding += b;
-      paid += Math.max(0, rowDue - b);
-    }  else {
-      paid += rowDue;
-      credit += (-b);
+      if (b >= 0) {
+        outstanding += b;
+        paid += Math.max(0, rowDue - b);
+      } else {
+        paid += rowDue;
+        credit += (-b);
+      }
     }
-  }
 
-  if (rrCountEl) rrCountEl.textContent = String(rrCount);
-  if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtKes(due)} due`;
-  if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtKes(paid)} paid`;
+    if (rrCountEl) rrCountEl.textContent = String(rrCount);
+    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtKes(due)} due`;
+    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtKes(paid)} paid`;
 
-  if (rrBalEl) {
-    rrBalEl.textContent =
-      outstanding > 0 ? `KES ${fmtKes(outstanding)} balance`
-      : credit > 0    ? `KES ${fmtKes(credit)} credit`
-      : `KES ${fmtKes(0)} balance`;
-  }
+    if (rrBalEl) {
+      rrBalEl.textContent =
+        outstanding > 0 ? `KES ${fmtKes(outstanding)} balance`
+        : credit > 0    ? `KES ${fmtKes(credit)} credit`
+        : `KES ${fmtKes(0)} balance`;
+    }
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
