@@ -357,11 +357,13 @@ months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
 
 async function loadRentRoll(initial = false) {
-  const monthSelect = $("#rentrollMonth");
-  const tenantFilter = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
+  const monthSelect    = $("#rentrollMonth");
+  const tenantFilter   = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
   const propertyFilter = ($("#rentrollProperty")?.value || "").trim().toLowerCase();
-  const body = $("#rentrollBody");
+  const body  = $("#rentrollBody");
   const empty = $("#rentrollEmpty");
+
+  // Keep (older) countChip if it exists, but totals use the chips below
   const countChip = $("#rentrollCount");
 
   if (!body) return;
@@ -370,27 +372,52 @@ async function loadRentRoll(initial = false) {
   empty && empty.classList.add("hidden");
   if (countChip) countChip.textContent = "—";
 
+  // ✅ Rent Roll totals chips (support multiple possible HTML IDs)
+  const rrCountEl =
+    $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
+
+  const rrDueEl =
+    $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
+
+  const rrPaidEl =
+    $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
+
+  const rrBalEl =
+    $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
+
+  const toNum = (v) => {
+    if (v === null || v === undefined) return 0;
+    const n = Number(String(v).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
+  const fmtNumOnly = (n) => {
+    const s = (typeof fmtKes === "function")
+      ? String(fmtKes(n))
+      : String(Number(toNum(n)).toLocaleString());
+    return s.replace(/^KES\s*/i, "").trim();
+  };
+
   try {
-    // ✅ IMPORTANT: if month dropdown is empty, treat as initial load
+    // ✅ Load month dropdown only when needed
     const needMonths = !!monthSelect && monthSelect.options.length === 0;
     if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
-      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
 
-      // accept {ym} OR {month} OR plain strings
-      let months = rows
+      // handle: ["2025-12"] OR {ok:true,data:[...]} OR {data:[...]}
+      const list = Array.isArray(raw) ? raw : (raw?.data || raw?.rows || []);
+      let months = (list || [])
         .map(r => (typeof r === "string" ? r : (r?.month ?? r?.ym)))
         .filter(Boolean);
 
-      // newest first
       months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
-
-      monthSelect.innerHTML = "";
 
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
       if (!months.length && state.currentMonth) months.push(state.currentMonth);
       if (!months.length) months.push(yyyymm()); // final fallback
 
+      monthSelect.innerHTML = "";
       for (const ym of months) {
         const opt = document.createElement("option");
         opt.value = ym;
@@ -403,12 +430,14 @@ async function loadRentRoll(initial = false) {
     }
 
     // ✅ ALWAYS have a usable month (never blank/undefined)
-    let month = (monthSelect?.value || state.currentMonth || yyyymm());
+    const month = (monthSelect?.value || state.currentMonth || yyyymm());
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
-    const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
+    // ✅ Fetch rent roll
+    const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}&limit=5000`);
     const rows = resp?.data ?? (Array.isArray(resp) ? resp : []);
 
+    // ✅ Apply filters
     const filtered = (rows || []).filter((r) => {
       if (tenantFilter) {
         const t = (r.tenant || "").toLowerCase();
@@ -421,37 +450,11 @@ async function loadRentRoll(initial = false) {
       return true;
     });
 
+    // ✅ Count chips
     if (countChip) countChip.textContent = String(filtered.length);
+    if (rrCountEl) rrCountEl.textContent = String(filtered.length);
 
-    // ✅ Rent Roll totals chips (match EXACT words used in app.js / HTML)
-    const rrCountEl =
-      $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
-
-    const rrDueEl =
-      $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
-
-    const rrPaidEl =
-      $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
-
-    const rrBalEl =
-      $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
-
-    const toNum = (v) => {
-      if (v === null || v === undefined) return 0;
-      const n = Number(String(v).replace(/,/g, ""));
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
-    const fmtNumOnly = (n) => {
-      const s = (typeof fmtKes === "function")
-        ? String(fmtKes(n))
-        : String(Number(toNum(n)).toLocaleString());
-      return s.replace(/^KES\s*/i, "").trim();
-    };
-
-    const rrCount = filtered.length;
-
+    // ✅ Totals (credits-safe, paid never exceeds due)
     let due = 0;
     let paid = 0;
     let outstanding = 0; // balances > 0
@@ -478,35 +481,38 @@ async function loadRentRoll(initial = false) {
         outstanding += b;
         paid += Math.max(0, rowDue - b);
       } else {
-        // negative balance = credit
+        // credit row: treat as fully paid, track credit separately
         paid += rowDue;
         credit += (-b);
       }
     }
 
-    if (rrCountEl) rrCountEl.textContent = String(rrCount);
-    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtNumOnly(due)} due`;
-    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtNumOnly(paid)} paid`;
+    if (rrDueEl)  rrDueEl.textContent  = `KES ${fmtNumOnly(due)} due`;
+    if (rrPaidEl) rrPaidEl.textContent = `KES ${fmtNumOnly(paid)} paid`;
 
     if (rrBalEl) {
-      rrBalEl.textContent =
-        outstanding > 0 ? `KES ${fmtNumOnly(outstanding)} balance`
-        : credit > 0    ? `KES ${fmtNumOnly(credit)} credit`
-        : `KES 0 balance`;
-    }
+  const parts = [];
+  if (outstanding > 0) parts.push(`KES ${fmtNumOnly(outstanding)} balance`);
+  if (credit > 0)      parts.push(`KES ${fmtNumOnly(credit)} credit`);
 
+  rrBalEl.textContent = parts.length ? parts.join(" • ") : `KES 0 balance`;
+}
+
+    // ✅ Empty state
     if (!filtered.length) {
+      empty && (empty.textContent = "No rent-roll data for this month.");
       empty && empty.classList.remove("hidden");
       return;
     }
 
+    // ✅ Render table
     for (const r of filtered) {
       const period = r.period_start
         ? formatMonthLabel(String(r.period_start).slice(0, 7))
         : "";
 
       const balance = Number(r.balance || 0);
-      const status = (r.status || "").toLowerCase();
+      const status  = (r.status || "").toLowerCase();
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -533,6 +539,7 @@ async function loadRentRoll(initial = false) {
   } catch (err) {
     console.error("loadRentRoll error:", err);
     if (countChip) countChip.textContent = "0";
+    if (rrCountEl) rrCountEl.textContent = "0";
     if (empty) {
       empty.textContent = "Error loading rent-roll.";
       empty.classList.remove("hidden");
