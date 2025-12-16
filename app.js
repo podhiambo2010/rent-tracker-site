@@ -533,7 +533,10 @@ async function loadBalances(initial = false) {
     $("#outstandingBody");
 
   try {
-    if (initial && monthSelect) {
+    // ✅ IMPORTANT: if dropdown is empty, treat as initial load
+    const needMonths = !!monthSelect && monthSelect.options.length === 0;
+
+    if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
       let months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
@@ -541,6 +544,7 @@ async function loadBalances(initial = false) {
 
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
       if (!months.length && state.currentMonth) months.push(state.currentMonth);
+      if (!months.length) months.push(yyyymm()); // final fallback
 
       monthSelect.innerHTML = "";
       for (const ym of months) {
@@ -554,10 +558,10 @@ async function loadBalances(initial = false) {
       wireMonthSelect(monthSelect);
     }
 
-    const month = (monthSelect?.value || state.currentMonth);
+    // ✅ NEVER allow undefined month
+    const month = (monthSelect?.value || state.currentMonth || yyyymm());
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
-    // Use fallbacks (your backend may use dashboard/overview etc.)
     const [overview, outstanding] = await Promise.all([
       apiGetFirst([
         `/dashboard/overview?month=${encodeURIComponent(month)}`,
@@ -566,14 +570,14 @@ async function loadBalances(initial = false) {
       apiGetFirst([
         `/balances/outstanding?month=${encodeURIComponent(month)}`,
         `/balances/outstanding_by_tenant?month=${encodeURIComponent(month)}`
-      ]).catch(() => ({ data: [] })) // allow balances page even if endpoint missing
+      ]).catch(() => ({ data: [] }))
     ]);
 
     const ov = overview?.data ?? overview ?? {};
     const outRows = outstanding?.data ?? outstanding?.rows ?? outstanding ?? [];
 
-    // Optional summary
     if (labelEl) labelEl.textContent = formatMonthLabel(month);
+
     const totalDue  = ov.total_due ?? ov.rent_due_total ?? 0;
     const totalPaid = ov.total_paid ?? ov.amount_paid_total ?? 0;
     const balance   = ov.balance_total ?? ov.total_outstanding ?? (totalDue - totalPaid);
@@ -582,7 +586,6 @@ async function loadBalances(initial = false) {
     if (paidEl) paidEl.textContent = fmtKes(totalPaid);
     if (balEl)  balEl.textContent  = fmtKes(balance);
 
-    // Render outstanding-by-tenant if table exists
     if (outBody) {
       outBody.innerHTML = "";
       for (const r of (outRows || [])) {
