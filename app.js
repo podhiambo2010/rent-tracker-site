@@ -839,7 +839,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeof loadBalances === "function") loadBalances();
     loadBalancesByUnit();
   });
-  $("#reloadOutstandingByTenant")?.addEventListener("click", loadBalances);
+  
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () => {
+    if (typeof loadBalances === "function") loadBalances();
+    else console.warn("loadBalances() is not defined — cannot reload outstanding-by-tenant");
+  });
 
   $("#applyPayments")?.addEventListener("click", () => loadPayments());
   $("#clearPayments")?.addEventListener("click", () => {
