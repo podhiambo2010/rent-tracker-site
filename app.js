@@ -416,59 +416,69 @@ async function loadRentRoll(initial = false) {
     if (countChip) countChip.textContent = String(filtered.length);
 
     // ✅ Rent Roll totals (credits-safe, paid never exceeds due)
-    const rrCountEl = $("#rentrollCountChip");
-    const rrDueEl   = $("#rentrollDueChip");
-    const rrPaidEl  = $("#rentrollPaidChip");
-    const rrBalEl   = $("#rentrollBalChip");
+const rrCountEl = $("#rentrollCountChip");
+const rrDueEl   = $("#rentrollDueChip");
+const rrPaidEl  = $("#rentrollPaidChip");
+const rrBalEl   = $("#rentrollBalChip");
 
-    const toNum = (v) => {
-      if (v === null || v === undefined) return 0;
-      const s = String(v).replace(/KES/gi, "").replace(/[^\d.-]/g, "");
-      const n = Number(s);
-      return Number.isFinite(n) ? n : 0;
-    };
+const toNum = (v) => {
+  if (v === null || v === undefined) return 0;
+  const n = Number(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
 
-    const rrCount = filtered.length;
+// returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
+const fmtNumOnly = (n) => {
+  const s = (typeof fmtKes === "function")
+    ? String(fmtKes(n))
+    : String(Number(toNum(n)).toLocaleString());
+  return s.replace(/^KES\s*/i, "").trim();
+};
 
-    let due = 0;
-    let paid = 0;
-    let outstanding = 0; // balances > 0
-    let credit = 0;      // balances < 0 converted to positive
+const rrCount = filtered.length;
 
-    for (const r of filtered) {
-      const subtotal = toNum(r.subtotal_rent);
-      const late     = toNum(r.late_fees);
+let due = 0;
+let paid = 0;
+let outstanding = 0; // balances > 0
+let credit = 0;      // balances < 0 turned positive
 
-      const hasTD = (r.total_due !== undefined && r.total_due !== null);
-      const creditsField = (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
+for (const r of filtered) {
+  const subtotal = toNum(r.subtotal_rent);
+  const late     = toNum(r.late_fees);
 
-      let rowDue = hasTD ? toNum(r.total_due) : (subtotal + late - creditsField);
-      if (!Number.isFinite(rowDue)) rowDue = 0;
-      if (rowDue < 0) rowDue = 0;
+  const creditsField =
+    (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
 
-      const b = toNum(r.balance);
+  const rowDueRaw =
+    (r.total_due !== undefined && r.total_due !== null)
+      ? toNum(r.total_due)
+      : (subtotal + late - creditsField);
 
-      due += rowDue;
+  const rowDue = Math.max(0, rowDueRaw);
+  const b = toNum(r.balance);
 
-      if (b >= 0) {
-        outstanding += b;
-        paid += Math.max(0, rowDue - b);
-      } else {
-        paid += rowDue;
-        credit += (-b);
-      }
-    }
+  due += rowDue;
 
-    if (rrCountEl) rrCountEl.textContent = String(rrCount);
-    if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtKes(due)} due`;
-    if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtKes(paid)} paid`;
+  if (b >= 0) {
+    outstanding += b;
+    paid += Math.max(0, rowDue - b);
+  } else {
+    paid += rowDue;
+    credit += (-b);
+  }
+}
 
-    if (rrBalEl) {
-      rrBalEl.textContent =
-        outstanding > 0 ? `KES ${fmtKes(outstanding)} balance`
-        : credit > 0    ? `KES ${fmtKes(credit)} credit`
-        : `KES ${fmtKes(0)} balance`;
-    }
+if (rrCountEl) rrCountEl.textContent = String(rrCount);
+if (rrDueEl)   rrDueEl.textContent   = `KES ${fmtNumOnly(due)} due`;
+if (rrPaidEl)  rrPaidEl.textContent  = `KES ${fmtNumOnly(paid)} paid`;
+
+if (rrBalEl) {
+  rrBalEl.textContent =
+    outstanding > 0 ? `KES ${fmtNumOnly(outstanding)} balance`
+    : credit > 0    ? `KES ${fmtNumOnly(credit)} credit`
+    : `KES 0 balance`;
+}
+
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
