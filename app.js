@@ -747,12 +747,13 @@ function initRowWhatsAppButtons() {
   });
 }
 
-/* -------- month picker global -------- */
+/* --------------------------------------------------------------------------
+ * Month picker (global)
+ * -------------------------------------------------------------------------- */
 async function initMonthPicker() {
-  const months = await apiGet("/months"); // or whatever you already use
-  // months should be array like ["2025-12","2025-11",...]
+  const months = await apiGet("/months"); // ["2025-12","2025-11",...]
 
-  // helper
+  // Helper: fill a <select> with month options
   function fillSelect(selectId, values) {
     const sel = document.getElementById(selectId);
     if (!sel) return;
@@ -771,39 +772,42 @@ async function initMonthPicker() {
   fillSelect("rentRollMonth", months);
   fillSelect("paymentsMonth", months);
 
-  // ✅ ADD THIS (Balances picker)
+  // Add Balances picker
   fillSelect("balancesMonth", months);
 
-  // Set defaults (optional, but recommended)
+  // Default month
   const defaultMonth = months?.[0] || new Date().toISOString().slice(0, 7);
-  ["overviewMonth", "rentRollMonth", "paymentsMonth", "balancesMonth"].forEach(id => {
+
+  ["overviewMonth", "rentRollMonth", "paymentsMonth", "balancesMonth"].forEach((id) => {
     const sel = document.getElementById(id);
     if (sel && sel.value !== defaultMonth) sel.value = defaultMonth;
   });
 
-  // ✅ Ensure Balances reloads when month changes
+  // Ensure Balances reloads when month changes
   const bSel = document.getElementById("balancesMonth");
   if (bSel) {
     bSel.addEventListener("change", () => {
-      loadBalances(true);        // the table
-      loadBalancesOverview(true); // if you separate totals, optional
+      loadBalances(true);          // balances table
+      loadBalancesOverview(true);  // balances totals (if separate)
     });
   }
 }
 
-// -------- per-unit balances ("By Unit") --------
+/* --------------------------------------------------------------------------
+ * Per-unit balances ("By Unit")
+ * -------------------------------------------------------------------------- */
 async function loadBalancesByUnit() {
   const body = $("#balancesByUnitBody");
   const empty = $("#balancesByUnitEmpty");
 
-  // If the HTML doesn't have this section yet, just exit quietly.
+  // If the HTML doesn't have this section yet, exit quietly.
   if (!body) return;
 
   body.innerHTML = "";
-  empty && empty.classList.add("hidden");
+  if (empty) empty.classList.add("hidden");
 
   // Use balancesMonth if present, otherwise current global month
-  const ym = ($("#balancesMonth")?.value || state.currentMonth || yyyymm());
+  const ym = $("#balancesMonth")?.value || state.currentMonth || yyyymm();
 
   const toNum = (v) => {
     if (v === null || v === undefined) return 0;
@@ -816,14 +820,14 @@ async function loadBalancesByUnit() {
     const resp = await apiGetFirst([
       `/balances/by-unit?month=${encodeURIComponent(ym)}`,
       `/balances/by_unit?month=${encodeURIComponent(ym)}`,
-      `/balances/byunit?month=${encodeURIComponent(ym)}`
+      `/balances/byunit?month=${encodeURIComponent(ym)}`,
     ]);
 
     const rows = resp?.data ?? (Array.isArray(resp) ? resp : []);
     const list = Array.isArray(rows) ? rows : [];
 
     if (!list.length) {
-      empty && empty.classList.remove("hidden");
+      if (empty) empty.classList.remove("hidden");
       return;
     }
 
@@ -832,12 +836,14 @@ async function loadBalancesByUnit() {
       const unit = r.unit_code || r.unit || "";
       const tenant = r.tenant || r.tenant_name || "";
 
-      const due = (r.due ?? r.total_due ?? r.rent_due);
-      const paid = (r.paid ?? r.total_paid ?? r.amount_paid);
-      const bal = (r.balance ?? r.outstanding ?? 0);
+      const due = r.due ?? r.total_due ?? r.rent_due;
+      const paid = r.paid ?? r.total_paid ?? r.amount_paid;
+      const bal = r.balance ?? r.outstanding ?? 0;
 
       const rate =
-        (r.collection_rate ?? r.rate ?? (toNum(due) > 0 ? (toNum(paid) / toNum(due)) : 0));
+        r.collection_rate ??
+        r.rate ??
+        (toNum(due) > 0 ? toNum(paid) / toNum(due) : 0);
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -853,8 +859,10 @@ async function loadBalancesByUnit() {
     }
   } catch (err) {
     console.error("loadBalancesByUnit error:", err);
-    empty && (empty.textContent = "Error loading balances-by-unit.");
-    empty && empty.classList.remove("hidden");
+    if (empty) {
+      empty.textContent = "Error loading balances-by-unit.";
+      empty.classList.remove("hidden");
+    }
   }
 }
 
