@@ -995,39 +995,31 @@ async function loadBalances(initial = false) {
 document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
   initApiBaseControls();
-
-  // ✅ MUST finish month picker + state.currentMonth before any loads
-  await initMonthPicker();
-
   initWhatsAppBuilder();
   initInvoiceActions();
   initExports();
   initRowWhatsAppButtons();
 
-  // initial data load (now month is guaranteed)
+  // ✅ WAIT for month picker + state.currentMonth to be set
+  await initMonthPicker();
+
+  // ✅ now it is safe to load data (no month=null)
   loadOverview();
   loadLeases();
   loadPayments(true);
   loadRentRoll(true);
+  loadBalances(true);
+  loadBalancesByUnit();
 
-  if (typeof loadBalances === "function") loadBalances(true);
-  if (typeof loadBalancesByUnit === "function") loadBalancesByUnit();
-
-    // Reload buttons
+  // Reload buttons (keep yours)
   $("#reloadLeases")?.addEventListener("click", loadLeases);
 
   $("#reloadBalances")?.addEventListener("click", () => {
-    if (typeof loadBalances === "function") loadBalances();
-    else console.warn("loadBalances() is not defined — skipping balances load");
-
-    if (typeof loadBalancesByUnit === "function") loadBalancesByUnit();
-    else console.warn("loadBalancesByUnit() is not defined — skipping balances-by-unit load");
+    loadBalances();
+    loadBalancesByUnit();
   });
 
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () => {
-    if (typeof loadBalances === "function") loadBalances();
-    else console.warn("loadBalances() is not defined — cannot reload outstanding-by-tenant");
-  });
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () => loadBalances());
 
   $("#applyPayments")?.addEventListener("click", () => loadPayments());
   $("#clearPayments")?.addEventListener("click", () => {
