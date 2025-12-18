@@ -170,7 +170,8 @@ async function loadOverview() {
   const balEl     = $("#summaryMonthBalance");
   const rateEl    = $("#summaryMonthRate");
 
-  const ym = state.currentMonth;
+  const ym = state.currentMonth || yyyymm();
+  if (!state.currentMonth) setCurrentMonth(ym, { triggerReload: false });
 
   try {
     const [leases, payments, rentRollResp, dash] = await Promise.all([
