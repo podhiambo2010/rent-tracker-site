@@ -761,9 +761,19 @@ function initRowWhatsAppButtons() {
  * Month picker (global)
  * -------------------------------------------------------------------------- */
 async function initMonthPicker() {
-  const months = await apiGet("/months"); // ["2025-12","2025-11",...]
+  // /months might be ["2025-12", ...] OR {data:[...]} depending on backend
+  const raw = await apiGet("/months");
+  const monthsArr = Array.isArray(raw) ? raw : (raw?.data || raw?.months || []);
 
-  // Helper: fill a <select> with month options
+  // clean + dedupe + newest first
+  const months = Array.from(new Set((monthsArr || []).filter(Boolean)))
+    .sort((a, b) => b.localeCompare(a));
+
+  const defaultMonth = months[0] || yyyymm();
+
+  // ✅ ensure global state is set before anything tries to use it
+  setCurrentMonth(defaultMonth, { triggerReload: false });
+
   function fillSelect(selectId, values) {
     const sel = document.getElementById(selectId);
     if (!sel) return;
@@ -772,35 +782,24 @@ async function initMonthPicker() {
     for (const m of values) {
       const opt = document.createElement("option");
       opt.value = m;
-      opt.textContent = m;
+      opt.textContent = formatMonthLabel(m); // nicer labels
       sel.appendChild(opt);
     }
+
+    // keep the app's single source of truth
+    sel.value = state.currentMonth || defaultMonth;
+
+    // wire once so changes update state + reload
+    wireMonthSelect(sel);
   }
 
-  // Populate existing pickers (keep yours)
-  fillSelect("overviewMonth", months);
-  fillSelect("rentRollMonth", months);
+  // ✅ Use the IDs that exist in your file (case matters)
   fillSelect("paymentsMonth", months);
-
-  // Add Balances picker
+  fillSelect("rentrollMonth", months);
   fillSelect("balancesMonth", months);
 
-  // Default month
-  const defaultMonth = months?.[0] || new Date().toISOString().slice(0, 7);
-
-  ["overviewMonth", "rentRollMonth", "paymentsMonth", "balancesMonth"].forEach((id) => {
-    const sel = document.getElementById(id);
-    if (sel && sel.value !== defaultMonth) sel.value = defaultMonth;
-  });
-
-  // Ensure Balances reloads when month changes
-  const bSel = document.getElementById("balancesMonth");
-  if (bSel) {
-    bSel.addEventListener("change", () => {
-      loadBalances(true);          // balances table
-      loadBalancesOverview(true);  // balances totals (if separate)
-    });
-  }
+  // If you also have a global picker in HTML, fill it too (safe if missing)
+  fillSelect("monthPicker", months);
 }
 
 /* --------------------------------------------------------------------------
