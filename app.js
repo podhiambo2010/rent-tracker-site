@@ -759,21 +759,21 @@ function initRowWhatsAppButtons() {
 }
 
 /* --------------------------------------------------------------------------
- * Month picker (global)
+ * Month picker (global) — MUST set state.currentMonth before loaders run
  * -------------------------------------------------------------------------- */
 async function initMonthPicker() {
-  // /months might be ["2025-12", ...] OR {data:[...]} depending on backend
-  const raw = await apiGet("/months");
-  const monthsArr = Array.isArray(raw) ? raw : (raw?.data || raw?.months || []);
+  // Be flexible: some APIs return ["2025-12", ...], others {data:[...]}
+  const raw = await apiGetFirst(["/months", "/payments/months"]);
+  const rows = Array.isArray(raw) ? raw : (raw?.data || []);
 
-  // clean + dedupe + newest first
-  const months = Array.from(new Set((monthsArr || []).filter(Boolean)))
-    .sort((a, b) => b.localeCompare(a));
+  let months = rows
+    .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
+    .filter(Boolean);
+
+  // Dedupe + newest first
+  months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
   const defaultMonth = months[0] || yyyymm();
-
-  // ✅ ensure global state is set before anything tries to use it
-  setCurrentMonth(defaultMonth, { triggerReload: false });
 
   function fillSelect(selectId, values) {
     const sel = document.getElementById(selectId);
@@ -786,21 +786,22 @@ async function initMonthPicker() {
       opt.textContent = formatMonthLabel(m); // nicer labels
       sel.appendChild(opt);
     }
+    sel.value = defaultMonth;
 
-    // keep the app's single source of truth
-    sel.value = state.currentMonth || defaultMonth;
-
-    // wire once so changes update state + reload
+    // IMPORTANT: wire it to global month sync
     wireMonthSelect(sel);
   }
 
-  // ✅ Use the IDs that exist in your file (case matters)
+  // ✅ Populate *actual* IDs used in your file
+  fillSelect("monthPicker", months);     // global picker
   fillSelect("paymentsMonth", months);
-  fillSelect("rentrollMonth", months);
+  fillSelect("rentrollMonth", months);   // lowercase matches your code
   fillSelect("balancesMonth", months);
 
-  // If you also have a global picker in HTML, fill it too (safe if missing)
-  fillSelect("monthPicker", months);
+  // ✅ Set state.currentMonth ONCE, before any loaders
+  setCurrentMonth(defaultMonth, { triggerReload: false });
+
+  return { months, defaultMonth };
 }
 
 /* --------------------------------------------------------------------------
