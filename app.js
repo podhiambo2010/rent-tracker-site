@@ -51,6 +51,16 @@ function sum(rows, pick) {
   return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
 }
 
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
+}
+
 /* normalise KE phone similar to backend */
 function normalizePhone(raw) {
   const digits = (raw || "").replace(/\D+/g, "");
