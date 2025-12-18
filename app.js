@@ -762,46 +762,44 @@ function initRowWhatsAppButtons() {
  * Month picker (global) — MUST set state.currentMonth before loaders run
  * -------------------------------------------------------------------------- */
 async function initMonthPicker() {
-  // Be flexible: some APIs return ["2025-12", ...], others {data:[...]}
   const raw = await apiGetFirst(["/months", "/payments/months"]);
   const rows = Array.isArray(raw) ? raw : (raw?.data || []);
 
+  // normalize to ["YYYY-MM", ...]
   let months = rows
     .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
     .filter(Boolean);
 
-  // Dedupe + newest first
   months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
   const defaultMonth = months[0] || yyyymm();
 
-  function fillSelect(selectId, values) {
-    const sel = document.getElementById(selectId);
+  // ✅ Set global month ONCE here (single source of truth)
+  setCurrentMonth(defaultMonth, { triggerReload: false });
+
+  function fillSelect(id) {
+    const sel = document.getElementById(id);
     if (!sel) return;
 
     sel.innerHTML = "";
-    for (const m of values) {
+    for (const m of months.length ? months : [defaultMonth]) {
       const opt = document.createElement("option");
       opt.value = m;
-      opt.textContent = formatMonthLabel(m); // nicer labels
+      opt.textContent = formatMonthLabel(m);
       sel.appendChild(opt);
     }
-    sel.value = defaultMonth;
 
-    // IMPORTANT: wire it to global month sync
-    wireMonthSelect(sel);
+    sel.value = state.currentMonth;
+    wireMonthSelect(sel); // ✅ any change updates state.currentMonth + reloads all
   }
 
-  // ✅ Populate *actual* IDs used in your file
-  fillSelect("monthPicker", months);     // global picker
-  fillSelect("paymentsMonth", months);
-  fillSelect("rentrollMonth", months);   // lowercase matches your code
-  fillSelect("balancesMonth", months);
+  // ✅ Fill the actual IDs used in your HTML/app.js
+  fillSelect("paymentsMonth");
+  fillSelect("rentrollMonth");   // ✅ NOT rentRollMonth
+  fillSelect("balancesMonth");
 
-  // ✅ Set state.currentMonth ONCE, before any loaders
-  setCurrentMonth(defaultMonth, { triggerReload: false });
-
-  return { months, defaultMonth };
+  // Optional: if you have an overview month select
+  fillSelect("overviewMonth");
 }
 
 /* --------------------------------------------------------------------------
