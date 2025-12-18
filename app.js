@@ -748,16 +748,45 @@ function initRowWhatsAppButtons() {
 }
 
 /* -------- month picker global -------- */
-function initMonthPicker() {
-  const mp = $("#monthPicker");
-  const nowYm = yyyymm();
-  setCurrentMonth(nowYm, { triggerReload: false });
+async function initMonthPicker() {
+  const months = await apiGet("/months"); // or whatever you already use
+  // months should be array like ["2025-12","2025-11",...]
 
-  if (mp) {
-    mp.value = nowYm;
-    mp.addEventListener("change", () => {
-      const v = mp.value || nowYm;
-      setCurrentMonth(v, { triggerReload: true });
+  // helper
+  function fillSelect(selectId, values) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+
+    sel.innerHTML = "";
+    for (const m of values) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      sel.appendChild(opt);
+    }
+  }
+
+  // Populate existing pickers (keep yours)
+  fillSelect("overviewMonth", months);
+  fillSelect("rentRollMonth", months);
+  fillSelect("paymentsMonth", months);
+
+  // ✅ ADD THIS (Balances picker)
+  fillSelect("balancesMonth", months);
+
+  // Set defaults (optional, but recommended)
+  const defaultMonth = months?.[0] || new Date().toISOString().slice(0, 7);
+  ["overviewMonth", "rentRollMonth", "paymentsMonth", "balancesMonth"].forEach(id => {
+    const sel = document.getElementById(id);
+    if (sel && sel.value !== defaultMonth) sel.value = defaultMonth;
+  });
+
+  // ✅ Ensure Balances reloads when month changes
+  const bSel = document.getElementById("balancesMonth");
+  if (bSel) {
+    bSel.addEventListener("change", () => {
+      loadBalances(true);        // the table
+      loadBalancesOverview(true); // if you separate totals, optional
     });
   }
 }
