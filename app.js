@@ -1001,7 +1001,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   initRowWhatsAppButtons();
 
   // ✅ WAIT for month picker + state.currentMonth to be set
+  try {
   await initMonthPicker();
+} catch (e) {
+  console.error("initMonthPicker failed:", e);
+  setCurrentMonth(yyyymm(), { triggerReload: false }); // fallback month
+}
 
   // ✅ now it is safe to load data (no month=null)
   loadOverview();
