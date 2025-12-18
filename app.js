@@ -991,34 +991,28 @@ async function loadBalances(initial = false) {
 }
 
  /* -------- initial load -------- */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
   initApiBaseControls();
-  initMonthPicker();
+
+  // ✅ MUST finish month picker + state.currentMonth before any loads
+  await initMonthPicker();
+
   initWhatsAppBuilder();
   initInvoiceActions();
   initExports();
   initRowWhatsAppButtons();
 
-  // initial data load
+  // initial data load (now month is guaranteed)
   loadOverview();
   loadLeases();
   loadPayments(true);
   loadRentRoll(true);
 
-  if (typeof loadBalances === "function") {
-    loadBalances(true);
-  } else {
-    console.warn("loadBalances() is not defined — skipping initial balances load");
-  }
+  if (typeof loadBalances === "function") loadBalances(true);
+  if (typeof loadBalancesByUnit === "function") loadBalancesByUnit();
 
-  if (typeof loadBalancesByUnit === "function") {
-    loadBalancesByUnit();
-  } else {
-    console.warn("loadBalancesByUnit() is not defined — skipping balances-by-unit load");
-  }
-
-  // Reload buttons
+    // Reload buttons
   $("#reloadLeases")?.addEventListener("click", loadLeases);
 
   $("#reloadBalances")?.addEventListener("click", () => {
