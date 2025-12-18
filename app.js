@@ -636,7 +636,7 @@ function initExports() {
     const prefix = btn.dataset.exportPrefix || "balances";
     if (!endpoint) return;
 
-    const ym = state.currentMonth;
+    const ym = state.currentMonth || yyyymm();
     const url = state.apiBase.replace(/\/+$/, "") + `${endpoint}?month=${encodeURIComponent(ym)}`;
 
     try {
