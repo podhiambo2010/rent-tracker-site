@@ -1023,15 +1023,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   initExports();
   initRowWhatsAppButtons();
 
-  // ✅ WAIT for month picker + state.currentMonth to be set
+  // 1) wait month picker
   try {
-  await initMonthPicker();
-} catch (e) {
-  console.error("initMonthPicker failed:", e);
-  setCurrentMonth(yyyymm(), { triggerReload: false }); // fallback month
-}
+    await initMonthPicker();
+  } catch (e) {
+    console.error("initMonthPicker failed:", e);
+    setCurrentMonth(yyyymm(), { triggerReload: false });
+  }
 
-  // ✅ now it is safe to load data (no month=null)
+  // 2) now safe to load
   loadOverview();
   loadLeases();
   loadPayments(true);
