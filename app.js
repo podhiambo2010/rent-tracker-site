@@ -759,47 +759,46 @@ function initRowWhatsAppButtons() {
 }
 
 /* --------------------------------------------------------------------------
- * Month picker (global) — MUST set state.currentMonth before loaders run
+ * Month picker (global) — MUST set state.currentMonth
  * -------------------------------------------------------------------------- */
 async function initMonthPicker() {
-  const raw = await apiGetFirst(["/months", "/payments/months"]);
-  const rows = Array.isArray(raw) ? raw : (raw?.data || []);
+  const raw = await apiGet("/months");
+  const months = Array.isArray(raw) ? raw : (raw?.data || []);
+  // months: ["2025-12","2025-11",...]
 
-  // normalize to ["YYYY-MM", ...]
-  let months = rows
-    .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
-    .filter(Boolean);
-
-  months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
-
-  const defaultMonth = months[0] || yyyymm();
-
-  // ✅ Set global month ONCE here (single source of truth)
-  setCurrentMonth(defaultMonth, { triggerReload: false });
-
-  function fillSelect(id) {
-    const sel = document.getElementById(id);
+  function fillSelect(selectId, values) {
+    const sel = document.getElementById(selectId);
     if (!sel) return;
-
     sel.innerHTML = "";
-    for (const m of months.length ? months : [defaultMonth]) {
+    for (const ym of values) {
       const opt = document.createElement("option");
-      opt.value = m;
-      opt.textContent = formatMonthLabel(m);
+      opt.value = ym;
+      opt.textContent = formatMonthLabel(ym); // nicer than raw "YYYY-MM"
       sel.appendChild(opt);
     }
-
-    sel.value = state.currentMonth;
-    wireMonthSelect(sel); // ✅ any change updates state.currentMonth + reloads all
   }
 
-  // ✅ Fill the actual IDs used in your HTML/app.js
-  fillSelect("paymentsMonth");
-  fillSelect("rentrollMonth");   // ✅ NOT rentRollMonth
-  fillSelect("balancesMonth");
+  // ✅ IMPORTANT: use the IDs that exist in your HTML/app.js
+  fillSelect("paymentsMonth", months);
+  fillSelect("rentrollMonth", months);
+  fillSelect("balancesMonth", months);
 
-  // Optional: if you have an overview month select
-  fillSelect("overviewMonth");
+  const defaultMonth = months?.[0] || yyyymm();
+
+  // set dropdown values
+  ["paymentsMonth", "rentrollMonth", "balancesMonth"].forEach((id) => {
+    const sel = document.getElementById(id);
+    if (sel) sel.value = defaultMonth;
+  });
+
+  // ✅ THIS IS THE REAL “STEP 2”
+  // Ensure global month is set once, before any loaders run
+  setCurrentMonth(defaultMonth, { triggerReload: false });
+
+  // wire change listeners once
+  wireMonthSelect(document.getElementById("paymentsMonth"));
+  wireMonthSelect(document.getElementById("rentrollMonth"));
+  wireMonthSelect(document.getElementById("balancesMonth"));
 }
 
 /* --------------------------------------------------------------------------
