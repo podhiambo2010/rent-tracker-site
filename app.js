@@ -1011,6 +1011,10 @@ async function loadBalances(initial = false) {
   } catch (err) {
     console.error("loadBalances error:", err);
     empty && empty.classList.remove("hidden");
+
+    const defaultMonth = months?.[0] || yyyymm();
+    setCurrentMonth(defaultMonth, { triggerReload: false });
+
   }
 }
 
