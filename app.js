@@ -112,8 +112,8 @@ async function loadBalances(initial = false) {
     $("#balMonthRate") && ($("#balMonthRate").textContent = `${fmtPct(ratePct)} collection rate`);
     $("#balancesLastUpdated") && ($("#balancesLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
 
-    // 2) table rows: use /rent-roll and aggregate by tenant
-    const rr = await apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`);
+    // 2) table rows: use /balances/by_unit (ledger-based) and aggregate by tenant
+    const rr = await apiGet(`/balances/by_unit?month=${encodeURIComponent(ym)}`);
     const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
     if (!Array.isArray(rows) || rows.length === 0) {
       empty && empty.classList.remove("hidden");
@@ -125,21 +125,14 @@ async function loadBalances(initial = false) {
 
     for (const r of rows) {
       const tenant = (r.tenant || r.tenant_name || "—").trim();
-      const due = toNum(r.total_due ?? (toNum(r.subtotal_rent) + toNum(r.late_fees) - toNum(r.credits)));
-      const bal = toNum(r.balance);
 
-      let paid = 0;
-      let credit = 0;
-      let outstanding = 0;
+      // balances/by_unit field names (with fallbacks)
+      const due  = toNum(r.rent_due ?? r.total_due ?? 0);
+      const paid = toNum(r.paid ?? r.total_paid ?? 0);
+      const bal  = toNum(r.balance ?? 0); // can be negative if credit is supported
 
-      if (bal >= 0) {
-        outstanding = bal;
-        paid = Math.max(0, due - bal);
-      } else {
-        // negative balance = credit
-        credit = -bal;
-        paid = due;
-      }
+      const credit = bal < 0 ? -bal : 0;
+      const outstanding = bal > 0 ? bal : 0;
 
       const prev = byTenant.get(tenant) || { due: 0, paid: 0, balance: 0, credit: 0 };
       prev.due += due;
