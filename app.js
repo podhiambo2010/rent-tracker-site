@@ -953,8 +953,13 @@ async function loadBalances(initial = false) {
 
     console.warn("[BALDBG] /balances/by_unit raw response:", rr);
 
-    // Some endpoints return {data:[...]}, others return [...] directly
-    const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
+    // ✅ FIX: by_unit returns { month_start, rows: [...] } (not {data:[...]} and not [...] directly)
+    // Keep compatibility just in case, but prefer rr.rows
+    const rows =
+      (Array.isArray(rr?.rows) ? rr.rows : null) ??
+      (Array.isArray(rr?.data) ? rr.data : null) ??
+      (Array.isArray(rr) ? rr : []);
+
     window.__balancesRows = rows;
 
     console.warn(
@@ -969,11 +974,13 @@ async function loadBalances(initial = false) {
       return;
     }
 
-    // group by tenant
+    // group by tenant (fallback to unit_code if tenant is missing)
     const byTenant = new Map();
 
     for (const r of rows) {
-      const tenant = String((r.tenant ?? r.tenant_name ?? "—")).trim();
+      const tenant = String(
+        (r.tenant ?? r.tenant_name ?? r.full_name ?? r.unit_code ?? "—")
+      ).trim();
 
       // balances/by_unit expected fields
       const due  = toNum(r.rent_due ?? r.total_due ?? 0);
@@ -1001,7 +1008,7 @@ async function loadBalances(initial = false) {
       prev.due += due;
       prev.paid += paidRaw;
       prev.paidForRate += paidForRate;
-      prev.balance += outstanding;
+      prev.balance += outstanding; // outstanding only
       prev.credit += credit;
       byTenant.set(tenant, prev);
     }
