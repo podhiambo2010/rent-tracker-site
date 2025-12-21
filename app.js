@@ -61,8 +61,11 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-/* -------- balances (source = ledger via /balances/by_unit) -------- */
+/* -------- balances (LEDGER source = /balances/by_unit) -------- */
 async function loadBalances(initial = false) {
+  const DBG = true;
+  const dbg = (...args) => { if (DBG) console.warn("[BALDBG]", ...args); };
+
   const body = $("#balancesBody");
   const empty = $("#balancesEmpty");
   if (!body) return;
@@ -84,61 +87,50 @@ async function loadBalances(initial = false) {
     return Number.isFinite(n) ? n : 0;
   };
 
+  // BIG, unavoidable signal that THIS function ran
+  dbg("loadBalances() START", { ym, initial, time: new Date().toISOString() });
+
   try {
-    // 1) totals chips: use /dashboard/overview (ledger-based totals)
+    // 1) totals chips: use /dashboard/overview
     const dash = await apiGet(`/dashboard/overview?month=${encodeURIComponent(ym)}`);
+    dbg("/dashboard/overview response:", dash);
 
     const dueTotal  = toNum(dash.total_due ?? dash.rent_subtotal_total ?? 0);
     const paidTotal = toNum(dash.total_paid ?? 0);
     const balTotal  = toNum(dash.balance_total ?? 0);
 
-    // If balance_total is negative, it’s credit
     const creditTotal = balTotal < 0 ? -balTotal : 0;
     const outstandingTotal = balTotal > 0 ? balTotal : 0;
 
-    const ratePct =
+    const ratePctRaw =
       toNum(dash.collection_rate_pct ?? (dueTotal > 0 ? (paidTotal / dueTotal) * 100 : 0));
 
     $("#balMonthDue") && ($("#balMonthDue").textContent = `${fmtKes(dueTotal)} due`);
     $("#balMonthCollected") && ($("#balMonthCollected").textContent = `${fmtKes(paidTotal)} collected`);
 
-    // show credit vs balance consistently
     const balChip = $("#balMonthBalance");
     if (balChip) {
       balChip.textContent =
         creditTotal > 0 ? `${fmtKes(creditTotal)} credit` : `${fmtKes(outstandingTotal)} balance`;
     }
 
-    $("#balMonthRate") && ($("#balMonthRate").textContent = `${fmtPct(ratePct)} collection rate`);
+    $("#balMonthRate") && ($("#balMonthRate").textContent = `${fmtPct(ratePctRaw)} collection rate`);
     $("#balancesLastUpdated") && ($("#balancesLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
 
-    // 2) table rows: use /balances/by_unit (ledger-based) and aggregate by tenant
-    console.warn("[DBG] loadBalances() running for month:", ym);
-
+    // 2) table rows: LEDGER-based endpoint
+    dbg("Fetching /balances/by_unit ...");
     const rr = await apiGet(`/balances/by_unit?month=${encodeURIComponent(ym)}`);
 
-    // ALWAYS log raw response first (even if it fails shape expectations)
-    console.warn("[DBG] /balances/by_unit raw response:", rr);
+    // IMPORTANT: handle both {data:[...]} and direct [...]
+    const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
+    dbg("/balances/by_unit raw response:", rr);
+    dbg("rows parsed:", { isArray: Array.isArray(rows), length: Array.isArray(rows) ? rows.length : null, sample: Array.isArray(rows) ? rows[0] : rows });
 
-    // Accept either {data:[...]} or direct array response
-    const rows = rr?.data ?? (Array.isArray(rr) ? rr : null);
+    // Keep for manual inspection in console
+    window.__balancesDebug = { ym, dash, rr, rows, at: new Date().toISOString() };
 
-    // ALWAYS log what 'rows' became (even if empty / not array)
-    console.warn(
-      "[DBG] rows type:",
-      Array.isArray(rows) ? "array" : typeof rows,
-      "rows.length:",
-      Array.isArray(rows) ? rows.length : "n/a",
-      "sample:",
-      Array.isArray(rows) ? rows[0] : rows
-    );
-
-    // keep for manual inspection in console
-    window.__balancesRows = rows;
-
-    // empty / mismatch guard (IMPORTANT: before rendering)
     if (!Array.isArray(rows) || rows.length === 0) {
-      console.warn("[DBG] rows empty or not array -> showing empty state");
+      dbg("rows EMPTY -> showing empty state");
       empty && empty.classList.remove("hidden");
       return;
     }
@@ -152,7 +144,7 @@ async function loadBalances(initial = false) {
       // balances/by_unit field names (with fallbacks)
       const due  = toNum(r.rent_due ?? r.total_due ?? 0);
       const paid = toNum(r.paid ?? r.total_paid ?? 0);
-      const bal  = toNum(r.balance ?? 0); // can be negative if credit is supported
+      const bal  = toNum(r.balance ?? 0); // can be negative if credit supported
 
       const credit = bal < 0 ? -bal : 0;
       const outstanding = bal > 0 ? bal : 0;
@@ -167,20 +159,26 @@ async function loadBalances(initial = false) {
 
     // render
     const list = Array.from(byTenant.entries())
-      .map(([tenant, v]) => ({
-        tenant,
-        due: v.due,
-        paid: v.paid,
-        balance: v.balance, // outstanding only
-        credit: v.credit,
-        rate: v.due > 0 ? (v.paid / v.due) * 100 : 0,
-      }))
+      .map(([tenant, v]) => {
+        // TEMP: clamp rate at 100% so “credits” don’t show as >100
+        // Proper fix = include C/F credit separately from “this month due”.
+        const rate = v.due > 0 ? Math.min(100, (v.paid / v.due) * 100) : 0;
+
+        return {
+          tenant,
+          due: v.due,
+          paid: v.paid,
+          balance: v.balance, // outstanding only
+          credit: v.credit,
+          rate,
+        };
+      })
       .sort((a, b) => (b.balance - a.balance)); // biggest outstanding first
+
+    dbg("Aggregated list sample:", list[0]);
 
     for (const r of list) {
       const tr = document.createElement("tr");
-
-      // show credit as negative balance visually (optional)
       const balanceDisplay = r.credit > 0 ? `-${fmtKes(r.credit)}` : fmtKes(r.balance);
 
       tr.innerHTML = `
@@ -196,6 +194,7 @@ async function loadBalances(initial = false) {
     // 3) outstanding-by-tenant section (use same computed list)
     const oBody = $("#outstandingBody");
     const oEmpty = $("#outstandingEmpty");
+
     if (oBody) {
       oBody.innerHTML = "";
       oEmpty && oEmpty.classList.add("hidden");
@@ -217,6 +216,8 @@ async function loadBalances(initial = false) {
 
       $("#outstandingLastUpdated") && ($("#outstandingLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
     }
+
+    dbg("loadBalances() DONE");
   } catch (err) {
     console.error("loadBalances error:", err);
     empty && empty.classList.remove("hidden");
