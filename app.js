@@ -62,7 +62,7 @@ function escapeHtml(s) {
 }
 
 /* -------- balances (source = ledger: /balances/by_unit) -------- */
-async function loadBalances(initial = false) {
+async function loadBalances_legacy(initial = false) {
   const body = $("#balancesBody");
   const empty = $("#balancesEmpty");
 
