@@ -120,6 +120,9 @@ async function loadBalances(initial = false) {
       return;
     }
 
+    // TEMP DEBUG (remove later)
+   console.log("balances/by_unit sample row:", rows[0]);
+    
     // group by tenant
     const byTenant = new Map();
 
