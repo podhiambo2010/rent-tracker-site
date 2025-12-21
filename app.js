@@ -61,7 +61,7 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
-/* -------- balances (source = rent-roll) -------- */
+/* -------- balances (source = ledger via /balances/by_unit) -------- */
 async function loadBalances(initial = false) {
   const body = $("#balancesBody");
   const empty = $("#balancesEmpty");
@@ -85,7 +85,7 @@ async function loadBalances(initial = false) {
   };
 
   try {
-    // 1) totals chips: use /dashboard/overview (your “correct” source)
+    // 1) totals chips: use /dashboard/overview (ledger-based totals)
     const dash = await apiGet(`/dashboard/overview?month=${encodeURIComponent(ym)}`);
 
     const dueTotal  = toNum(dash.total_due ?? dash.rent_subtotal_total ?? 0);
@@ -116,31 +116,38 @@ async function loadBalances(initial = false) {
     console.warn("[DBG] loadBalances() running for month:", ym);
 
     const rr = await apiGet(`/balances/by_unit?month=${encodeURIComponent(ym)}`);
-    const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
 
-    // DEBUG: always log what we got (even if empty)
-    console.warn("[DBG] loadBalances month:", ym);
+    // ALWAYS log raw response first (even if it fails shape expectations)
     console.warn("[DBG] /balances/by_unit raw response:", rr);
+
+    // Accept either {data:[...]} or direct array response
+    const rows = rr?.data ?? (Array.isArray(rr) ? rr : null);
+
+    // ALWAYS log what 'rows' became (even if empty / not array)
     console.warn(
-      "[DBG] rows isArray:", Array.isArray(rows),
-      "rows.length:", Array.isArray(rows) ? rows.length : "(n/a)",
-      "sample:", Array.isArray(rows) ? rows[0] : rows
+      "[DBG] rows type:",
+      Array.isArray(rows) ? "array" : typeof rows,
+      "rows.length:",
+      Array.isArray(rows) ? rows.length : "n/a",
+      "sample:",
+      Array.isArray(rows) ? rows[0] : rows
     );
 
-// keep for manual inspection in console
-window.__balancesRows = rows;
+    // keep for manual inspection in console
+    window.__balancesRows = rows;
 
-if (!Array.isArray(rows) || rows.length === 0) {
-  console.warn("[DBG] rows empty -> showing empty state");
-  empty && empty.classList.remove("hidden");
-  return;
-}
+    // empty / mismatch guard (IMPORTANT: before rendering)
+    if (!Array.isArray(rows) || rows.length === 0) {
+      console.warn("[DBG] rows empty or not array -> showing empty state");
+      empty && empty.classList.remove("hidden");
+      return;
+    }
 
     // group by tenant
     const byTenant = new Map();
 
     for (const r of rows) {
-      const tenant = (r.tenant || r.tenant_name || "—").trim();
+      const tenant = String(r.tenant ?? r.tenant_name ?? "—").trim();
 
       // balances/by_unit field names (with fallbacks)
       const due  = toNum(r.rent_due ?? r.total_due ?? 0);
