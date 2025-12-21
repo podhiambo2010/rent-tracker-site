@@ -118,17 +118,23 @@ async function loadBalances(initial = false) {
     const rr = await apiGet(`/balances/by_unit?month=${encodeURIComponent(ym)}`);
     const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
 
-    console.warn("[DBG] /balances/by_unit returned type:", typeof rr, "rows.length:", Array.isArray(rows) ? rows.length : "NOT ARRAY");
-    console.warn("[DBG] sample row:", Array.isArray(rows) ? rows[0] : rows);
+    // DEBUG: always log what we got (even if empty)
+    console.warn("[DBG] loadBalances month:", ym);
+    console.warn("[DBG] /balances/by_unit raw response:", rr);
+    console.warn(
+      "[DBG] rows isArray:", Array.isArray(rows),
+      "rows.length:", Array.isArray(rows) ? rows.length : "(n/a)",
+      "sample:", Array.isArray(rows) ? rows[0] : rows
+    );
 
-    // keep this too (so you can inspect later)
-    window.__balancesRows = rows;
+// keep for manual inspection in console
+window.__balancesRows = rows;
 
-    if (!Array.isArray(rows) || rows.length === 0) {
-      console.warn("[DBG] rows empty -> showing empty state");
-      empty && empty.classList.remove("hidden");
-      return;
-    }
+if (!Array.isArray(rows) || rows.length === 0) {
+  console.warn("[DBG] rows empty -> showing empty state");
+  empty && empty.classList.remove("hidden");
+  return;
+}
 
     // group by tenant
     const byTenant = new Map();
