@@ -377,6 +377,8 @@
             <tbody id="balancesBody"></tbody>
           </table>
         </div>
+
+        <!-- ✅ This must exist and match JS: #balancesEmpty -->
         <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
 
         <div style="margin-top:24px;">
@@ -394,6 +396,7 @@
         <div class="bar-flex" style="margin-top:24px;">
           <h3>Outstanding by tenant (this month)</h3>
           <span class="chip" id="outstandingMonthLabel">—</span>
+          <!-- ✅ Ensure JS is wired to this id (or rename in JS). -->
           <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
         </div>
         <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
@@ -407,9 +410,13 @@
                 <th style="text-align:right">Collection rate</th>
               </tr>
             </thead>
+
+            <!-- ✅ This must exist and match JS: #outstandingBody -->
             <tbody id="outstandingBody"></tbody>
           </table>
         </div>
+
+        <!-- ✅ This must exist and match JS: #outstandingEmpty -->
         <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
       </div>
 
