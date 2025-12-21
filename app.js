@@ -113,16 +113,23 @@ async function loadBalances(initial = false) {
     $("#balancesLastUpdated") && ($("#balancesLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
 
     // 2) table rows: use /balances/by_unit (ledger-based) and aggregate by tenant
+    console.warn("[DBG] loadBalances() running for month:", ym);
+
     const rr = await apiGet(`/balances/by_unit?month=${encodeURIComponent(ym)}`);
     const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
+
+    console.warn("[DBG] /balances/by_unit returned type:", typeof rr, "rows.length:", Array.isArray(rows) ? rows.length : "NOT ARRAY");
+    console.warn("[DBG] sample row:", Array.isArray(rows) ? rows[0] : rows);
+
+    // keep this too (so you can inspect later)
+    window.__balancesRows = rows;
+
     if (!Array.isArray(rows) || rows.length === 0) {
+      console.warn("[DBG] rows empty -> showing empty state");
       empty && empty.classList.remove("hidden");
       return;
     }
 
-    // TEMP DEBUG (remove later)
-   console.log("balances/by_unit sample row:", rows[0]);
-    
     // group by tenant
     const byTenant = new Map();
 
