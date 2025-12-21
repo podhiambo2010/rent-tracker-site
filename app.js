@@ -1054,7 +1054,7 @@ async function loadBalancesByUnit() {
   }
 }
 
-/* -------- balances (Overview / By Tenant + Outstanding-by-tenant) -------- */
+/* -------- balances (ONE source of truth: ledger via /balances/by_unit) -------- */
 async function loadBalances(initial = false) {
   const body = $("#balancesBody");
   const empty = $("#balancesEmpty");
@@ -1063,122 +1063,173 @@ async function loadBalances(initial = false) {
   body.innerHTML = "";
   empty && empty.classList.add("hidden");
 
-  // month comes from balancesMonth dropdown if present, else global month
   const ym = ($("#balancesMonth")?.value || state.currentMonth || yyyymm());
   if (!ym) return;
 
-  // keep global state aligned (but don't trigger full reload loop)
-  if (ym !== state.currentMonth) setCurrentMonth(ym, { triggerReload: false });
-
-  // labels (if present)
+  // labels
   const monthLabel = formatMonthLabel(ym);
   $("#balMonthLabel") && ($("#balMonthLabel").textContent = monthLabel);
   $("#outstandingMonthLabel") && ($("#outstandingMonthLabel").textContent = monthLabel);
 
-  try {
-    // ✅ Source of truth = rent-roll
-    const rr = await apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`);
-    const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
-    const list = Array.isArray(rows) ? rows : [];
+  const toNum = (v) => {
+    if (v === null || v === undefined) return 0;
+    const n = Number(String(v).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
 
-    // totals
-    let totalDue = 0;
-    let balanceTotal = 0;
-
-    // group by tenant
-    const byTenant = new Map();
-
-    const toNum = (v) => {
-      const n = Number(v);
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    for (const r of list) {
-      const tenant = r.tenant || "—";
-
-      // Prefer backend total_due; fallback to subtotal+late-credits
-      const due =
-        (r.total_due !== undefined && r.total_due !== null)
-          ? toNum(r.total_due)
-          : (toNum(r.subtotal_rent) + toNum(r.late_fees) - toNum(r.credits));
-
-      const bal = toNum(r.balance);
-
-      totalDue += due;
-      balanceTotal += bal;
-
-      const agg = byTenant.get(tenant) || { tenant, due: 0, balance: 0 };
-      agg.due += due;
-      agg.balance += bal;
-      byTenant.set(tenant, agg);
-    }
-
-    // paid = due - balance (works even when balance is negative credit)
-    const totalPaid = totalDue - balanceTotal;
-    const ratePct = totalDue > 0 ? (totalPaid / totalDue) * 100 : 0;
-
-    // Update “This month totals (all tenants)”
-    $("#balMonthDue") && ($("#balMonthDue").textContent = `${fmtKes(totalDue)} due`);
-    $("#balMonthCollected") && ($("#balMonthCollected").textContent = `${fmtKes(totalPaid)} collected`);
-
-    // show credit nicely if negative
-    if ($("#balMonthBalance")) {
-      if (balanceTotal < 0) {
-        $("#balMonthBalance").textContent = `${fmtKes(-balanceTotal)} credit`;
-      } else {
-        $("#balMonthBalance").textContent = `${fmtKes(balanceTotal)} balance`;
+  // Try multiple routes (in case your API mounts both)
+  const apiGetFirst = async (paths) => {
+    let lastErr = null;
+    for (const p of paths) {
+      try {
+        return await apiGet(p);
+      } catch (e) {
+        lastErr = e;
       }
+    }
+    throw lastErr || new Error("All balance endpoints failed");
+  };
+
+  try {
+    // DEBUG marker: confirm THIS loadBalances is the one executing
+    console.warn(`[BALDBG] loadBalances() ENTERED. initial=${initial} month=${ym}`);
+
+    // 1) totals chips: prefer /dashboard/overview if that is your “correct” summary
+    const dash = await apiGetFirst([
+      `/dashboard/overview?month=${encodeURIComponent(ym)}`,
+      `/balances/overview?month=${encodeURIComponent(ym)}`
+    ]);
+
+    console.warn("[BALDBG] overview response:", dash);
+
+    const dueTotal  = toNum(dash.total_due ?? dash.rent_subtotal_total ?? 0);
+    const paidTotal = toNum(dash.total_paid ?? 0);
+    const balTotal  = toNum(dash.balance_total ?? 0);
+
+    // If balance_total is negative, it’s credit
+    const creditTotal = balTotal < 0 ? -balTotal : 0;
+    const outstandingTotal = balTotal > 0 ? balTotal : 0;
+
+    const ratePct =
+      toNum(dash.collection_rate_pct ?? (dueTotal > 0 ? (paidTotal / dueTotal) * 100 : 0));
+
+    $("#balMonthDue") && ($("#balMonthDue").textContent = `${fmtKes(dueTotal)} due`);
+    $("#balMonthCollected") && ($("#balMonthCollected").textContent = `${fmtKes(paidTotal)} collected`);
+
+    const balChip = $("#balMonthBalance");
+    if (balChip) {
+      balChip.textContent =
+        creditTotal > 0 ? `${fmtKes(creditTotal)} credit` : `${fmtKes(outstandingTotal)} balance`;
     }
 
     $("#balMonthRate") && ($("#balMonthRate").textContent = `${fmtPct(ratePct)} collection rate`);
     $("#balancesLastUpdated") && ($("#balancesLastUpdated").textContent = `Last updated: ${new Date().toLocaleString()}`);
 
-    // Build tenant table rows
-    const tenantRows = Array.from(byTenant.values()).map(t => {
-      const paid = t.due - t.balance;
-      const rp = t.due > 0 ? (paid / t.due) * 100 : 0;
-      return { ...t, paid, ratePct: rp };
-    });
+    // 2) table rows: ledger-based by unit => aggregate by tenant
+    const rr = await apiGetFirst([
+      `/balances/by_unit?month=${encodeURIComponent(ym)}`,
+      `/dashboard/balances/by_unit?month=${encodeURIComponent(ym)}`
+    ]);
 
-    // sort by highest outstanding first
-    tenantRows.sort((a, b) => (b.balance) - (a.balance));
+    console.warn("[BALDBG] /balances/by_unit raw response:", rr);
 
-    if (!tenantRows.length) {
+    // Some endpoints return {data:[...]}, others return [...] directly
+    const rows = rr?.data ?? (Array.isArray(rr) ? rr : []);
+    window.__balancesRows = rows;
+
+    console.warn(
+      "[BALDBG] rows isArray:", Array.isArray(rows),
+      "rows.length:", Array.isArray(rows) ? rows.length : "(n/a)",
+      "sample row:", Array.isArray(rows) ? rows[0] : rows
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      console.warn("[BALDBG] rows empty -> showing empty state");
       empty && empty.classList.remove("hidden");
-    } else {
-      for (const r of tenantRows) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${r.tenant}</td>
-          <td class="num">${fmtKes(r.due)}</td>
-          <td class="num">${fmtKes(r.paid)}</td>
-          <td class="num">${fmtKes(r.balance)}</td>
-          <td class="num">${fmtPct(r.ratePct)}</td>
-        `;
-        body.appendChild(tr);
-      }
+      return;
     }
 
-    // Outstanding by tenant (balance > 0)
+    // group by tenant
+    const byTenant = new Map();
+
+    for (const r of rows) {
+      const tenant = String((r.tenant ?? r.tenant_name ?? "—")).trim();
+
+      // balances/by_unit expected fields
+      const due  = toNum(r.rent_due ?? r.total_due ?? 0);
+
+      // paid can come under different names depending on backend
+      const paidRaw = toNum(
+        r.paid ??
+        r.total_paid ??
+        r.paid_total ??
+        r.collected_amt ??
+        r.amount_paid_via_form ??
+        0
+      );
+
+      // balance can be negative (credit)
+      const balRaw = toNum(r.balance ?? r.balance_via_form ?? 0);
+
+      const credit = balRaw < 0 ? -balRaw : 0;
+      const outstanding = balRaw > 0 ? balRaw : 0;
+
+      // IMPORTANT: prevent “>100%” collection rate display due to credits/overpayment
+      const paidForRate = Math.min(paidRaw, due);
+
+      const prev = byTenant.get(tenant) || { due: 0, paid: 0, paidForRate: 0, balance: 0, credit: 0 };
+      prev.due += due;
+      prev.paid += paidRaw;
+      prev.paidForRate += paidForRate;
+      prev.balance += outstanding;
+      prev.credit += credit;
+      byTenant.set(tenant, prev);
+    }
+
+    // render
+    const list = Array.from(byTenant.entries())
+      .map(([tenant, v]) => ({
+        tenant,
+        due: v.due,
+        paid: v.paid,
+        paidForRate: v.paidForRate,
+        balance: v.balance, // outstanding only
+        credit: v.credit,
+        rate: v.due > 0 ? (v.paidForRate / v.due) * 100 : 0,
+      }))
+      .sort((a, b) => (b.balance - a.balance));
+
+    for (const r of list) {
+      const tr = document.createElement("tr");
+      const balanceDisplay = r.credit > 0 ? `-${fmtKes(r.credit)}` : fmtKes(r.balance);
+
+      tr.innerHTML = `
+        <td>${escapeHtml(r.tenant)}</td>
+        <td class="num">${fmtKes(r.due)}</td>
+        <td class="num">${fmtKes(r.paid)}</td>
+        <td class="num">${balanceDisplay}</td>
+        <td class="num">${fmtPct(r.rate)}</td>
+      `;
+      body.appendChild(tr);
+    }
+
+    // 3) outstanding-by-tenant section (use same computed list)
     const oBody = $("#outstandingBody");
     const oEmpty = $("#outstandingEmpty");
     if (oBody) {
       oBody.innerHTML = "";
       oEmpty && oEmpty.classList.add("hidden");
 
-      const outstanding = tenantRows
-        .filter(x => x.balance > 0)
-        .sort((a, b) => b.balance - a.balance);
-
-      if (!outstanding.length) {
+      const outstandingRows = list.filter(x => x.balance > 0);
+      if (!outstandingRows.length) {
         oEmpty && oEmpty.classList.remove("hidden");
       } else {
-        for (const r of outstanding) {
+        for (const r of outstandingRows) {
           const tr = document.createElement("tr");
           tr.innerHTML = `
-            <td>${r.tenant}</td>
+            <td>${escapeHtml(r.tenant)}</td>
             <td style="text-align:right">${fmtKes(r.balance)}</td>
-            <td style="text-align:right">${fmtPct(r.ratePct)}</td>
+            <td style="text-align:right">${fmtPct(r.rate)}</td>
           `;
           oBody.appendChild(tr);
         }
@@ -1190,10 +1241,6 @@ async function loadBalances(initial = false) {
   } catch (err) {
     console.error("loadBalances error:", err);
     empty && empty.classList.remove("hidden");
-
-    const defaultMonth = months?.[0] || yyyymm();
-    setCurrentMonth(defaultMonth, { triggerReload: false });
-
   }
 }
 
