@@ -74,25 +74,31 @@ function renderBalancesOverview(o) {
 }
 
 function renderBalancesByTenantTable(rows) {
-  // expects rows like:
-  // { tenant, total_due, paid_total, balance, collection_rate_pct }
   const tbody = document.querySelector("#balancesTable tbody");
   if (!tbody) return;
 
-  if (!rows.length) {
+  if (!Array.isArray(rows) || rows.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" class="muted">No balances to show yet.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map(r => `
-    <tr>
-      <td>${escapeHtml(r.tenant ?? "—")}</td>
-      <td class="num">${fmtKes(r.total_due)}</td>
-      <td class="num">${fmtKes(r.paid_total)}</td>
-      <td class="num">${fmtKes(r.balance)}</td>
-      <td class="num">${fmtPct(r.collection_rate_pct)}</td>
-    </tr>
-  `).join("");
+  tbody.innerHTML = rows.map(r => {
+    const tenant = r?.tenant ?? r?.tenant_name ?? "—";
+    const due = r?.total_due ?? r?.rent_due ?? r?.due_for_month ?? 0;
+    const paid = r?.paid_total ?? r?.paid ?? r?.amount_paid_total ?? 0;
+    const bal = r?.balance ?? r?.outstanding ?? r?.balance_total ?? 0;
+    const pct = r?.collection_rate_pct ?? r?.collection_rate_pct ?? r?.collection_rate ?? 0;
+
+    return `
+      <tr>
+        <td>${escapeHtml(tenant)}</td>
+        <td class="num">${fmtKes(due)}</td>
+        <td class="num">${fmtKes(paid)}</td>
+        <td class="num">${fmtKes(bal)}</td>
+        <td class="num">${fmtPct(pct)}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function escapeHtml(s) {
