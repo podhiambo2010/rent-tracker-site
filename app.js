@@ -617,19 +617,42 @@ function initInvoiceActions() {
   const input = $("#invoiceIdInput");
   const msg = $("#actionMsg");
 
+  const setMsg = (t) => {
+    if (msg) msg.textContent = t;
+  };
+
   if (healthBtn) {
     healthBtn.addEventListener("click", async () => {
-      msg.textContent = "Checking admin token…";
+      setMsg("Checking admin token…");
       try {
         const headers = {};
         const t = getAdminTokenFromStorage();
         if (t) headers["X-Admin-Token"] = t;
-        const res = await fetch(state.apiBase.replace(/\/+$/, "") + "/admin/ping", { headers });
+
+        // try /admin/ping then fallback to /dashboard/admin/ping
+        const base = state.apiBase.replace(/\/+$/, "");
+        const urls = [`${base}/admin/ping`, `${base}/dashboard/admin/ping`];
+
+        let res = null;
+        let lastErr = null;
+
+        for (const url of urls) {
+          try {
+            res = await fetch(url, { headers });
+            if (res.ok) break;
+            // if not ok, try next
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+
+        if (!res) throw lastErr || new Error("No response");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        msg.textContent = "Admin token OK ✅";
+
+        setMsg("Admin token OK ✅");
       } catch (err) {
         console.error("auth ping error:", err);
-        msg.textContent = "Admin token failed ❌ – check value in Settings.";
+        setMsg("Admin token failed ❌ – check value in Settings.");
       }
     });
   }
@@ -638,21 +661,36 @@ function initInvoiceActions() {
     markBtn.addEventListener("click", async () => {
       const id = (input?.value || "").trim();
       if (!id) {
-        msg.textContent = "Enter invoice_id (UUID) first.";
+        setMsg("Enter invoice_id (UUID) first.");
         return;
       }
-      msg.textContent = "Marking invoice as sent…";
+
+      // basic UUID sanity check (prevents obvious bad input)
+      const UUID_RE =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!UUID_RE.test(id)) {
+        setMsg("invoice_id does not look like a valid UUID.");
+        return;
+      }
+
+      setMsg("Marking invoice as sent…");
 
       try {
-        const data = await apiPost(
+        const payload = { invoice_ids: [id], sent_via: "whatsapp", sent_to: "tenant" };
+
+        // Try /invoices/mark_sent, then fallback to /dashboard/invoices/mark_sent
+        const data = await apiPostAny(
           "/invoices/mark_sent",
-          { invoice_ids: [id], sent_via: "whatsapp", sent_to: "tenant" },
+          "/dashboard/invoices/mark_sent",
+          payload,
           { admin: true }
         );
-        msg.textContent = `Marked sent: ${(data.updated || []).join(", ")}`;
+
+        const updated = (data && data.updated) ? data.updated : [];
+        setMsg(`Marked sent: ${updated.length ? updated.join(", ") : id}`);
       } catch (err) {
         console.error("mark_sent error:", err);
-        msg.textContent = "Error marking invoice as sent.";
+        setMsg("Error marking invoice as sent.");
       }
     });
   }
