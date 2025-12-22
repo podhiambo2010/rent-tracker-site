@@ -52,13 +52,25 @@ function sum(rows, pick) {
 }
 
 function renderBalancesOverview(o) {
-  // expects:
-  // { month_start, total_due, total_paid, balance_total, collection_rate_pct, ... }
-  setText("#balMonth", o?.month_start ? o.month_start.slice(0,7) : "—");
-  setText("#balTotalDue", fmtKes(o?.total_due));
-  setText("#balTotalPaid", fmtKes(o?.total_paid));
-  setText("#balTotalBalance", fmtKes(o?.balance_total));
-  setText("#balCollectionRate", fmtPct(o?.collection_rate_pct));
+  const monthStart = o?.month_start || o?.month || o?.monthStart || null;
+
+  const totalDue =
+    o?.total_due ?? o?.rent_due_total ?? o?.due_total ?? 0;
+
+  const totalPaid =
+    o?.total_paid ?? o?.amount_paid_total ?? o?.paid_total ?? 0;
+
+  const balanceTotal =
+    o?.balance_total ?? o?.outstanding_total ?? o?.month_delta_total ?? 0;
+
+  const rate =
+    o?.collection_rate_pct ?? o?.collection_rate ?? o?.collectionRate ?? 0;
+
+  setText("#balMonth", monthStart ? String(monthStart).slice(0, 7) : "—");
+  setText("#balTotalDue", fmtKes(totalDue));
+  setText("#balTotalPaid", fmtKes(totalPaid));
+  setText("#balTotalBalance", fmtKes(balanceTotal));
+  setText("#balCollectionRate", fmtPct(rate));
 }
 
 function renderBalancesByTenantTable(rows) {
