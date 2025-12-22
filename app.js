@@ -617,9 +617,7 @@ function initInvoiceActions() {
   const input = $("#invoiceIdInput");
   const msg = $("#actionMsg");
 
-  const setMsg = (t) => {
-    if (msg) msg.textContent = t;
-  };
+  const setMsg = (t) => { if (msg) msg.textContent = t; };
 
   if (healthBtn) {
     healthBtn.addEventListener("click", async () => {
@@ -629,25 +627,13 @@ function initInvoiceActions() {
         const t = getAdminTokenFromStorage();
         if (t) headers["X-Admin-Token"] = t;
 
-        // try /admin/ping then fallback to /dashboard/admin/ping
-        const base = state.apiBase.replace(/\/+$/, "");
-        const urls = [`${base}/admin/ping`, `${base}/dashboard/admin/ping`];
+        const base = (state.apiBase || "").replace(/\/+$/, "");
+        const res = await fetch(base + "/admin/ping", { headers });
 
-        let res = null;
-        let lastErr = null;
-
-        for (const url of urls) {
-          try {
-            res = await fetch(url, { headers });
-            if (res.ok) break;
-            // if not ok, try next
-          } catch (e) {
-            lastErr = e;
-          }
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status} ${body}`);
         }
-
-        if (!res) throw lastErr || new Error("No response");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         setMsg("Admin token OK ✅");
       } catch (err) {
@@ -664,30 +650,15 @@ function initInvoiceActions() {
         setMsg("Enter invoice_id (UUID) first.");
         return;
       }
-
-      // basic UUID sanity check (prevents obvious bad input)
-      const UUID_RE =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!UUID_RE.test(id)) {
-        setMsg("invoice_id does not look like a valid UUID.");
-        return;
-      }
-
       setMsg("Marking invoice as sent…");
 
       try {
-        const payload = { invoice_ids: [id], sent_via: "whatsapp", sent_to: "tenant" };
-
-        // Try /invoices/mark_sent, then fallback to /dashboard/invoices/mark_sent
-        const data = await apiPostAny(
+        const data = await apiPost(
           "/invoices/mark_sent",
-          "/dashboard/invoices/mark_sent",
-          payload,
+          { invoice_ids: [id], sent_via: "whatsapp", sent_to: "tenant" },
           { admin: true }
         );
-
-        const updated = (data && data.updated) ? data.updated : [];
-        setMsg(`Marked sent: ${updated.length ? updated.join(", ") : id}`);
+        setMsg(`Marked sent: ${(data.updated || []).join(", ")}`);
       } catch (err) {
         console.error("mark_sent error:", err);
         setMsg("Error marking invoice as sent.");
