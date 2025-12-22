@@ -51,6 +51,38 @@ function sum(rows, pick) {
   return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
 }
 
+function renderBalancesOverview(o) {
+  // expects:
+  // { month_start, total_due, total_paid, balance_total, collection_rate_pct, ... }
+  setText("#balMonth", o?.month_start ? o.month_start.slice(0,7) : "—");
+  setText("#balTotalDue", fmtKes(o?.total_due));
+  setText("#balTotalPaid", fmtKes(o?.total_paid));
+  setText("#balTotalBalance", fmtKes(o?.balance_total));
+  setText("#balCollectionRate", fmtPct(o?.collection_rate_pct));
+}
+
+function renderBalancesByTenantTable(rows) {
+  // expects rows like:
+  // { tenant, total_due, paid_total, balance, collection_rate_pct }
+  const tbody = document.querySelector("#balancesTable tbody");
+  if (!tbody) return;
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="muted">No balances to show yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.tenant ?? "—")}</td>
+      <td class="num">${fmtKes(r.total_due)}</td>
+      <td class="num">${fmtKes(r.paid_total)}</td>
+      <td class="num">${fmtKes(r.balance)}</td>
+      <td class="num">${fmtPct(r.collection_rate_pct)}</td>
+    </tr>
+  `).join("");
+}
+
 /* -------- HTML escape (you were calling escapeHtml but it was not defined) -------- */
 function escapeHtml(s) {
   return String(s ?? "")
