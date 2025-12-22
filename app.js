@@ -83,6 +83,17 @@ function renderBalancesByTenantTable(rows) {
   `).join("");
 }
 
+function escapeHtml(s) {
+  const str = String(s ?? "");
+  return str.replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
+}
+
 /* -------- HTML escape (you were calling escapeHtml but it was not defined) -------- */
 function escapeHtml(s) {
   return String(s ?? "")
