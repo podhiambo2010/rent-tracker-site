@@ -51,52 +51,7 @@ function sum(rows, pick) {
   return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
 }
 
-
-function renderBalancesOverview(o) {
-  // supports either {month_start,...} or {month,...}
-  const m = o?.month_start || o?.month || "—";
-  setText("#balMonth", m !== "—" ? String(m).slice(0, 7) : "—");
-
-  const totalDue  = o?.total_due  ?? o?.rent_due_total ?? 0;
-  const totalPaid = o?.total_paid ?? o?.amount_paid_total ?? 0;
-  const balTotal  = o?.balance_total ?? 0;
-  const cr        = o?.collection_rate_pct ?? o?.collection_rate ?? 0;
-
-  setText("#balTotalDue", fmtKes(totalDue));
-  setText("#balTotalPaid", fmtKes(totalPaid));
-  setText("#balTotalBalance", fmtKes(balTotal));
-  setText("#balCollectionRate", fmtPct(cr));
-}
-
-function renderBalancesByTenantTable(rows) {
-  const tbody = document.querySelector("#balancesTable tbody");
-  if (!tbody) return;
-
-  if (!Array.isArray(rows) || !rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">No balances to show yet.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = rows.map(r => {
-    const tenant = r.tenant ?? r.tenant_name ?? "—";
-    const due    = r.total_due ?? r.rent_due ?? 0;
-    const paid   = r.paid_total ?? r.paid ?? 0;
-    const bal    = r.balance ?? r.outstanding ?? 0;
-    const pct    = r.collection_rate_pct ?? r.collection_rate ?? 0;
-
-    return `
-      <tr>
-        <td>${escapeHtml(tenant)}</td>
-        <td class="num">${fmtKes(due)}</td>
-        <td class="num">${fmtKes(paid)}</td>
-        <td class="num">${fmtKes(bal)}</td>
-        <td class="num">${fmtPct(pct)}</td>
-      </tr>
-    `;
-  }).join("");
-}
-
-
+/* -------- robust HTML escape -------- */
 function escapeHtml(s) {
   const str = String(s ?? "");
   return str.replace(/[&<>"']/g, (c) => ({
@@ -106,16 +61,6 @@ function escapeHtml(s) {
     '"': "&quot;",
     "'": "&#39;",
   }[c]));
-}
-
-/* -------- HTML escape (you were calling escapeHtml but it was not defined) -------- */
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 /* normalise KE phone similar to backend */
@@ -180,7 +125,7 @@ function reloadAllMonthViews() {
   loadOverview();
   loadPayments();
   loadRentRoll();
-  if (typeof loadBalances === "function") loadBalances();
+  loadBalances();
   loadBalancesByUnit();
 }
 
@@ -213,8 +158,131 @@ function wireMonthSelect(selectEl) {
   });
 }
 
-/* -------- core loaders -------- */
+/* -------- month selection helper (Balances uses dropdown) -------- */
+function getSelectedMonth() {
+  return ($("#balancesMonth")?.value || state.currentMonth || yyyymm());
+}
 
+/* -------- Balances renderers (MATCH YOUR HTML IDs) -------- */
+function renderBalancesOverview(o) {
+  const monthStart = o?.month_start || o?.month || getSelectedMonth();
+  const monthLabel = formatMonthLabel(String(monthStart).slice(0, 7));
+
+  const totalDue  = Number(o?.total_due ?? 0);
+  const totalPaid = Number(o?.total_paid ?? 0);
+  const balTotal  = Number(o?.balance_total ?? 0);
+  const cr        = Number(o?.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0));
+
+  setText("#balMonthLabel", monthLabel);
+  setText("#balMonthDue", `${fmtKes(totalDue)} due`);
+  setText("#balMonthCollected", `${fmtKes(totalPaid)} collected`);
+  setText("#balMonthBalance", `${fmtKes(balTotal)} balance`);
+  setText("#balMonthRate", `${fmtPct(cr)} collection rate`);
+}
+
+function renderBalancesByTenantTable(rows) {
+  const tbody = $("#balancesBody");
+  const empty = $("#balancesEmpty");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+  empty && empty.classList.add("hidden");
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    if (empty) empty.classList.remove("hidden");
+    return;
+  }
+
+  for (const r of rows) {
+    const tenant = r.tenant ?? "—";
+    const due    = Number(r.total_due ?? 0);
+    const paid   = Number(r.paid_total ?? 0);
+    const bal    = Number(r.balance ?? 0);
+    const pct    = Number(r.collection_rate_pct ?? (due > 0 ? (paid / due) * 100 : 0));
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(tenant)}</td>
+      <td class="num">${fmtKes(due)}</td>
+      <td class="num">${fmtKes(paid)}</td>
+      <td class="num">${fmtKes(bal)}</td>
+      <td class="num">${fmtPct(pct)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderOutstandingTable(rows) {
+  const tbody = $("#outstandingBody");
+  const empty = $("#outstandingEmpty");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+  empty && empty.classList.add("hidden");
+
+  const list = (Array.isArray(rows) ? rows : [])
+    .filter(r => Number(r.balance ?? 0) > 0)
+    .sort((a, b) => Number(b.balance ?? 0) - Number(a.balance ?? 0));
+
+  if (!list.length) {
+    if (empty) empty.classList.remove("hidden");
+    return;
+  }
+
+  for (const r of list) {
+    const tenant = r.tenant ?? "—";
+    const bal    = Number(r.balance ?? 0);
+    const pct    = Number(r.collection_rate_pct ?? 0);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(tenant)}</td>
+      <td style="text-align:right">${fmtKes(bal)}</td>
+      <td style="text-align:right">${fmtPct(pct)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function setLastUpdatedBalances() {
+  const now = new Date().toLocaleString("en-KE");
+  setText("#balancesLastUpdated", `Last updated: ${now}`);
+  setText("#outstandingLastUpdated", `Last updated: ${now}`);
+}
+
+/* -------- balances CSV export (ALWAYS works) -------- */
+async function exportBalancesCsv() {
+  const month = getSelectedMonth();
+  const base = state.apiBase.replace(/\/+$/, "");
+  const candidates = [
+    `${base}/dashboard/balances/export?month=${encodeURIComponent(month)}`,
+    `${base}/balances/export?month=${encodeURIComponent(month)}`,
+  ];
+
+  let lastErr = null;
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `balances_${month}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+      return;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  throw lastErr || new Error("Export failed");
+}
+
+/* -------- core loaders -------- */
 async function loadOverview() {
   const kpiLeases   = $("#kpiLeases");
   const kpiOpen     = $("#kpiOpen");
@@ -240,7 +308,6 @@ async function loadOverview() {
 
     const rentRoll = rentRollResp && rentRollResp.data ? rentRollResp.data : [];
 
-    // KPIs
     if (kpiLeases) kpiLeases.textContent = leases.length ?? 0;
 
     const openCount = rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length;
@@ -254,7 +321,6 @@ async function loadOverview() {
 
     if (kpiBalance) kpiBalance.textContent = fmtKes(dash.balance_total ?? dash.total_outstanding ?? 0);
 
-    // Monthly collection summary
     const monthLabel = formatMonthLabel(dash.month_start || ym);
     if (labelEl) labelEl.textContent = monthLabel;
 
@@ -311,7 +377,7 @@ async function loadLeases() {
         <td>${r.due_day != null ? r.due_day : ""}</td>
         <td>${r.lease_status || ""}</td>
         <td>
-          <button class="btn ghost btn-wa-lease" data-lease-id="${r.lease_id}">
+          <button class="btn ghost btn-wa-lease" data-lease-id="${r.lease_id}" type="button">
             WhatsApp
           </button>
         </td>
@@ -334,7 +400,6 @@ async function loadPayments(initial = false) {
   const body = $("#paymentsBody");
   const empty = $("#paymentsEmpty");
 
-  // ✅ Totals chips (optional in HTML)
   const countChip = $("#paymentsCountChip");
   const totalChip = $("#paymentsTotalChip");
 
@@ -343,7 +408,6 @@ async function loadPayments(initial = false) {
   body.innerHTML = "";
   empty && empty.classList.add("hidden");
 
-  // ✅ Reset totals immediately (prevents stale totals on reload)
   if (countChip) countChip.textContent = "0";
   if (totalChip) totalChip.textContent = fmtKes(0);
 
@@ -352,11 +416,10 @@ async function loadPayments(initial = false) {
       const raw = await apiGetFirst(["/payments/months", "/months"]);
       const rows = Array.isArray(raw) ? raw : (raw?.data || []);
       let months = rows
-  .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
-  .filter(Boolean);
+        .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
+        .filter(Boolean);
 
-// dedupe + newest first
-months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
+      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
 
       monthSelect.innerHTML = "";
 
@@ -391,12 +454,10 @@ months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
       return true;
     });
 
-    // ✅ Compute totals from filtered list
     const totalPaid = filtered.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     if (countChip) countChip.textContent = String(filtered.length);
     if (totalChip) totalChip.textContent = fmtKes(totalPaid);
 
-    // ✅ Show “no data” but keep totals visible (0 / KES 0)
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
       return;
@@ -423,7 +484,6 @@ months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
   }
 }
 
-
 async function loadRentRoll(initial = false) {
   const monthSelect = $("#rentrollMonth");
   const tenantFilter = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
@@ -439,7 +499,6 @@ async function loadRentRoll(initial = false) {
   if (countChip) countChip.textContent = "—";
 
   try {
-    // ✅ IMPORTANT: if month dropdown is empty, treat as initial load
     const needMonths = !!monthSelect && monthSelect.options.length === 0;
     if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
@@ -450,7 +509,7 @@ async function loadRentRoll(initial = false) {
 
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
       if (!months.length && state.currentMonth) months.push(state.currentMonth);
-      if (!months.length) months.push(yyyymm()); // final fallback
+      if (!months.length) months.push(yyyymm());
 
       for (const ym of months) {
         const opt = document.createElement("option");
@@ -463,7 +522,6 @@ async function loadRentRoll(initial = false) {
       wireMonthSelect(monthSelect);
     }
 
-    // ✅ ALWAYS have a usable month (never blank/undefined)
     let month = (monthSelect?.value || state.currentMonth || yyyymm());
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
@@ -483,81 +541,6 @@ async function loadRentRoll(initial = false) {
     });
 
     if (countChip) countChip.textContent = String(filtered.length);
-
-    // ✅ Rent Roll totals chips (support multiple possible HTML IDs)
-    const rrCountEl =
-      $("#rentrollCountChip") || $("#rentrollCount") || $("#rentRollCount") || $("#rrCountChip");
-
-    const rrDueEl =
-      $("#rentrollDueChip") || $("#rentrollDue") || $("#rentRollDue") || $("#rrDueChip");
-
-    const rrPaidEl =
-      $("#rentrollPaidChip") || $("#rentrollPaid") || $("#rentRollPaid") || $("#rrPaidChip");
-
-    const rrBalEl =
-      $("#rentrollBalChip") || $("#rentrollBalance") || $("#rentRollBalance") || $("#rrBalChip");
-
-    // ✅ NEW: Credit chip
-    const rrCreditEl =
-      $("#rentrollCreditChip") || $("#rentrollCredit") || $("#rentRollCredit") || $("#rrCreditChip");
-
-    const toNum = (v) => {
-      if (v === null || v === undefined) return 0;
-      const n = Number(String(v).replace(/,/g, ""));
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    // returns "540,469" (NO "KES"), even if fmtKes() includes "KES"
-    const fmtNumOnly = (n) => {
-      const s = (typeof fmtKes === "function")
-        ? String(fmtKes(n))
-        : String(Number(toNum(n)).toLocaleString());
-      return s.replace(/^KES\s*/i, "").trim();
-    };
-
-    const rrCount = filtered.length;
-
-    let due = 0;
-    let paid = 0;
-    let outstanding = 0; // balances > 0
-    let credit = 0;      // balances < 0 turned positive
-
-    for (const r of filtered) {
-      const subtotal = toNum(r.subtotal_rent);
-      const late = toNum(r.late_fees);
-
-      const creditsField =
-        (r.credits !== undefined && r.credits !== null) ? toNum(r.credits) : 0;
-
-      const rowDueRaw =
-        (r.total_due !== undefined && r.total_due !== null)
-          ? toNum(r.total_due)
-          : (subtotal + late - creditsField);
-
-      const rowDue = Math.max(0, rowDueRaw);
-      const b = toNum(r.balance);
-
-      due += rowDue;
-
-      if (b >= 0) {
-        outstanding += b;
-        paid += Math.max(0, rowDue - b);
-      } else {
-        // negative balance = credit
-        paid += rowDue;
-        credit += (-b);
-      }
-    }
-
-    if (rrCountEl) rrCountEl.textContent = String(rrCount);
-    if (rrDueEl) rrDueEl.textContent = `KES ${fmtNumOnly(due)} due`;
-    if (rrPaidEl) rrPaidEl.textContent = `KES ${fmtNumOnly(paid)} paid`;
-
-    // ✅ Balance chip ALWAYS shows balance
-    if (rrBalEl) rrBalEl.textContent = `KES ${fmtNumOnly(outstanding)} balance`;
-
-    // ✅ Credit chip ALWAYS shows credit
-    if (rrCreditEl) rrCreditEl.textContent = `KES ${fmtNumOnly(credit)} credit`;
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
@@ -587,7 +570,7 @@ async function loadRentRoll(initial = false) {
         </td>
         <td style="text-align:right">${fmtKes(balance)}</td>
         <td>
-          <button class="btn ghost btn-wa-lease" data-lease-id="${r.lease_id}">
+          <button class="btn ghost btn-wa-lease" data-lease-id="${r.lease_id}" type="button">
             WhatsApp
           </button>
         </td>
@@ -599,6 +582,112 @@ async function loadRentRoll(initial = false) {
     if (countChip) countChip.textContent = "0";
     if (empty) {
       empty.textContent = "Error loading rent-roll.";
+      empty.classList.remove("hidden");
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Balances loader (overview + by_tenant + outstanding derived)
+ * -------------------------------------------------------------------------- */
+async function loadBalances() {
+  const month = getSelectedMonth();
+  console.log("[BALDBG] loadBalances:", { month });
+
+  try {
+    const overview = await apiGetFirst([
+      `/dashboard/balances/overview?month=${encodeURIComponent(month)}`,
+      `/balances/overview?month=${encodeURIComponent(month)}`,
+    ]);
+    renderBalancesOverview(overview);
+
+    const byTenant = await apiGetFirst([
+      `/dashboard/balances/by_tenant?month=${encodeURIComponent(month)}`,
+      `/balances/by_tenant?month=${encodeURIComponent(month)}`,
+    ]);
+
+    const rows = Array.isArray(byTenant?.rows) ? byTenant.rows : [];
+    renderBalancesByTenantTable(rows);
+
+    setText("#outstandingMonthLabel", formatMonthLabel(month));
+    renderOutstandingTable(rows);
+
+    setLastUpdatedBalances();
+  } catch (err) {
+    console.error("[BALDBG] loadBalances error:", err);
+
+    // Safe reset so UI doesn't show stale/blank weirdness
+    renderBalancesOverview({ month_start: month + "-01", total_due: 0, total_paid: 0, balance_total: 0, collection_rate_pct: 0 });
+    renderBalancesByTenantTable([]);
+    renderOutstandingTable([]);
+    setLastUpdatedBalances();
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Optional balances by unit (only if you add HTML later)
+ * -------------------------------------------------------------------------- */
+async function loadBalancesByUnit() {
+  const body = $("#balancesByUnitBody");
+  const empty = $("#balancesByUnitEmpty");
+  if (!body) return;
+
+  body.innerHTML = "";
+  if (empty) empty.classList.add("hidden");
+
+  const ym = $("#balancesMonth")?.value || state.currentMonth || yyyymm();
+
+  const toNum = (v) => {
+    if (v === null || v === undefined) return 0;
+    const n = Number(String(v).replace(/,/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  try {
+    const resp = await apiGetFirst([
+      `/balances/by-unit?month=${encodeURIComponent(ym)}`,
+      `/balances/by_unit?month=${encodeURIComponent(ym)}`,
+      `/balances/byunit?month=${encodeURIComponent(ym)}`,
+    ]);
+
+    const rows = resp?.data ?? (Array.isArray(resp) ? resp : []);
+    const list = Array.isArray(rows) ? rows : [];
+
+    if (!list.length) {
+      if (empty) empty.classList.remove("hidden");
+      return;
+    }
+
+    for (const r of list) {
+      const property = r.property_name || r.property || "";
+      const unit = r.unit_code || r.unit || "";
+      const tenant = r.tenant || r.tenant_name || "";
+
+      const due = r.due ?? r.total_due ?? r.rent_due;
+      const paid = r.paid ?? r.total_paid ?? r.amount_paid;
+      const bal = r.balance ?? r.outstanding ?? 0;
+
+      const rate =
+        r.collection_rate ??
+        r.rate ??
+        (toNum(due) > 0 ? (toNum(paid) / toNum(due)) * 100 : 0);
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${property}</td>
+        <td>${unit}</td>
+        <td>${tenant}</td>
+        <td class="num">${fmtKes(toNum(due))}</td>
+        <td class="num">${fmtKes(toNum(paid))}</td>
+        <td class="num">${fmtKes(toNum(bal))}</td>
+        <td class="num">${fmtPct(rate)}</td>
+      `;
+      body.appendChild(tr);
+    }
+  } catch (err) {
+    console.error("loadBalancesByUnit error:", err);
+    if (empty) {
+      empty.textContent = "Error loading balances-by-unit.";
       empty.classList.remove("hidden");
     }
   }
@@ -692,34 +781,16 @@ function initInvoiceActions() {
   }
 }
 
-/* -------- export helpers (balances CSV) -------- */
+/* -------- export helpers -------- */
 function initExports() {
   const btn = $("#btnExportBalances");
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    const endpoint = btn.dataset.exportEndpoint;
-    const prefix = btn.dataset.exportPrefix || "balances";
-    if (!endpoint) return;
-
-    const ym = state.currentMonth || yyyymm();
-    const url = state.apiBase.replace(/\/+$/, "") + `${endpoint}?month=${encodeURIComponent(ym)}`;
-
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const fileName = `${prefix}-${ym}.csv`;
-
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(link.href);
+      await exportBalancesCsv();
     } catch (err) {
-      console.error("export CSV error:", err);
+      console.error("exportBalancesCsv error:", err);
       alert("Error exporting CSV. See console for details.");
     }
   });
@@ -815,7 +886,7 @@ function initRowWhatsAppButtons() {
     const leaseId = btn.dataset.leaseId;
     if (!leaseId) return;
 
-    const month = state.currentMonth; // ✅ critical fix
+    const month = state.currentMonth || yyyymm();
     const url =
       state.apiBase.replace(/\/+$/, "") +
       `/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(month)}`;
@@ -830,7 +901,6 @@ function initRowWhatsAppButtons() {
 async function initMonthPicker() {
   const raw = await apiGet("/months");
   const months = Array.isArray(raw) ? raw : (raw?.data || []);
-  // months: ["2025-12","2025-11",...]
 
   function fillSelect(selectId, values) {
     const sel = document.getElementById(selectId);
@@ -839,140 +909,30 @@ async function initMonthPicker() {
     for (const ym of values) {
       const opt = document.createElement("option");
       opt.value = ym;
-      opt.textContent = formatMonthLabel(ym); // nicer than raw "YYYY-MM"
+      opt.textContent = formatMonthLabel(ym);
       sel.appendChild(opt);
     }
   }
 
-  // ✅ IMPORTANT: use the IDs that exist in your HTML/app.js
   fillSelect("paymentsMonth", months);
   fillSelect("rentrollMonth", months);
   fillSelect("balancesMonth", months);
 
   const defaultMonth = months?.[0] || yyyymm();
 
-  // set dropdown values
   ["paymentsMonth", "rentrollMonth", "balancesMonth"].forEach((id) => {
     const sel = document.getElementById(id);
     if (sel) sel.value = defaultMonth;
   });
 
-  // ✅ THIS IS THE REAL “STEP 2”
-  // Ensure global month is set once, before any loaders run
   setCurrentMonth(defaultMonth, { triggerReload: false });
 
-  // wire change listeners once
   wireMonthSelect(document.getElementById("paymentsMonth"));
   wireMonthSelect(document.getElementById("rentrollMonth"));
   wireMonthSelect(document.getElementById("balancesMonth"));
 }
 
-/* --------------------------------------------------------------------------
- * 1) Per-unit balances ("By Unit")
- * -------------------------------------------------------------------------- */
-async function loadBalancesByUnit() {
-  const body = $("#balancesByUnitBody");
-  const empty = $("#balancesByUnitEmpty");
-
-  // If the HTML doesn't have this section yet, exit quietly.
-  if (!body) return;
-
-  body.innerHTML = "";
-  if (empty) empty.classList.add("hidden");
-
-  // Use balancesMonth if present, otherwise current global month
-  const ym = $("#balancesMonth")?.value || state.currentMonth || yyyymm();
-
-  const toNum = (v) => {
-    if (v === null || v === undefined) return 0;
-    const n = Number(String(v).replace(/,/g, ""));
-    return Number.isFinite(n) ? n : 0;
-  };
-
-  try {
-    // Try multiple endpoints (backwards/forwards compatible)
-    const resp = await apiGetFirst([
-      `/balances/by-unit?month=${encodeURIComponent(ym)}`,
-      `/balances/by_unit?month=${encodeURIComponent(ym)}`,
-      `/balances/byunit?month=${encodeURIComponent(ym)}`,
-    ]);
-
-    const rows = resp?.data ?? (Array.isArray(resp) ? resp : []);
-    const list = Array.isArray(rows) ? rows : [];
-
-    if (!list.length) {
-      if (empty) empty.classList.remove("hidden");
-      return;
-    }
-
-    for (const r of list) {
-      const property = r.property_name || r.property || "";
-      const unit = r.unit_code || r.unit || "";
-      const tenant = r.tenant || r.tenant_name || "";
-
-      const due = r.due ?? r.total_due ?? r.rent_due;
-      const paid = r.paid ?? r.total_paid ?? r.amount_paid;
-      const bal = r.balance ?? r.outstanding ?? 0;
-
-      const rate =
-        r.collection_rate ??
-        r.rate ??
-        (toNum(due) > 0 ? toNum(paid) / toNum(due) : 0);
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${property}</td>
-        <td>${unit}</td>
-        <td>${tenant}</td>
-        <td class="num">${fmtKes(toNum(due))}</td>
-        <td class="num">${fmtKes(toNum(paid))}</td>
-        <td class="num">${fmtKes(toNum(bal))}</td>
-        <td class="num">${fmtPct(rate)}</td>
-      `;
-      body.appendChild(tr);
-    }
-  } catch (err) {
-    console.error("loadBalancesByUnit error:", err);
-    if (empty) {
-      empty.textContent = "Error loading balances-by-unit.";
-      empty.classList.remove("hidden");
-    }
-  }
-}
-
-/* --------------------------------------------------------------------------
- * 2) balances (ONE source of truth: ledger via /balances/by_unit)
- * -------------------------------------------------------------------------- */
-async function loadBalances(initial = false) {
-  const month = getSelectedMonth(); // must be "YYYY-MM"
-  console.log("[BALDBG] loadBalances entered:", { initial, month });
-
-  try {
-    // Balances totals panel (NOT /overview)
-    const overview = await apiGetAny(
-      `/dashboard/balances/overview?month=${encodeURIComponent(month)}`,
-      `/balances/overview?month=${encodeURIComponent(month)}`
-    );
-    console.log("[BALDBG] balances overview:", overview);
-    renderBalancesOverview(overview);
-
-    // Balances table
-    const byTenant = await apiGetAny(
-      `/dashboard/balances/by_tenant?month=${encodeURIComponent(month)}`,
-      `/balances/by_tenant?month=${encodeURIComponent(month)}`
-    );
-    console.log("[BALDBG] balances by_tenant:", byTenant);
-
-    const rows = Array.isArray(byTenant?.rows) ? byTenant.rows : [];
-    renderBalancesByTenantTable(rows);
-
-  } catch (err) {
-    console.error("[BALDBG] loadBalances error:", err);
-    showBalancesEmptyState("Failed to load balances.");
-  }
-}
-
- /* -------- initial load -------- */
+/* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
   initTabs();
   initApiBaseControls();
@@ -981,7 +941,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   initExports();
   initRowWhatsAppButtons();
 
-  // 1) wait month picker
   try {
     await initMonthPicker();
   } catch (e) {
@@ -989,15 +948,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     setCurrentMonth(yyyymm(), { triggerReload: false });
   }
 
-  // 2) now safe to load
   loadOverview();
   loadLeases();
   loadPayments(true);
   loadRentRoll(true);
-  loadBalances(true);
+  loadBalances();
   loadBalancesByUnit();
 
-  // Reload buttons (keep yours)
   $("#reloadLeases")?.addEventListener("click", loadLeases);
 
   $("#reloadBalances")?.addEventListener("click", () => {
