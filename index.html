@@ -11,471 +11,845 @@
 
   <style>
     :root{
-      --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --panel-3:#10182f; --text:#f1f5f9;
-      --muted:#93a4c4; --brand:#4f8cff; --bd:#1c2546; --chip:#1e2a4a;
-      --ok:#22c55e; --danger:#ef4444;
+      --bg:#0b1020;
+      --panel:#101a36;
+      --panel-2:#0f1730;
+      --panel-3:#0b142c;
+      --text:#eef3ff;
+      --muted:#9bb0d3;
+      --brand:#4f8cff;
+      --bd:#1e2a52;
+      --chip:#162348;
+      --ok:#22c55e;
+      --warn:#f59e0b;
+      --danger:#ef4444;
+      --shadow: 0 8px 30px rgba(0,0,0,.25);
+      --r: 16px;
     }
-    *{box-sizing:border-box}
-    html,body{height:100%}
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; }
     body{
-      margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-      background:linear-gradient(180deg,var(--bg),#060a19 60%); color:var(--text)
+      margin:0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 10% 0%, #142356 0%, var(--bg) 55%) fixed;
+      color: var(--text);
     }
-    a{color:#7aa7ff}
+    a{ color:inherit; }
+    .wrap{ max-width: 1240px; margin: 0 auto; padding: 18px; }
 
-    th.num,
-    td.num {
-      text-align: right;
+    /* Header */
+    .topbar{
+      position: sticky; top:0; z-index: 30;
+      backdrop-filter: blur(10px);
+      background: rgba(11,16,32,.65);
+      border-bottom: 1px solid rgba(255,255,255,.06);
     }
-
-    /* Shell */
-    .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
-    header{position:sticky;top:0;z-index:5;background:rgba(15,23,48,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
-    .bar{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px 20px;max-width:1200px;margin-inline:auto}
-    .brand{display:flex;align-items:center;gap:10px}
-    .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#4f8cff,#13b5d1);box-shadow:0 6px 22px rgba(79,140,255,.45)}
-    .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.3px}
-    .env{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .env input{width:360px;max-width:50vw;background:var(--panel-2);border:1px solid var(--bd);color:var(--text);padding:8px 10px;border-radius:10px}
-
-    .btn{background:#4f8cff;border:none;color:white;padding:9px 12px;border-radius:10px;font-weight:600;cursor:pointer}
-    .btn.secondary{background:#223260;color:#dbe7ff}
-    .btn.ghost{background:transparent;border:1px solid var(--bd);color:#cfe0ff}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-
-    main{max-width:1200px;margin:18px auto;padding:0 18px;display:grid;grid-template-columns:240px 1fr;gap:18px}
-    nav{position:sticky;top:66px;align-self:start;background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:10px}
-    .tab{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--text);text-decoration:none;cursor:pointer}
-    .tab[aria-selected="true"], .tab:hover{background:var(--chip)}
-
-    .panel{background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:14px}
-    .panel h2{margin:4px 6px 12px;font-size:16px}
-
-    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
-    .kpi{grid-column:span 3;background:var(--panel-2);border:1px solid var(--bd);border-radius:14px;padding:14px}
-    .kpi h3{font-size:12px;color:var(--muted);margin:0}
-    .kpi .v{font-size:22px;margin:6px 0 0}
-
-    /* Monthly collection summary layout */
-    #collection-summary-month{
-      margin-top:10px;
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-      font-size:14px;
+    .topbar .wrap{ padding: 14px 18px; }
+    .row{ display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
+    .title{
+      display:flex; align-items:baseline; gap:10px; margin-right:auto;
     }
-    #collection-summary-month > div{
-      background:var(--panel-2);
-      border:1px solid var(--bd);
-      border-radius:10px;
-      padding:8px 10px;
-      min-width:150px;
+    .title h1{
+      font-size: 18px; margin:0; letter-spacing:.2px;
     }
-    #collection-summary-month strong{
-      font-size:13px;
+    .badge{
+      font-size: 12px; color: var(--muted);
+      padding: 4px 10px; border:1px solid rgba(255,255,255,.10);
+      border-radius: 999px; background: rgba(255,255,255,.04);
     }
 
-    /* Balances tab – totals strip layout */
-    #balances-summary {
-      margin-top: 10px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
+    /* Controls */
+    .control{
+      display:flex; gap:8px; align-items:center;
+      padding: 8px 10px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      border-radius: 999px;
+    }
+    .control label{
+      font-size:12px; color: var(--muted);
+      user-select:none;
+    }
+    input, select, button{
+      font-family: inherit;
+    }
+    .control input{
+      width: 330px;
+      max-width: 62vw;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .control input::placeholder{ color: rgba(155,176,211,.7); }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 8px 10px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      border-radius: 999px;
+    }
+    .pill input[type="month"]{
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:8px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(79,140,255,.18);
+      color: var(--text);
+      cursor: pointer;
+      user-select:none;
+    }
+    .btn:hover{ background: rgba(79,140,255,.26); }
+    .btn:active{ transform: translateY(1px); }
+    .btn.secondary{ background: rgba(255,255,255,.06); }
+    .btn.secondary:hover{ background: rgba(255,255,255,.10); }
+    .btn.danger{ background: rgba(239,68,68,.18); }
+    .btn.danger:hover{ background: rgba(239,68,68,.26); }
+
+    /* Tabs */
+    .tabs{
+      margin-top: 14px;
+      display:flex; gap:8px; flex-wrap: wrap;
+    }
+    .tab{
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      color: var(--muted);
+      cursor: pointer;
+      user-select:none;
+      font-size: 13px;
+    }
+    .tab.active{
+      background: rgba(79,140,255,.22);
+      color: var(--text);
+      border-color: rgba(79,140,255,.45);
+    }
+
+    /* Panels */
+    .panel{
+      margin-top: 14px;
+      background: linear-gradient(180deg, rgba(16,26,54,.80), rgba(15,23,48,.70));
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel-head{
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      display:flex; gap:10px; align-items:center; flex-wrap: wrap;
+    }
+    .panel-head h2{
+      margin:0;
       font-size: 14px;
+      letter-spacing: .2px;
     }
-    #balances-summary > div {
-      background: var(--panel-2);
-      border: 1px solid var(--bd);
-      border-radius: 10px;
-      padding: 6px 10px;
-      min-width: 150px;
+    .panel-head .meta{
+      margin-left:auto;
+      color: var(--muted);
+      font-size: 12px;
+      display:flex; gap:10px; align-items:center; flex-wrap: wrap;
+    }
+    .panel-body{ padding: 14px; }
+
+    /* Cards */
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+    }
+    .card{
+      grid-column: span 3;
+      min-width: 200px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .card .k{ color: var(--muted); font-size: 12px; }
+    .card .v{ margin-top: 6px; font-size: 20px; font-weight: 700; letter-spacing:.2px; }
+    .card .s{ margin-top: 6px; color: rgba(155,176,211,.85); font-size: 12px; }
+
+    @media (max-width: 1020px){
+      .card{ grid-column: span 6; }
+    }
+    @media (max-width: 560px){
+      .card{ grid-column: span 12; }
     }
 
-    .bar-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .chip{background:var(--chip);border:1px solid var(--bd);padding:7px 10px;border-radius:999px;color:#cfe0ff}
-    .muted{color:var(--muted)}
-    .hidden{display:none!important}
-
-    /* Tables */
-    .table-wrap{max-height:60vh;overflow:auto;border-radius:12px}
-    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    /* Table */
+    .table-tools{
+      display:flex; gap:10px; align-items:center; flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .search{
+      flex: 1;
+      min-width: 220px;
+      display:flex; align-items:center; gap:8px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.10);
+    }
+    .search input{
+      width: 100%;
+      border: none; outline: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .tbl-wrap{
+      overflow:auto;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      background: rgba(10,16,34,.35);
+    }
+    table{
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
     thead th{
-      position:sticky;top:0;z-index:1;
-      background:var(--panel-2);
-      font-size:12px;color:#a9b9dc;text-align:left;
-      padding:8px 10px;
-      border-bottom:1px solid var(--bd)
+      position: sticky; top: 0;
+      background: rgba(10,16,34,.88);
+      backdrop-filter: blur(6px);
+      text-align: left;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 12px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      white-space: nowrap;
     }
     tbody td{
-      padding:10px 10px;
-      background:var(--panel-2);
-      border-top:1px solid var(--bd);
-      border-bottom:1px solid var(--bd);
-      font-size:13px;
+      padding: 12px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+      font-size: 13px;
+      vertical-align: top;
+      white-space: nowrap;
     }
-    tbody tr td:first-child{
-      border-left:1px solid var(--bd);
-      border-top-left-radius:10px;border-bottom-left-radius:10px
-    }
-    tbody tr td:last-child{
-      border-right:1px solid var(--bd);
-      border-top-right-radius:10px;border-bottom-right-radius:10px
-    }
-    .status{padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--bd)}
-    .status.ok{background:rgba(34,197,94,.08);color:#86efac}
-    .status.due{background:rgba(239,68,68,.08);color:#fecaca}
+    tbody tr:hover{ background: rgba(255,255,255,.04); }
+    .right{ text-align:right; }
+    .mono{ font-variant-numeric: tabular-nums; }
 
-    .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
+    .chip{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .dot{
+      width:8px; height:8px; border-radius: 999px; display:inline-block;
+      background: var(--muted);
+    }
+    .dot.ok{ background: var(--ok); }
+    .dot.warn{ background: var(--warn); }
+    .dot.bad{ background: var(--danger); }
 
-    /* Payments totals chips (right side of filters row) */
-    .payments-totals{
+    /* Empty / Loading */
+    .empty{
+      padding: 18px;
+      border: 1px dashed rgba(255,255,255,.18);
+      border-radius: 14px;
+      color: var(--muted);
+      background: rgba(255,255,255,.03);
+    }
+    .skeleton{
+      border-radius: 14px;
+      background: linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.07), rgba(255,255,255,.03));
+      background-size: 300% 100%;
+      animation: shimmer 1.2s ease-in-out infinite;
+    }
+    @keyframes shimmer{
+      0%{ background-position: 0% 0; }
+      100%{ background-position: 100% 0; }
+    }
+
+    /* Toast */
+    .toasts{
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
       display:flex;
-      gap:10px;
-      align-items:center;
-      margin-left:auto;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 100;
+      max-width: min(420px, 92vw);
     }
+    .toast{
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(16,26,54,.92);
+      box-shadow: var(--shadow);
+    }
+    .toast .t{ font-weight: 700; font-size: 13px; }
+    .toast .m{ margin-top: 4px; color: rgba(155,176,211,.92); font-size: 12px; line-height: 1.4; }
+    .toast.ok{ border-color: rgba(34,197,94,.35); }
+    .toast.warn{ border-color: rgba(245,158,11,.35); }
+    .toast.bad{ border-color: rgba(239,68,68,.35); }
 
-    /* Rent Roll totals chips (right side of filters row) */
-    .rentroll-totals{
-      display:flex;
-      gap:10px;
-      align-items:center;
-      margin-left:auto;
-    }
-
-    .filters input,.filters select{
-      background:var(--panel-2);border:1px solid var(--bd);color:var(--text);
-      padding:8px 10px;border-radius:10px
-    }
-    .empty{color:var(--muted);text-align:center;padding:18px;background:var(--panel-2);border:1px dashed var(--bd);border-radius:12px}
-
-    /* Overview month picker – always visible */
-    .month-wrapper{
-      display:flex;
-      align-items:center;
-      gap:6px;
-    }
-    .month-wrapper span{
-      font-size:13px;
-      color:var(--muted);
-    }
-    #monthPicker{
-      background:var(--panel-2);
-      border:1px solid var(--bd);
-      color:var(--text);
-      padding:6px 10px;
-      border-radius:10px;
-      min-width:150px;
-    }
-    #monthPicker::-webkit-calendar-picker-indicator{
-      filter:invert(1);
-    }
-
-    @media (max-width:980px){
-      main{grid-template-columns:1fr}
-      nav{position:static}
-      .kpi{grid-column:span 6}
-    }
-    @media (max-width:640px){
-      .kpi{grid-column:span 12}
-      .env input{max-width:100%;width:220px}
-      .table-wrap{max-height:50vh}
-    }
+    /* Hide panels */
+    [data-panel]{ display:none; }
+    [data-panel].active{ display:block; }
   </style>
 </head>
+
 <body>
-<div class="shell">
-  <header>
-    <div class="bar">
-      <div class="brand">
-        <div class="logo"></div>
-        <h1>Rent Tracker Dashboard</h1>
+  <div class="topbar">
+    <div class="wrap">
+      <div class="row">
+        <div class="title">
+          <h1>Rent Tracker Dashboard</h1>
+          <span class="badge" id="envBadge">UI v2</span>
+        </div>
+
+        <div class="control" title="Base API URL (no trailing slash)">
+          <label for="apiBase">API</label>
+          <input id="apiBase" placeholder="https://rent-tracker-api-16i0.onrender.com" />
+        </div>
+
+        <div class="pill" title="Select month">
+          <label style="font-size:12px;color:var(--muted)">Month</label>
+          <input id="monthPick" type="month" />
+        </div>
+
+        <button class="btn" id="btnRefresh">Refresh</button>
+        <button class="btn secondary" id="btnPing">Ping</button>
       </div>
-      <div class="env">
-        <input id="apiBase" placeholder="API base e.g. https://rent-tracker-api-16i0.onrender.com"/>
-        <button class="btn" id="useApi" type="button">Use this API</button>
-        <button class="btn secondary" id="openDocs" type="button">/docs</button>
-        <button class="btn ghost" id="setAdminTokenBtn" type="button" title="Set Admin Token">⚙️ Admin Token</button>
+
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="overview">Overview</div>
+        <div class="tab" data-tab="leases">Leases</div>
+        <div class="tab" data-tab="payments">Payments</div>
+        <div class="tab" data-tab="rentroll">Rent Roll</div>
+        <div class="tab" data-tab="balances">Balances</div>
       </div>
     </div>
-  </header>
+  </div>
 
-  <main>
-    <!-- LEFT NAV -->
-    <nav aria-label="Sections">
-      <a class="tab" data-tab="overview" aria-selected="true">🏠 Overview</a>
-      <a class="tab" data-tab="leases">🔑 Leases</a>
-      <a class="tab" data-tab="payments">💸 Payments</a>
-      <a class="tab" data-tab="rentroll">🧾 Rent Roll</a>
-      <a class="tab" data-tab="balances">📊 Balances</a>
-      <a class="tab" data-tab="whatsapp">📱 WhatsApp</a>
-      <a class="tab" data-tab="settings">⚙️ Settings</a>
-    </nav>
-
-    <!-- RIGHT CONTENT -->
-    <section>
-
-      <!-- ===== Invoice Actions / Admin (always visible) ===== -->
-      <div class="panel" id="invoiceActions" style="margin:0 0 16px;">
-        <h3 style="margin:0 0 8px;">Invoice Actions</h3>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
-                 style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
-          <button id="btnMarkSent" class="btn" type="button">Mark as sent</button>
-          <button id="btnHealth" class="btn ghost" type="button">Auth ping</button>
-        </div>
-        <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
-      </div>
-
-      <!-- ===== Overview ===== -->
-      <div class="panel" id="tab-overview">
-        <h2>Overview</h2>
-        <div class="grid" id="kpis">
-          <div class="kpi"><h3>Total Leases</h3><div class="v" id="kpiLeases">—</div></div>
-          <div class="kpi"><h3>Open Invoices (month)</h3><div class="v" id="kpiOpen">—</div></div>
-          <div class="kpi"><h3>Payments (month)</h3><div class="v" id="kpiPayments">—</div></div>
-          <div class="kpi"><h3>Balance Due (month)</h3><div class="v" id="kpiBalance">—</div></div>
-        </div>
-        <div class="filters">
-          <div class="month-wrapper">
-            <span>Month</span>
-            <input id="monthPicker" type="month" />
-          </div>
-          <button id="btnSendAll" class="btn" type="button">Send All (This Month)</button>
-          <button id="btnMarkSelected" class="btn secondary" type="button">Mark Selected as Sent</button>
-        </div>
-
-        <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
-        <div id="collection-summary-month">
-          <div><strong id="summaryMonthLabel">—</strong></div>
-          <div id="summaryMonthDue">due</div>
-          <div id="summaryMonthCollected">collected</div>
-          <div id="summaryMonthBalance">balance</div>
-          <div id="summaryMonthRate">collection rate</div>
+  <div class="wrap">
+    <!-- OVERVIEW -->
+    <section class="panel active" data-panel="overview">
+      <div class="panel-head">
+        <h2>Monthly Overview</h2>
+        <div class="meta">
+          <span class="chip" id="ovStatus"><span class="dot warn"></span><span>Not loaded</span></span>
+          <span id="ovMeta">—</span>
         </div>
       </div>
-
-      <!-- ===== Leases ===== -->
-      <div class="panel hidden" id="tab-leases">
-        <div class="bar-flex">
-          <h2>Leases</h2><span class="chip" id="leasesCount">—</span>
-        </div>
-        <div class="filters">
-          <input id="leaseSearch" placeholder="Search tenant or unit…"/>
-          <button class="btn ghost" id="reloadLeases" type="button">Reload</button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Tenant</th><th>Unit</th><th>Rent</th><th>Cycle</th><th>Due Day</th><th>Status</th><th>WhatsApp</th></tr>
-            </thead>
-            <tbody id="leasesBody"></tbody>
-          </table>
-        </div>
-        <div id="leasesEmpty" class="empty hidden">No leases to show yet.</div>
-      </div>
-
-      <!-- ===== Payments ===== -->
-      <div class="panel hidden" id="tab-payments">
-        <div class="bar-flex">
-          <h2>Payments</h2><span class="chip" id="paymentsCount">—</span>
-        </div>
-        <div class="filters">
-          <select id="paymentsMonth"></select>
-          <input id="paymentsTenant" placeholder="Tenant contains…"/>
-          <select id="paymentsStatus">
-            <option value="">Any status</option>
-            <option value="posted">posted</option>
-            <option value="pending">pending</option>
-            <option value="failed">failed</option>
-          </select>
-          <button class="btn" id="applyPayments" type="button">Apply</button>
-          <button class="btn ghost" id="clearPayments" type="button">Clear</button>
-
-          <div class="payments-totals">
-            <span class="chip" id="paymentsCountChip">0</span>
-            <span class="chip" id="paymentsTotalChip">KES 0</span>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Date</th><th>Tenant</th><th>Method</th><th class="muted">Status</th><th style="text-align:right">Amount</th></tr>
-            </thead>
-            <tbody id="paymentsBody"></tbody>
-          </table>
-        </div>
-        <div id="paymentsEmpty" class="empty hidden">No payments match your filters.</div>
-      </div>
-
-      <!-- ===== Rent Roll ===== -->
-      <div class="panel hidden" id="tab-rentroll">
-        <div class="bar-flex">
-          <h2>Rent Roll</h2><span class="chip" id="rentrollCount">—</span>
-        </div>
-        <div class="filters">
-          <select id="rentrollMonth"></select>
-          <input id="rentrollTenant" placeholder="Tenant contains…"/>
-          <input id="rentrollProperty" placeholder="Property contains…"/>
-          <button class="btn" id="applyRentroll" type="button">Apply</button>
-          <button class="btn ghost" id="clearRentroll" type="button">Clear</button>
-
-          <div class="rentroll-totals">
-            <span class="chip" id="rentrollCountChip">0</span>
-            <span class="chip" id="rentrollDueChip">KES 0 due</span>
-            <span class="chip" id="rentrollPaidChip">KES 0 paid</span>
-            <span class="chip" id="rentrollBalChip">KES 0 balance</span>
-            <span class="chip" id="rentrollCreditChip">KES 0 credit</span>
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Property</th>
-                <th>Unit</th>
-                <th>Tenant</th>
-                <th>Period</th>
-                <th>Rent</th>
-                <th>Late fees</th>
-                <th>Status</th>
-                <th style="text-align:right">Balance</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="rentrollBody"></tbody>
-          </table>
-        </div>
-        <div id="rentrollEmpty" class="empty hidden">No rent-roll rows match your filters.</div>
-      </div>
-
-      <!-- ===== Balances ===== -->
-      <div class="panel hidden" id="tab-balances">
-        <div class="bar-flex">
-          <h2>Balances</h2>
-          <button id="reloadBalances" class="btn ghost" type="button">Reload</button>
-          <button id="btnExportBalances" class="btn ghost" type="button">Export CSV</button>
-        </div>
-
-        <!-- Month picker for Balances -->
-        <div class="filters">
-          <select id="balancesMonth"></select>
-        </div>
-
-        <div class="table-wrap" style="margin-top:12px;">
-          <table>
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th class="num">Rent due</th>
-                <th class="num">Paid</th>
-                <th class="num">Balance</th>
-                <th class="num">Collection rate</th>
-              </tr>
-            </thead>
-            <tbody id="balancesBody"></tbody>
-          </table>
-        </div>
-
-        <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
-
-        <div style="margin-top:24px;">
-          <h3>This month totals (all tenants)</h3>
-          <div id="balances-summary" class="kpi-row">
-            <div class="chip"><strong id="balMonthLabel">—</strong></div>
-            <div class="chip" id="balMonthDue">KES 0 due</div>
-            <div class="chip" id="balMonthCollected">KES 0 collected</div>
-            <div class="chip" id="balMonthBalance">KES 0 balance</div>
-            <div class="chip" id="balMonthRate">0.0% collection rate</div>
-          </div>
-          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
-        </div>
-
-        <div class="bar-flex" style="margin-top:24px;">
-          <h3>Outstanding by tenant (this month)</h3>
-          <span class="chip" id="outstandingMonthLabel">—</span>
-          <button id="reloadOutstandingByTenant" class="btn ghost" type="button">Reload</button>
-        </div>
-        <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th style="text-align:right">Outstanding</th>
-                <th style="text-align:right">Collection rate</th>
-              </tr>
-            </thead>
-            <tbody id="outstandingBody"></tbody>
-          </table>
-        </div>
-
-        <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
-      </div><!-- ✅ FIX: close Balances panel properly -->
-
-      <!-- ===== WhatsApp (ad-hoc) ===== -->
-      <div class="panel hidden" id="tab-whatsapp">
-        <h2>WhatsApp Message</h2>
-        <div class="filters">
-          <input id="waTenant" placeholder="Tenant name"/>
-          <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
-          <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)"/>
-          <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
-          <button class="btn" id="waBuild" type="button">Build Link</button>
-        </div>
-        <p class="muted">
-          For real leases, use the WhatsApp button in <b>Rent Roll</b> or the overview “Send All”.
-        </p>
-        <div id="waResult" class="muted"></div>
-      </div>
-
-      <!-- ===== Settings ===== -->
-      <div class="panel hidden" id="tab-settings">
-        <h2>Settings</h2>
-        <p class="muted">Saved only in this browser (localStorage).</p>
-        <div class="filters" style="gap:14px;align-items:center;flex-wrap:wrap">
-          <label style="display:flex;gap:8px;align-items:center">API Base
-            <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com"/>
-          </label>
-          <label style="display:flex;gap:8px;align-items:center">Admin Token
-            <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off"/>
-          </label>
-          <button class="btn" id="saveSettings" type="button">Save</button>
-          <button class="btn ghost" id="resetSettings" type="button">Reset</button>
+      <div class="panel-body">
+        <div class="grid" id="ovCards">
+          <!-- skeleton cards while loading -->
         </div>
       </div>
-
     </section>
-  </main>
-</div>
 
-<script>
-(function(){
-  window.getAdminToken = window.getAdminToken || function(){
-    let t = localStorage.getItem("admin_token");
-    if(!t){
-      t = prompt("Enter X-Admin-Token (ADMIN_TOKEN) to enable admin actions:");
-      if(t) localStorage.setItem("admin_token", t);
+    <!-- LEASES -->
+    <section class="panel" data-panel="leases">
+      <div class="panel-head">
+        <h2>Leases</h2>
+        <div class="meta">
+          <span class="chip" id="leasesCount"><span class="dot warn"></span><span>0 rows</span></span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="table-tools">
+          <div class="search">
+            <span style="color:var(--muted);font-size:12px">Search</span>
+            <input id="leasesSearch" placeholder="tenant / unit / phone / email..." />
+          </div>
+          <button class="btn secondary" id="leasesExport">Export</button>
+        </div>
+        <div id="leasesArea"></div>
+      </div>
+    </section>
+
+    <!-- PAYMENTS -->
+    <section class="panel" data-panel="payments">
+      <div class="panel-head">
+        <h2>Payments</h2>
+        <div class="meta">
+          <span class="chip" id="paymentsCount"><span class="dot warn"></span><span>0 rows</span></span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="table-tools">
+          <div class="search">
+            <span style="color:var(--muted);font-size:12px">Search</span>
+            <input id="paymentsSearch" placeholder="payer / unit / mpesa code..." />
+          </div>
+          <button class="btn secondary" id="paymentsExport">Export</button>
+        </div>
+        <div id="paymentsArea"></div>
+      </div>
+    </section>
+
+    <!-- RENT ROLL -->
+    <section class="panel" data-panel="rentroll">
+      <div class="panel-head">
+        <h2>Rent Roll</h2>
+        <div class="meta">
+          <span class="chip" id="rrCount"><span class="dot warn"></span><span>0 rows</span></span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="table-tools">
+          <div class="search">
+            <span style="color:var(--muted);font-size:12px">Search</span>
+            <input id="rrSearch" placeholder="tenant / unit..." />
+          </div>
+          <button class="btn secondary" id="rrExport">Export</button>
+        </div>
+        <div id="rrArea"></div>
+      </div>
+    </section>
+
+    <!-- BALANCES -->
+    <section class="panel" data-panel="balances">
+      <div class="panel-head">
+        <h2>Balances</h2>
+        <div class="meta">
+          <span class="chip" id="balCount"><span class="dot warn"></span><span>0 rows</span></span>
+          <button class="btn secondary" id="balCsv">CSV</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="table-tools">
+          <div class="search">
+            <span style="color:var(--muted);font-size:12px">Search</span>
+            <input id="balSearch" placeholder="tenant / unit..." />
+          </div>
+        </div>
+        <div id="balArea"></div>
+      </div>
+    </section>
+
+    <div class="toasts" id="toasts"></div>
+  </div>
+
+  <script>
+    /* =========================
+       0) Config (EDIT HERE)
+    ========================= */
+    const ENDPOINTS = {
+      // Make sure these match YOUR API routes
+      ping:           (m) => `/health`,
+      overview:       (m) => `/dashboard/overview?month=${encodeURIComponent(m)}`,
+
+      leases:         (m) => `/leases?month=${encodeURIComponent(m)}`,
+      payments:       (m) => `/payments?month=${encodeURIComponent(m)}`,
+      rentroll:       (m) => `/rentroll?month=${encodeURIComponent(m)}`,
+
+      balancesByUnit: (m) => `/balances/by_unit?month=${encodeURIComponent(m)}`,
+      balancesCsv:    (m) => `/balances/export?month=${encodeURIComponent(m)}`
+    };
+
+    /* =========================
+       1) Tiny helpers
+    ========================= */
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+    function escapeHtml(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
     }
-    return t || "";
-  };
-  window.setAdminToken = window.setAdminToken || function(t){
-    localStorage.setItem("admin_token", t);
-  };
 
-  const btn = document.getElementById("setAdminTokenBtn");
-  if(btn && !btn.dataset.bound){
-    btn.dataset.bound = "1";
-    btn.addEventListener("click", ()=>{
-      const t = prompt("Paste ADMIN_TOKEN");
-      if(t) window.setAdminToken(t);
+    function fmtNumber(n){
+      if (n == null || Number.isNaN(Number(n))) return "0";
+      return Number(n).toLocaleString("en-KE", { maximumFractionDigits:0, minimumFractionDigits:0 });
+    }
+    function fmtKes(n){
+      if (n == null || Number.isNaN(Number(n))) return "KES 0";
+      return `KES ${fmtNumber(n)}`;
+    }
+    function fmtDate(d){
+      if (!d) return "-";
+      // supports "YYYY-MM-DD" or ISO
+      const x = new Date(d);
+      if (Number.isNaN(x.getTime())) return String(d);
+      return x.toLocaleDateString("en-KE", { year:"numeric", month:"short", day:"2-digit" });
+    }
+
+    function setChip(el, kind, text){
+      el.innerHTML = `<span class="dot ${kind}"></span><span>${escapeHtml(text)}</span>`;
+    }
+
+    function toast(kind, title, msg){
+      const wrap = $("#toasts");
+      const t = document.createElement("div");
+      t.className = `toast ${kind}`;
+      t.innerHTML = `<div class="t">${escapeHtml(title)}</div><div class="m">${escapeHtml(msg)}</div>`;
+      wrap.appendChild(t);
+      setTimeout(() => t.remove(), 5200);
+    }
+
+    function withTrailingSlashRemoved(s){
+      return String(s||"").trim().replace(/\/+$/,"");
+    }
+
+    /* =========================
+       2) State + Persistence
+    ========================= */
+    const LS_API = "rt_api_base";
+    const LS_MONTH = "rt_month";
+
+    const state = {
+      apiBase: withTrailingSlashRemoved(localStorage.getItem(LS_API) || "https://rent-tracker-api-16i0.onrender.com"),
+      month:   (localStorage.getItem(LS_MONTH) || new Date().toISOString().slice(0,7))
+    };
+
+    /* =========================
+       3) Fetch wrapper (timeout + errors)
+    ========================= */
+    async function fetchJson(path, { timeoutMs=20000 } = {}){
+      const base = withTrailingSlashRemoved(state.apiBase);
+      const url = base + path;
+
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+      try{
+        const res = await fetch(url, { signal: ctrl.signal });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok){
+          let body = "";
+          try { body = ct.includes("application/json") ? JSON.stringify(await res.json()) : await res.text(); }
+          catch(e){ body = ""; }
+          throw new Error(`HTTP ${res.status} ${res.statusText}${body ? " — " + body.slice(0,240) : ""}`);
+        }
+        if (ct.includes("application/json")) return await res.json();
+        return await res.text();
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    /* =========================
+       4) Rendering helpers (tables)
+    ========================= */
+    function renderEmpty(target, message){
+      target.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+    }
+
+    function renderTable(target, columns, rows){
+      if (!rows || rows.length === 0){
+        renderEmpty(target, "No data found for this month.");
+        return;
+      }
+
+      const thead = `<thead><tr>${
+        columns.map(c => `<th class="${c.right ? "right" : ""}">${escapeHtml(c.label)}</th>`).join("")
+      }</tr></thead>`;
+
+      const tbody = `<tbody>${
+        rows.map(r => `<tr>${
+          columns.map(c => {
+            const val = c.render ? c.render(r) : (r[c.key] ?? "");
+            const safe = (c.html === true) ? String(val) : escapeHtml(val);
+            return `<td class="${(c.right ? "right " : "") + (c.mono ? "mono" : "")}">${safe}</td>`;
+          }).join("")
+        }</tr>`).join("")
+      }</tbody>`;
+
+      target.innerHTML = `<div class="tbl-wrap"><table>${thead}${tbody}</table></div>`;
+    }
+
+    function filterRows(rows, q, fields){
+      const s = String(q||"").trim().toLowerCase();
+      if (!s) return rows;
+      return (rows||[]).filter(r => fields.some(f => String(r?.[f] ?? "").toLowerCase().includes(s)));
+    }
+
+    /* =========================
+       5) Tabs
+    ========================= */
+    function initTabs(){
+      $$("#tabs .tab").forEach(t => {
+        t.addEventListener("click", () => {
+          $$("#tabs .tab").forEach(x => x.classList.remove("active"));
+          t.classList.add("active");
+          const key = t.dataset.tab;
+          $$("[data-panel]").forEach(p => p.classList.toggle("active", p.dataset.panel === key));
+        });
+      });
+    }
+
+    /* =========================
+       6) Loaders
+    ========================= */
+    function showOverviewSkeleton(){
+      const cards = $("#ovCards");
+      cards.innerHTML = "";
+      for (let i=0; i<4; i++){
+        const c = document.createElement("div");
+        c.className = "card skeleton";
+        c.style.height = "92px";
+        cards.appendChild(c);
+      }
+    }
+
+    async function loadOverview(){
+      const badge = $("#ovStatus");
+      const meta = $("#ovMeta");
+      try{
+        setChip(badge, "warn", "Loading...");
+        meta.textContent = `Month: ${state.month}`;
+
+        showOverviewSkeleton();
+
+        const data = await fetchJson(ENDPOINTS.overview(state.month));
+        // Expecting object with numeric fields (adjust mapping below if different)
+        const items = [
+          { k: "Rent Due",      v: fmtKes(data?.rent_due ?? data?.invoiced ?? data?.invoiced_amt), s: "Total invoiced" },
+          { k: "Collected",     v: fmtKes(data?.paid ?? data?.collected ?? data?.collected_amt), s: "Payments received" },
+          { k: "Balance",       v: fmtKes(data?.balance ?? data?.month_delta), s: "Net outstanding" },
+          { k: "Occupancy",     v: (data?.occupancy_pct != null ? `${Number(data.occupancy_pct).toFixed(1)}%` : (data?.occupancy ? `${data.occupancy}%` : "-")), s: "If provided by API" }
+        ];
+
+        const cards = $("#ovCards");
+        cards.innerHTML = items.map(x => `
+          <div class="card">
+            <div class="k">${escapeHtml(x.k)}</div>
+            <div class="v">${escapeHtml(x.v)}</div>
+            <div class="s">${escapeHtml(x.s)}</div>
+          </div>
+        `).join("");
+
+        setChip(badge, "ok", "Loaded");
+        meta.textContent = `Month: ${state.month}`;
+      } catch(err){
+        $("#ovCards").innerHTML = "";
+        renderEmpty($("#ovCards"), "Failed to load overview. Check API base URL and endpoint mapping.");
+        setChip(badge, "bad", "Error");
+        toast("bad", "Overview failed", err.message || String(err));
+      }
+    }
+
+    async function loadLeases(){
+      const area = $("#leasesArea");
+      const chip = $("#leasesCount");
+      try{
+        setChip(chip, "warn", "Loading...");
+        area.innerHTML = `<div class="empty skeleton" style="height:120px"></div>`;
+
+        const rows0 = await fetchJson(ENDPOINTS.leases(state.month));
+        const rows = Array.isArray(rows0) ? rows0 : (rows0?.data || []);
+
+        const q = $("#leasesSearch").value;
+        const filtered = filterRows(rows, q, ["full_name","tenant","unit_code","phone","email"]);
+
+        setChip(chip, "ok", `${filtered.length} rows`);
+
+        renderTable(area, [
+          { label:"Tenant", key:"full_name", render:r=> r.full_name ?? r.tenant ?? "-" },
+          { label:"Unit", key:"unit_code", render:r=> r.unit_code ?? "-" },
+          { label:"Phone", key:"phone", render:r=> r.phone ?? "-" },
+          { label:"Email", key:"email", render:r=> r.email ?? "-" },
+          { label:"Rent", key:"rent", right:true, mono:true, render:r=> fmtKes(r.rent ?? r.rent_amount ?? r.monthly_rent) },
+          { label:"Start", key:"start_date", render:r=> fmtDate(r.start_date ?? r.lease_start) },
+          { label:"End", key:"end_date", render:r=> fmtDate(r.end_date ?? r.lease_end) }
+        ], filtered);
+
+      } catch(err){
+        renderEmpty(area, "Failed to load leases. Confirm ENDPOINTS.leases mapping.");
+        setChip(chip, "bad", "Error");
+        toast("bad", "Leases failed", err.message || String(err));
+      }
+    }
+
+    async function loadPayments(){
+      const area = $("#paymentsArea");
+      const chip = $("#paymentsCount");
+      try{
+        setChip(chip, "warn", "Loading...");
+        area.innerHTML = `<div class="empty skeleton" style="height:120px"></div>`;
+
+        const rows0 = await fetchJson(ENDPOINTS.payments(state.month));
+        const rows = Array.isArray(rows0) ? rows0 : (rows0?.data || []);
+
+        const q = $("#paymentsSearch").value;
+        const filtered = filterRows(rows, q, ["payer_name","unit_code","mpesa_code","method","phone"]);
+
+        setChip(chip, "ok", `${filtered.length} rows`);
+
+        renderTable(area, [
+          { label:"Paid At", key:"paid_at", render:r=> fmtDate(r.paid_at) },
+          { label:"Payer", key:"payer_name", render:r=> r.payer_name ?? "-" },
+          { label:"Unit", key:"unit_code", render:r=> r.unit_code ?? "-" },
+          { label:"Method", key:"method", render:r=> r.method ?? "-" },
+          { label:"M-Pesa", key:"mpesa_code", mono:true, render:r=> r.mpesa_code ?? "-" },
+          { label:"Amount", key:"amount", right:true, mono:true, render:r=> fmtKes(r.amount) }
+        ], filtered);
+
+      } catch(err){
+        renderEmpty(area, "Failed to load payments. Confirm ENDPOINTS.payments mapping.");
+        setChip(chip, "bad", "Error");
+        toast("bad", "Payments failed", err.message || String(err));
+      }
+    }
+
+    async function loadRentRoll(){
+      const area = $("#rrArea");
+      const chip = $("#rrCount");
+      try{
+        setChip(chip, "warn", "Loading...");
+        area.innerHTML = `<div class="empty skeleton" style="height:120px"></div>`;
+
+        const rows0 = await fetchJson(ENDPOINTS.rentroll(state.month));
+        const rows = Array.isArray(rows0) ? rows0 : (rows0?.data || []);
+
+        const q = $("#rrSearch").value;
+        const filtered = filterRows(rows, q, ["tenant","full_name","unit_code"]);
+
+        setChip(chip, "ok", `${filtered.length} rows`);
+
+        renderTable(area, [
+          { label:"Tenant", key:"tenant", render:r=> r.tenant ?? r.full_name ?? "-" },
+          { label:"Unit", key:"unit_code", render:r=> r.unit_code ?? "-" },
+          { label:"Rent Due", key:"rent_due", right:true, mono:true, render:r=> fmtKes(r.rent_due ?? r.invoiced_amt) },
+          { label:"Paid", key:"paid", right:true, mono:true, render:r=> fmtKes(r.paid ?? r.collected_amt) },
+          { label:"Balance", key:"balance", right:true, mono:true, render:r=> fmtKes(r.balance ?? r.month_delta) }
+        ], filtered);
+
+      } catch(err){
+        renderEmpty(area, "Failed to load rent roll. Confirm ENDPOINTS.rentroll mapping.");
+        setChip(chip, "bad", "Error");
+        toast("bad", "Rent roll failed", err.message || String(err));
+      }
+    }
+
+    async function loadBalances(){
+      const area = $("#balArea");
+      const chip = $("#balCount");
+      try{
+        setChip(chip, "warn", "Loading...");
+        area.innerHTML = `<div class="empty skeleton" style="height:120px"></div>`;
+
+        const rows0 = await fetchJson(ENDPOINTS.balancesByUnit(state.month));
+        const rows = Array.isArray(rows0) ? rows0 : (rows0?.data || []);
+
+        const q = $("#balSearch").value;
+        const filtered = filterRows(rows, q, ["tenant","full_name","unit","unit_code"]);
+
+        setChip(chip, "ok", `${filtered.length} rows`);
+
+        renderTable(area, [
+          { label:"Tenant", key:"tenant", render:r=> r.tenant ?? r.full_name ?? "-" },
+          { label:"Unit", key:"unit", render:r=> r.unit ?? r.unit_code ?? "-" },
+          { label:"Rent Due", key:"rent_due", right:true, mono:true, render:r=> fmtKes(r.rent_due ?? r.invoiced_amt) },
+          { label:"Paid", key:"paid", right:true, mono:true, render:r=> fmtKes(r.paid ?? r.collected_amt) },
+          { label:"Balance", key:"balance", right:true, mono:true, render:r=> {
+              const v = Number(r.balance ?? r.month_delta) || 0;
+              return v === 0 ? `<span class="chip"><span class="dot ok"></span>0</span>` : fmtKes(v);
+            }, html:true
+          }
+        ], filtered);
+
+      } catch(err){
+        renderEmpty(area, "Failed to load balances. Confirm ENDPOINTS.balancesByUnit mapping.");
+        setChip(chip, "bad", "Error");
+        toast("bad", "Balances failed", err.message || String(err));
+      }
+    }
+
+    /* =========================
+       7) Controls wiring
+    ========================= */
+    function initControls(){
+      const apiBase = $("#apiBase");
+      const monthPick = $("#monthPick");
+
+      apiBase.value = state.apiBase;
+      monthPick.value = state.month;
+
+      apiBase.addEventListener("change", () => {
+        state.apiBase = withTrailingSlashRemoved(apiBase.value);
+        localStorage.setItem(LS_API, state.apiBase);
+        toast("ok", "API saved", state.apiBase);
+      });
+
+      monthPick.addEventListener("change", () => {
+        state.month = monthPick.value;
+        localStorage.setItem(LS_MONTH, state.month);
+        toast("ok", "Month changed", state.month);
+        refreshAll();
+      });
+
+      $("#btnRefresh").addEventListener("click", refreshAll);
+
+      $("#btnPing").addEventListener("click", async () => {
+        try{
+          await fetchJson(ENDPOINTS.ping(state.month), { timeoutMs: 12000 });
+          toast("ok", "API OK", "Ping success.");
+        } catch(err){
+          toast("bad", "API Ping failed", err.message || String(err));
+        }
+      });
+
+      // Live search (debounced)
+      const debounce = (fn, ms=180) => {
+        let t;
+        return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), ms); };
+      };
+
+      $("#leasesSearch").addEventListener("input", debounce(loadLeases, 120));
+      $("#paymentsSearch").addEventListener("input", debounce(loadPayments, 120));
+      $("#rrSearch").addEventListener("input", debounce(loadRentRoll, 120));
+      $("#balSearch").addEventListener("input", debounce(loadBalances, 120));
+
+      // Exports (basic — you can wire to your real endpoints)
+      $("#leasesExport").addEventListener("click", () => toast("warn", "Export", "Wire this to your leases export endpoint."));
+      $("#paymentsExport").addEventListener("click", () => toast("warn", "Export", "Wire this to your payments export endpoint."));
+      $("#rrExport").addEventListener("click", () => toast("warn", "Export", "Wire this to your rent roll export endpoint."));
+
+      $("#balCsv").addEventListener("click", () => {
+        const base = withTrailingSlashRemoved(state.apiBase);
+        const url = base + ENDPOINTS.balancesCsv(state.month);
+        window.open(url, "_blank");
+      });
+    }
+
+    async function refreshAll(){
+      // Update badge text to show which API you're pointing to
+      $("#envBadge").textContent = state.apiBase.replace(/^https?:\/\//,"");
+      await Promise.allSettled([
+        loadOverview(),
+        loadLeases(),
+        loadPayments(),
+        loadRentRoll(),
+        loadBalances()
+      ]);
+    }
+
+    /* =========================
+       8) Boot
+    ========================= */
+    document.addEventListener("DOMContentLoaded", () => {
+      initTabs();
+      initControls();
+      refreshAll();
     });
-  }
-})();
-</script>
-
-<script src="./app.js?v=20251224a"></script>
+  </script>
 </body>
 </html>
