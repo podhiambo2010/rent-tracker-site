@@ -51,43 +51,38 @@ function sum(rows, pick) {
   return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
 }
 
+
 function renderBalancesOverview(o) {
-  const monthStart = o?.month_start || o?.month || o?.monthStart || null;
+  // supports either {month_start,...} or {month,...}
+  const m = o?.month_start || o?.month || "—";
+  setText("#balMonth", m !== "—" ? String(m).slice(0, 7) : "—");
 
-  const totalDue =
-    o?.total_due ?? o?.rent_due_total ?? o?.due_total ?? 0;
+  const totalDue  = o?.total_due  ?? o?.rent_due_total ?? 0;
+  const totalPaid = o?.total_paid ?? o?.amount_paid_total ?? 0;
+  const balTotal  = o?.balance_total ?? 0;
+  const cr        = o?.collection_rate_pct ?? o?.collection_rate ?? 0;
 
-  const totalPaid =
-    o?.total_paid ?? o?.amount_paid_total ?? o?.paid_total ?? 0;
-
-  const balanceTotal =
-    o?.balance_total ?? o?.outstanding_total ?? o?.month_delta_total ?? 0;
-
-  const rate =
-    o?.collection_rate_pct ?? o?.collection_rate ?? o?.collectionRate ?? 0;
-
-  setText("#balMonth", monthStart ? String(monthStart).slice(0, 7) : "—");
   setText("#balTotalDue", fmtKes(totalDue));
   setText("#balTotalPaid", fmtKes(totalPaid));
-  setText("#balTotalBalance", fmtKes(balanceTotal));
-  setText("#balCollectionRate", fmtPct(rate));
+  setText("#balTotalBalance", fmtKes(balTotal));
+  setText("#balCollectionRate", fmtPct(cr));
 }
 
 function renderBalancesByTenantTable(rows) {
   const tbody = document.querySelector("#balancesTable tbody");
   if (!tbody) return;
 
-  if (!Array.isArray(rows) || rows.length === 0) {
+  if (!Array.isArray(rows) || !rows.length) {
     tbody.innerHTML = `<tr><td colspan="5" class="muted">No balances to show yet.</td></tr>`;
     return;
   }
 
   tbody.innerHTML = rows.map(r => {
-    const tenant = r?.tenant ?? r?.tenant_name ?? "—";
-    const due = r?.total_due ?? r?.rent_due ?? r?.due_for_month ?? 0;
-    const paid = r?.paid_total ?? r?.paid ?? r?.amount_paid_total ?? 0;
-    const bal = r?.balance ?? r?.outstanding ?? r?.balance_total ?? 0;
-    const pct = r?.collection_rate_pct ?? r?.collection_rate_pct ?? r?.collection_rate ?? 0;
+    const tenant = r.tenant ?? r.tenant_name ?? "—";
+    const due    = r.total_due ?? r.rent_due ?? 0;
+    const paid   = r.paid_total ?? r.paid ?? 0;
+    const bal    = r.balance ?? r.outstanding ?? 0;
+    const pct    = r.collection_rate_pct ?? r.collection_rate ?? 0;
 
     return `
       <tr>
@@ -100,6 +95,7 @@ function renderBalancesByTenantTable(rows) {
     `;
   }).join("");
 }
+
 
 function escapeHtml(s) {
   const str = String(s ?? "");
@@ -948,27 +944,26 @@ async function loadBalancesByUnit() {
  * 2) balances (ONE source of truth: ledger via /balances/by_unit)
  * -------------------------------------------------------------------------- */
 async function loadBalances(initial = false) {
-  const month = getSelectedMonth(); // MUST return "YYYY-MM" like "2025-12"
-  console.log("[BALDBG] loadBalances() ENTERED. initial=", initial, "month=", month);
+  const month = getSelectedMonth(); // must be "YYYY-MM"
+  console.log("[BALDBG] loadBalances entered:", { initial, month });
 
   try {
-    // 1) totals panel
+    // Balances totals panel (NOT /overview)
     const overview = await apiGetAny(
       `/dashboard/balances/overview?month=${encodeURIComponent(month)}`,
       `/balances/overview?month=${encodeURIComponent(month)}`
     );
-    console.log("[BALDBG] balances overview raw response:", overview);
+    console.log("[BALDBG] balances overview:", overview);
     renderBalancesOverview(overview);
 
-    // 2) balances table rows (THIS is what was missing/wrong before)
+    // Balances table
     const byTenant = await apiGetAny(
       `/dashboard/balances/by_tenant?month=${encodeURIComponent(month)}`,
       `/balances/by_tenant?month=${encodeURIComponent(month)}`
     );
-    console.log("[BALDBG] by_tenant raw response:", byTenant);
+    console.log("[BALDBG] balances by_tenant:", byTenant);
 
     const rows = Array.isArray(byTenant?.rows) ? byTenant.rows : [];
-    console.log("[BALDBG] rows isArray:", Array.isArray(rows), "rows.length:", rows.length, "sample:", rows[0]);
     renderBalancesByTenantTable(rows);
 
   } catch (err) {
