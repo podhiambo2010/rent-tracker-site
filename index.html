@@ -193,9 +193,9 @@
       </div>
       <div class="env">
         <input id="apiBase" placeholder="API base e.g. https://rent-tracker-api-16i0.onrender.com"/>
-        <button class="btn" id="useApi">Use this API</button>
-        <button class="btn secondary" id="openDocs">/docs</button>
-        <button class="btn ghost" id="setAdminTokenBtn" title="Set Admin Token">⚙️ Admin Token</button>
+        <button class="btn" id="useApi" type="button">Use this API</button>
+        <button class="btn secondary" id="openDocs" type="button">/docs</button>
+        <button class="btn ghost" id="setAdminTokenBtn" type="button" title="Set Admin Token">⚙️ Admin Token</button>
       </div>
     </div>
   </header>
@@ -221,8 +221,8 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
                  style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
-          <button id="btnMarkSent" class="btn">Mark as sent</button>
-          <button id="btnHealth" class="btn ghost">Auth ping</button>
+          <button id="btnMarkSent" class="btn" type="button">Mark as sent</button>
+          <button id="btnHealth" class="btn ghost" type="button">Auth ping</button>
         </div>
         <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
       </div>
@@ -241,8 +241,8 @@
             <span>Month</span>
             <input id="monthPicker" type="month" />
           </div>
-          <button id="btnSendAll" class="btn">Send All (This Month)</button>
-          <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
+          <button id="btnSendAll" class="btn" type="button">Send All (This Month)</button>
+          <button id="btnMarkSelected" class="btn secondary" type="button">Mark Selected as Sent</button>
         </div>
 
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
@@ -262,7 +262,7 @@
         </div>
         <div class="filters">
           <input id="leaseSearch" placeholder="Search tenant or unit…"/>
-          <button class="btn ghost" id="reloadLeases">Reload</button>
+          <button class="btn ghost" id="reloadLeases" type="button">Reload</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -289,8 +289,8 @@
             <option value="pending">pending</option>
             <option value="failed">failed</option>
           </select>
-          <button class="btn" id="applyPayments">Apply</button>
-          <button class="btn ghost" id="clearPayments">Clear</button>
+          <button class="btn" id="applyPayments" type="button">Apply</button>
+          <button class="btn ghost" id="clearPayments" type="button">Clear</button>
 
           <div class="payments-totals">
             <span class="chip" id="paymentsCountChip">0</span>
@@ -317,8 +317,8 @@
           <select id="rentrollMonth"></select>
           <input id="rentrollTenant" placeholder="Tenant contains…"/>
           <input id="rentrollProperty" placeholder="Property contains…"/>
-          <button class="btn" id="applyRentroll">Apply</button>
-          <button class="btn ghost" id="clearRentroll">Clear</button>
+          <button class="btn" id="applyRentroll" type="button">Apply</button>
+          <button class="btn ghost" id="clearRentroll" type="button">Clear</button>
 
           <div class="rentroll-totals">
             <span class="chip" id="rentrollCountChip">0</span>
@@ -354,8 +354,8 @@
       <div class="panel hidden" id="tab-balances">
         <div class="bar-flex">
           <h2>Balances</h2>
-          <button id="reloadBalances" class="btn ghost">Reload</button>
-          <button id="btnExportBalances" class="btn ghost">Export CSV</button>
+          <button id="reloadBalances" class="btn ghost" type="button">Reload</button>
+          <button id="btnExportBalances" class="btn ghost" type="button">Export CSV</button>
         </div>
 
         <!-- Month picker for Balances -->
@@ -378,7 +378,6 @@
           </table>
         </div>
 
-        <!-- ✅ This must exist and match JS: #balancesEmpty -->
         <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
 
         <div style="margin-top:24px;">
@@ -396,8 +395,7 @@
         <div class="bar-flex" style="margin-top:24px;">
           <h3>Outstanding by tenant (this month)</h3>
           <span class="chip" id="outstandingMonthLabel">—</span>
-          <!-- ✅ Ensure JS is wired to this id (or rename in JS). -->
-          <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
+          <button id="reloadOutstandingByTenant" class="btn ghost" type="button">Reload</button>
         </div>
         <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
 
@@ -410,14 +408,12 @@
                 <th style="text-align:right">Collection rate</th>
               </tr>
             </thead>
-
-            <!-- ✅ This must exist and match JS: #outstandingBody -->
             <tbody id="outstandingBody"></tbody>
           </table>
         </div>
 
-        <!-- ✅ This must exist and match JS: #outstandingEmpty -->
         <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
+      </div><!-- ✅ FIX: close Balances panel properly -->
 
       <!-- ===== WhatsApp (ad-hoc) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
@@ -427,7 +423,7 @@
           <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
           <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)"/>
           <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
-          <button class="btn" id="waBuild">Build Link</button>
+          <button class="btn" id="waBuild" type="button">Build Link</button>
         </div>
         <p class="muted">
           For real leases, use the WhatsApp button in <b>Rent Roll</b> or the overview “Send All”.
@@ -446,8 +442,8 @@
           <label style="display:flex;gap:8px;align-items:center">Admin Token
             <input id="adminToken" type="password" placeholder="paste your ADMIN_TOKEN" autocomplete="off"/>
           </label>
-          <button class="btn" id="saveSettings">Save</button>
-          <button class="btn ghost" id="resetSettings">Reset</button>
+          <button class="btn" id="saveSettings" type="button">Save</button>
+          <button class="btn ghost" id="resetSettings" type="button">Reset</button>
         </div>
       </div>
 
@@ -455,10 +451,8 @@
   </main>
 </div>
 
-<!-- Safe helpers available before app.js (NO API_BASE const here to avoid crashes) -->
 <script>
 (function(){
-  // Provide safe token helpers without redeclaring app.js globals
   window.getAdminToken = window.getAdminToken || function(){
     let t = localStorage.getItem("admin_token");
     if(!t){
@@ -471,7 +465,6 @@
     localStorage.setItem("admin_token", t);
   };
 
-  // Bind Admin Token button once
   const btn = document.getElementById("setAdminTokenBtn");
   if(btn && !btn.dataset.bound){
     btn.dataset.bound = "1";
@@ -483,7 +476,6 @@
 })();
 </script>
 
-<!-- App logic (must be last) -->
-<script src="./app.js?v=20251217a"></script>
+<script src="./app.js?v=20251224a"></script>
 </body>
 </html>
