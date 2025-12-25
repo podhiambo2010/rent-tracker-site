@@ -567,16 +567,33 @@ async function loadRentRoll(initial = false) {
           <span class="status ${status === "paid" ? "ok" : "due"}">
             ${status || "—"}
           </span>
-        </td>
-        <td style="text-align:right">${fmtKes(balance)}</td>
         <td>
-          <button class="btn ghost btn-wa-lease" data-lease-id="${r.lease_id}" type="button">
+          <button class="btn ghost btn-wa-rentroll" data-lease-id="${r.lease_id}" type="button">
             WhatsApp
           </button>
         </td>
       `;
       body.appendChild(tr);
-    }
+    }      tr.innerHTML = `
+        <td>${r.property_name || ""}</td>
+        <td>${r.unit_code || ""}</td>
+        <td>${r.tenant || ""}</td>
+        <td>${period}</td>
+        <td>${fmtKes(r.subtotal_rent || 0)}</td>
+        <td>${fmtKes(r.late_fees || 0)}</td>
+        <td>
+          <span class="status ${status === "paid" ? "ok" : "due"}">
+            ${status || "—"}
+          </span>
+        </td>
+        <td style="text-align:right">${fmtKes(balance)}</td>
+        <td>
+          <button class="btn ghost btn-wa-rentroll" data-lease-id="${r.lease_id}" type="button">
+            WhatsApp
+          </button>
+        </td>
+      `;
+
   } catch (err) {
     console.error("loadRentRoll error:", err);
     if (countChip) countChip.textContent = "0";
@@ -880,18 +897,40 @@ function initApiBaseControls() {
 /* WhatsApp buttons in leases & rent-roll (now includes selected month) */
 function initRowWhatsAppButtons() {
   document.addEventListener("click", (ev) => {
-    const btn = ev.target.closest(".btn-wa-lease");
-    if (!btn) return;
-
-    const leaseId = btn.dataset.leaseId;
-    if (!leaseId) return;
-
     const month = state.currentMonth || yyyymm();
-    const url =
-      state.apiBase.replace(/\/+$/, "") +
-      `/wa_for_lease_redirect?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(month)}`;
+    const base = (state.apiBase || "").replace(/\/+$/, "");
 
-    window.open(url, "_blank", "noopener");
+    // 1) RENT ROLL WhatsApp -> NEW endpoint
+    const rrBtn = ev.target.closest(".btn-wa-rentroll");
+    if (rrBtn) {
+      const leaseId = rrBtn.dataset.leaseId;
+      if (!leaseId) return;
+
+      const url =
+        base +
+        `/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(
+          leaseId
+        )}&month=${encodeURIComponent(month)}`;
+
+      window.open(url, "_blank", "noopener");
+      return;
+    }
+
+    // 2) LEASES WhatsApp -> Existing endpoint
+    const leaseBtn = ev.target.closest(".btn-wa-lease");
+    if (leaseBtn) {
+      const leaseId = leaseBtn.dataset.leaseId;
+      if (!leaseId) return;
+
+      const url =
+        base +
+        `/wa_for_lease_redirect?lease_id=${encodeURIComponent(
+          leaseId
+        )}&month=${encodeURIComponent(month)}`;
+
+      window.open(url, "_blank", "noopener");
+      return;
+    }
   });
 }
 
