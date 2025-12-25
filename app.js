@@ -567,24 +567,6 @@ async function loadRentRoll(initial = false) {
           <span class="status ${status === "paid" ? "ok" : "due"}">
             ${status || "—"}
           </span>
-        <td>
-          <button class="btn ghost btn-wa-rentroll" data-lease-id="${r.lease_id}" type="button">
-            WhatsApp
-          </button>
-        </td>
-      `;
-      body.appendChild(tr);
-    }      tr.innerHTML = `
-        <td>${r.property_name || ""}</td>
-        <td>${r.unit_code || ""}</td>
-        <td>${r.tenant || ""}</td>
-        <td>${period}</td>
-        <td>${fmtKes(r.subtotal_rent || 0)}</td>
-        <td>${fmtKes(r.late_fees || 0)}</td>
-        <td>
-          <span class="status ${status === "paid" ? "ok" : "due"}">
-            ${status || "—"}
-          </span>
         </td>
         <td style="text-align:right">${fmtKes(balance)}</td>
         <td>
@@ -593,7 +575,8 @@ async function loadRentRoll(initial = false) {
           </button>
         </td>
       `;
-
+      body.appendChild(tr);
+    }
   } catch (err) {
     console.error("loadRentRoll error:", err);
     if (countChip) countChip.textContent = "0";
