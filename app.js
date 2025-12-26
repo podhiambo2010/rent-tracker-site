@@ -502,23 +502,26 @@ async function loadRentRoll(initial = false) {
   const body = $("#rentrollBody");
   const empty = $("#rentrollEmpty");
 
-  // count chip in the Rent Roll header (shows '-' currently)
-  const countChip  = $("#rentrollCount") || $("#rentrollCountChip");
-  const dueChip    = $("#rentrollDueChip");
-  const paidChip   = $("#rentrollPaidChip");
-  const balChip    = $("#rentrollBalChip");
+  // count chip in the Rent Roll header (sometimes shows '-' from HTML)
+  const countChip = $("#rentrollCount") || $("#rentrollCountChip");
+
+  // totals chips
+  const dueChip = $("#rentrollDueChip");
+  const paidChip = $("#rentrollPaidChip");
+  const balChip = $("#rentrollBalChip");
   const creditChip = $("#rentrollCreditChip");
 
   if (!body) return;
 
+  // Always clear table immediately (prevents duplicates)
   body.innerHTML = "";
   empty && empty.classList.add("hidden");
 
-  // reset chips so you never see stale data
-  if (countChip)  countChip.textContent  = "0";
-  if (dueChip)    dueChip.textContent    = `${fmtKes(0)} due`;
-  if (paidChip)   paidChip.textContent   = `${fmtKes(0)} paid`;
-  if (balChip)    balChip.textContent    = `${fmtKes(0)} balance`;
+  // HARD RESET: overwrite any '-' immediately
+  if (countChip) countChip.textContent = "0";
+  if (dueChip) dueChip.textContent = `${fmtKes(0)} due`;
+  if (paidChip) paidChip.textContent = `${fmtKes(0)} paid`;
+  if (balChip) balChip.textContent = `${fmtKes(0)} balance`;
   if (creditChip) creditChip.textContent = `${fmtKes(0)} credit`;
 
   try {
@@ -594,14 +597,14 @@ async function loadRentRoll(initial = false) {
     // ---- update chips ----
     if (countChip) countChip.textContent = String(filtered.length);
 
-    const totalDue    = sum(filtered, rowDue);
-    const totalPaid   = sum(filtered, rowPaid);
-    const totalBal    = sum(filtered, rowBal);
+    const totalDue = sum(filtered, rowDue);
+    const totalPaid = sum(filtered, rowPaid);
+    const totalBal = sum(filtered, rowBal);
     const totalCredit = sum(filtered, rowCredit);
 
-    if (dueChip)    dueChip.textContent    = `${fmtKes(totalDue)} due`;
-    if (paidChip)   paidChip.textContent   = `${fmtKes(totalPaid)} paid`;
-    if (balChip)    balChip.textContent    = `${fmtKes(totalBal)} balance`;
+    if (dueChip) dueChip.textContent = `${fmtKes(totalDue)} due`;
+    if (paidChip) paidChip.textContent = `${fmtKes(totalPaid)} paid`;
+    if (balChip) balChip.textContent = `${fmtKes(totalBal)} balance`;
     if (creditChip) creditChip.textContent = `${fmtKes(totalCredit)} credit`;
 
     if (!filtered.length) {
@@ -610,10 +613,13 @@ async function loadRentRoll(initial = false) {
     }
 
     // ---- render table ----
+    const frag = document.createDocumentFragment();
+
     for (const r of filtered) {
-      const period = r.period_start
-        ? formatMonthLabel(String(r.period_start).slice(0, 7))
-        : (r.period || "");
+      const period =
+        r.period_start
+          ? formatMonthLabel(String(r.period_start).slice(0, 7))
+          : (r.period || "—");
 
       const baseRent = moneyToNumber(r.subtotal_rent ?? r.rent ?? r.rent_due ?? 0);
       const lateFees = moneyToNumber(r.late_fees ?? 0);
@@ -622,12 +628,12 @@ async function loadRentRoll(initial = false) {
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${r.property_name || r.property || ""}</td>
-        <td>${r.unit_code || r.unit || ""}</td>
-        <td>${r.tenant || r.tenant_name || ""}</td>
+        <td>${r.property_name || r.property || "—"}</td>
+        <td>${r.unit_code || r.unit || "—"}</td>
+        <td>${r.tenant || r.tenant_name || "—"}</td>
         <td>${period}</td>
         <td>${fmtKes(baseRent)}</td>
-        <td>${fmtKes(lateFees)}</td>
+        <td>${lateFees ? fmtKes(lateFees) : "—"}</td>
         <td>
           <span class="status ${status === "paid" ? "ok" : "due"}">
             ${status || "—"}
@@ -640,12 +646,18 @@ async function loadRentRoll(initial = false) {
           </button>
         </td>
       `;
-      body.appendChild(tr);
+      frag.appendChild(tr);
     }
+
+    body.appendChild(frag);
+
   } catch (err) {
     console.error("loadRentRoll error:", err);
     body.innerHTML = "";
     empty && empty.classList.remove("hidden");
+
+    // ensure header never stays as '-'
+    if (countChip) countChip.textContent = "0";
   }
 }
 
