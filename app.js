@@ -494,21 +494,35 @@ async function loadPayments(initial = false) {
   }
 }
 
+// --- Rent roll tab ---
 async function loadRentRoll(initial = false) {
   const monthSelect = $("#rentrollMonth");
   const tenantFilter = ($("#rentrollTenant")?.value || "").trim().toLowerCase();
   const propertyFilter = ($("#rentrollProperty")?.value || "").trim().toLowerCase();
   const body = $("#rentrollBody");
   const empty = $("#rentrollEmpty");
-  const countChip = $("#rentrollCount");
+
+  // chips (IDs confirmed from your DevTools)
+  const countChip  = $("#rentrollCountChip");
+  const dueChip    = $("#rentrollDueChip");
+  const paidChip   = $("#rentrollPaidChip");
+  const balChip    = $("#rentrollBalChip");
+  const creditChip = $("#rentrollCreditChip");
 
   if (!body) return;
 
   body.innerHTML = "";
   empty && empty.classList.add("hidden");
-  if (countChip) countChip.textContent = "—";
+
+  // reset chips so you never see stale data
+  if (countChip)  countChip.textContent  = "0";
+  if (dueChip)    dueChip.textContent    = `${fmtKes(0)} due`;
+  if (paidChip)   paidChip.textContent   = `${fmtKes(0)} paid`;
+  if (balChip)    balChip.textContent    = `${fmtKes(0)} balance`;
+  if (creditChip) creditChip.textContent = `${fmtKes(0)} credit`;
 
   try {
+    // months dropdown init (keep your existing logic)
     const needMonths = !!monthSelect && monthSelect.options.length === 0;
     if ((initial || needMonths) && monthSelect) {
       const raw = await apiGet("/months");
@@ -516,7 +530,6 @@ async function loadRentRoll(initial = false) {
       const months = rows.map(r => (typeof r === "string" ? r : r?.ym)).filter(Boolean);
 
       monthSelect.innerHTML = "";
-
       if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
       if (!months.length && state.currentMonth) months.push(state.currentMonth);
       if (!months.length) months.push(yyyymm());
@@ -532,7 +545,7 @@ async function loadRentRoll(initial = false) {
       wireMonthSelect(monthSelect);
     }
 
-    let month = (monthSelect?.value || state.currentMonth || yyyymm());
+    const month = (monthSelect?.value || state.currentMonth || yyyymm());
     if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
 
     const resp = await apiGet(`/rent-roll?month=${encodeURIComponent(month)}`);
@@ -540,39 +553,81 @@ async function loadRentRoll(initial = false) {
 
     const filtered = (rows || []).filter((r) => {
       if (tenantFilter) {
-        const t = (r.tenant || "").toLowerCase();
+        const t = String(r.tenant || r.tenant_name || "").toLowerCase();
         if (!t.includes(tenantFilter)) return false;
       }
       if (propertyFilter) {
-        const p = (r.property_name || "").toLowerCase();
+        const p = String(r.property_name || r.property || "").toLowerCase();
         if (!p.includes(propertyFilter)) return false;
       }
       return true;
     });
 
+    // ---- totals helpers ----
+    const rowCredit = (r) => moneyToNumber(r.credits ?? r.credit ?? 0);
+
+    const rowDue = (r) => {
+      // prefer total_due if provided and non-zero
+      const td = moneyToNumber(r.total_due ?? 0);
+      if (td) return td;
+
+      const base = moneyToNumber(r.subtotal_rent ?? r.rent ?? r.rent_due ?? 0);
+      const late = moneyToNumber(r.late_fees ?? 0);
+      const cred = rowCredit(r);
+      return base + late - cred;
+    };
+
+    const rowBal = (r) =>
+      moneyToNumber(r.balance ?? r.invoice_balance ?? r.month_delta ?? 0);
+
+    const rowPaid = (r) => {
+      // if backend provides paid_total etc use it
+      const explicit = moneyToNumber(r.paid_total ?? r.paid ?? r.collected_amt ?? 0);
+      if (explicit) return explicit;
+
+      // else infer: paid = due - balance (never negative)
+      const due = rowDue(r);
+      const bal = rowBal(r);
+      return Math.max(0, due - bal);
+    };
+
+    // ---- update chips ----
     if (countChip) countChip.textContent = String(filtered.length);
+
+    const totalDue    = sum(filtered, rowDue);
+    const totalPaid   = sum(filtered, rowPaid);
+    const totalBal    = sum(filtered, rowBal);
+    const totalCredit = sum(filtered, rowCredit);
+
+    if (dueChip)    dueChip.textContent    = `${fmtKes(totalDue)} due`;
+    if (paidChip)   paidChip.textContent   = `${fmtKes(totalPaid)} paid`;
+    if (balChip)    balChip.textContent    = `${fmtKes(totalBal)} balance`;
+    if (creditChip) creditChip.textContent = `${fmtKes(totalCredit)} credit`;
 
     if (!filtered.length) {
       empty && empty.classList.remove("hidden");
       return;
     }
 
+    // ---- render table ----
     for (const r of filtered) {
       const period = r.period_start
         ? formatMonthLabel(String(r.period_start).slice(0, 7))
-        : "";
+        : (r.period || "");
 
-      const balance = Number(r.balance || 0);
-      const status = (r.status || "").toLowerCase();
+      const baseRent = moneyToNumber(r.subtotal_rent ?? r.rent ?? r.rent_due ?? 0);
+      const lateFees = moneyToNumber(r.late_fees ?? 0);
+      const status = String(r.status ?? r.invoice_status ?? "—").toLowerCase();
+      const balance = rowBal(r);
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${r.property_name || ""}</td>
-        <td>${r.unit_code || ""}</td>
-        <td>${r.tenant || ""}</td>
+        <td>${r.property_name || r.property || ""}</td>
+        <td>${r.unit_code || r.unit || ""}</td>
+        <td>${r.tenant || r.tenant_name || ""}</td>
         <td>${period}</td>
-        <td>${fmtKes(r.subtotal_rent || 0)}</td>
-        <td>${fmtKes(r.late_fees || 0)}</td>
+        <td>${fmtKes(baseRent)}</td>
+        <td>${fmtKes(lateFees)}</td>
         <td>
           <span class="status ${status === "paid" ? "ok" : "due"}">
             ${status || "—"}
@@ -580,7 +635,7 @@ async function loadRentRoll(initial = false) {
         </td>
         <td style="text-align:right">${fmtKes(balance)}</td>
         <td>
-          <button class="btn ghost btn-wa-rentroll" data-lease-id="${r.lease_id}" type="button">
+          <button class="btn ghost btn-wa-rentroll" data-lease-id="${r.lease_id || ""}" type="button">
             WhatsApp
           </button>
         </td>
@@ -589,11 +644,8 @@ async function loadRentRoll(initial = false) {
     }
   } catch (err) {
     console.error("loadRentRoll error:", err);
-    if (countChip) countChip.textContent = "0";
-    if (empty) {
-      empty.textContent = "Error loading rent-roll.";
-      empty.classList.remove("hidden");
-    }
+    body.innerHTML = "";
+    empty && empty.classList.remove("hidden");
   }
 }
 
