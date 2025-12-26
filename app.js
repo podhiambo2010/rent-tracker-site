@@ -502,8 +502,8 @@ async function loadRentRoll(initial = false) {
   const body = $("#rentrollBody");
   const empty = $("#rentrollEmpty");
 
-  // chips (IDs confirmed from your DevTools)
-  const countChip  = $("#rentrollCountChip");
+  // count chip in the Rent Roll header (shows '-' currently)
+  const countChip  = $("#rentrollCount") || $("#rentrollCountChip");
   const dueChip    = $("#rentrollDueChip");
   const paidChip   = $("#rentrollPaidChip");
   const balChip    = $("#rentrollBalChip");
