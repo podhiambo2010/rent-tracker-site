@@ -37,6 +37,16 @@ function fmtKes(n) {
   return `KES ${fmtNumber(n)}`;
 }
 
+function moneyToNumber(v) {
+  if (v == null) return 0;
+  const s = String(v).trim();
+  const isParenNeg = /^\(.*\)$/.test(s);          // (2,000) style
+  const n = s.replace(/[^\d.-]/g, "");
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return isParenNeg ? -Math.abs(x) : x;
+}
+
 function fmtPct(n) {
   if (n == null || Number.isNaN(Number(n))) return "0.0%";
   return `${Number(n).toFixed(1)}%`;
@@ -48,7 +58,7 @@ function setText(sel, text) {
 }
 
 function sum(rows, pick) {
-  return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
+  return (rows || []).reduce((acc, r) => acc + moneyToNumber(pick(r)), 0);
 }
 
 /* -------- robust HTML escape -------- */
