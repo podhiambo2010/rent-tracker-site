@@ -61,6 +61,33 @@ function sum(rows, pick) {
   return (rows || []).reduce((acc, r) => acc + moneyToNumber(pick(r)), 0);
 }
 
+/* -------- credit/over-collection display helpers -------- */
+function splitBalance(balance) {
+  const b = Number(balance) || 0;
+  if (b < 0) return { kind: "credit", amount: Math.abs(b) };
+  return { kind: "outstanding", amount: b };
+}
+
+function fmtBalanceStatus(balance) {
+  const x = splitBalance(balance);
+  return x.kind === "credit"
+    ? `${fmtKes(x.amount)} credit`
+    : `${fmtKes(x.amount)} outstanding`;
+}
+
+function fmtKpiBalance(balance) {
+  const x = splitBalance(balance);
+  return x.kind === "credit"
+    ? `${fmtKes(x.amount)} CR`
+    : fmtKes(x.amount);
+}
+
+function fmtRateStatus(ratePct) {
+  const r = Number(ratePct) || 0;
+  if (r > 100) return `${fmtPct(r)} over-collected`;
+  return `${fmtPct(r)} collection rate`;
+}
+
 /* -------- robust HTML escape -------- */
 function escapeHtml(s) {
   const str = String(s ?? "");
@@ -185,14 +212,21 @@ function getSelectedMonth() {
 function renderBalancesOverview(o) {
   const data = (o && typeof o === "object" && "data" in o) ? o.data : o;
 
-  const monthStart = data?.month_start || data?.month || (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || state.currentMonth || yyyymm();
+  const monthStart =
+    data?.month_start ||
+    data?.month ||
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    state.currentMonth ||
+    yyyymm();
+
   const ym = String(monthStart).slice(0, 7);
   const monthLabel = formatMonthLabel(ym);
 
   const totalDue  = Number(data?.total_due ?? data?.rent_due_total ?? data?.rent_subtotal_total ?? 0);
   const totalPaid = Number(data?.total_paid ?? data?.paid_total ?? data?.amount_paid_total ?? data?.collected_amt ?? 0);
   const balTotal  = Number(data?.balance_total ?? data?.total_outstanding ?? data?.balance ?? 0);
-  const cr        = Number(
+
+  const cr = Number(
     data?.collection_rate_pct ??
     (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0)
   );
@@ -200,8 +234,12 @@ function renderBalancesOverview(o) {
   setText("#balMonthLabel", monthLabel);
   setText("#balMonthDue", `${fmtKes(totalDue)} due`);
   setText("#balMonthCollected", `${fmtKes(totalPaid)} collected`);
-  setText("#balMonthBalance", `${fmtKes(balTotal)} balance`);
-  setText("#balMonthRate", `${fmtPct(cr)} collection rate`);
+
+  // ✅ Show credit/outstanding correctly
+  setText("#balMonthBalance", fmtBalanceStatus(balTotal));
+
+  // ✅ Over-collection label when >100%
+  setText("#balMonthRate", fmtRateStatus(cr));
 }
 
 function renderBalancesByTenantTable(rows) {
@@ -384,7 +422,8 @@ async function loadOverview() {
     );
     if (kpiPayments) kpiPayments.textContent = fmtKes(paymentsTotal);
 
-    if (kpiBalance) kpiBalance.textContent = fmtKes(dash.balance_total ?? dash.total_outstanding ?? 0);
+    const kpiBal = dash.balance_total ?? dash.total_outstanding ?? 0;
+    if (kpiBalance) kpiBalance.textContent = fmtKpiBalance(kpiBal);
 
     // ✅ Label should reflect selected month even if API doesn't return month_start
     const monthLabel = formatMonthLabel(dash?.month_start || (ym + "-01"));
@@ -397,8 +436,12 @@ async function loadOverview() {
 
     if (dueEl)  dueEl.textContent  = `${fmtKes(totalDue)} invoiced`;
     if (collEl) collEl.textContent = `${fmtKes(totalPaid)} collected`;
-    if (balEl)  balEl.textContent  = `${fmtKes(balance)} outstanding`;
-    if (rateEl) rateEl.textContent = `${fmtPct(rate)} collection rate`;
+
+    // ✅ If negative, show as CREDIT (not outstanding)
+    if (balEl)  balEl.textContent  = fmtBalanceStatus(balance);
+
+    // ✅ If >100%, call it over-collected (still shows the %)
+    if (rateEl) rateEl.textContent = fmtRateStatus(rate);
   } catch (err) {
     console.error("loadOverview error:", err);
     if (kpiLeases)   kpiLeases.textContent   = "—";
