@@ -434,7 +434,7 @@ async function loadOverview() {
   const dueEl   = $("#summaryMonthDue");
   const collEl  = $("#summaryMonthCollected");
   const balEl   = $("#summaryMonthBalance");
-  const rateEl  = $("#summaryMonthRate");
+  const rateEl  = $("#summaryMonthRate"); // we will use this as the "100% collected" card
 
   // ✅ Single source of truth (but safe fallback)
   const ym =
@@ -473,6 +473,31 @@ async function loadOverview() {
     throw lastErr || new Error("All fallback endpoints failed");
   };
 
+  // ✅ Ensure extra summary cards exist without editing index.html
+  const summaryWrap = $("#collection-summary-month");
+
+  const ensureSummaryCard = (id, insertAfterEl) => {
+    let el = $("#" + id);
+    if (el) return el;
+
+    if (!summaryWrap) return null;
+
+    el = document.createElement("div");
+    el.id = id;
+    el.textContent = "—";
+
+    // try to place it right after a known card for nice ordering
+    if (insertAfterEl && insertAfterEl.parentNode === summaryWrap) {
+      summaryWrap.insertBefore(el, insertAfterEl.nextSibling);
+    } else {
+      summaryWrap.appendChild(el);
+    }
+    return el;
+  };
+
+  // We will add ONE extra card: over-collected %
+  const overPctEl = ensureSummaryCard("summaryMonthOverPct", rateEl);
+
   try {
     // ✅ Use BALANCES overview so Overview == Balances
     const balOv = await apiGetFirstLocal([
@@ -503,7 +528,7 @@ async function loadOverview() {
 
     // ✅ Rate logic: cap collection at 100%, show over-collection separately
     const rawRate = (totalDue > 0) ? (totalPaid / totalDue) * 100 : 0;
-    const collectionRate = Math.min(100, rawRate);
+    const collectedPct = Math.min(100, rawRate);
     const overPct = Math.max(0, rawRate - 100);
 
     // KPIs (match balances)
@@ -523,11 +548,20 @@ async function loadOverview() {
         : `${fmtKes(balance)} outstanding`;
     }
 
-    // show capped rate + over-collected (if any)
+    // ✅ Put 100% collected in its own card (re-using existing #summaryMonthRate)
     if (rateEl) {
-      rateEl.textContent = overPct > 0
-        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
-        : `${fmtPct(collectionRate)} collection rate`;
+      rateEl.textContent = `${fmtPct(collectedPct)} collected`;
+    }
+
+    // ✅ Put over-collected in its own card (auto-created in app.js)
+    if (overPctEl) {
+      if (overPct > 0.0001) {
+        overPctEl.style.display = "";
+        overPctEl.textContent = `${fmtPct(overPct)} over-collected`;
+      } else {
+        overPctEl.style.display = "none";
+        overPctEl.textContent = "—";
+      }
     }
 
   } catch (err) {
@@ -537,55 +571,11 @@ async function loadOverview() {
     if (kpiPayments) kpiPayments.textContent = "—";
     if (kpiBalance)  kpiBalance.textContent  = "—";
     if (labelEl)     labelEl.textContent     = "Error loading";
-  }
-}
 
-async function loadLeases() {
-  const body = $("#leasesBody");
-  const empty = $("#leasesEmpty");
-  const searchTerm = ($("#leaseSearch")?.value || "").trim().toLowerCase();
-
-  if (!body) return;
-
-  body.innerHTML = "";
-  empty && empty.classList.add("hidden");
-
-  try {
-    const leases = await apiGet("/leases?limit=1000");
-    const rows = (leases || []).filter((l) => {
-      if (!searchTerm) return true;
-      const t = (l.tenant || "").toLowerCase();
-      const u = (l.unit || "").toLowerCase();
-      return t.includes(searchTerm) || u.includes(searchTerm);
-    });
-
-    if (!rows.length) {
-      empty && empty.classList.remove("hidden");
-      return;
-    }
-
-    for (const r of rows) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${r.tenant || ""}</td>
-        <td>${r.unit || ""}</td>
-        <td>${fmtKes(r.rent_amount || 0)}</td>
-        <td>${r.billing_cycle || ""}</td>
-        <td>${r.due_day != null ? r.due_day : ""}</td>
-        <td>${r.lease_status || ""}</td>
-        <td>
-          <button class="btn ghost btn-wa-lease" data-lease-id="${r.lease_id}" type="button">
-            WhatsApp
-          </button>
-        </td>
-      `;
-      body.appendChild(tr);
-    }
-  } catch (err) {
-    console.error("loadLeases error:", err);
-    if (empty) {
-      empty.textContent = "Error loading leases.";
-      empty.classList.remove("hidden");
+    if (rateEl) rateEl.textContent = "—";
+    if (overPctEl) {
+      overPctEl.style.display = "none";
+      overPctEl.textContent = "—";
     }
   }
 }
