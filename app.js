@@ -168,20 +168,34 @@ function wireMonthSelect(selectEl) {
   });
 }
 
-/* -------- month selection helper (Balances uses dropdown) -------- */
+/* -------- month selection helper (single source of truth) -------- */
 function getSelectedMonth() {
-  return ($("#balancesMonth")?.value || state.currentMonth || yyyymm());
+  // Overview month picker (type="month") should win if present
+  const m1 = $("#monthPicker")?.value;
+  if (m1) return m1;
+
+  // Balances dropdown (still supported)
+  const m2 = $("#balancesMonth")?.value;
+  if (m2) return m2;
+
+  return state.currentMonth || yyyymm();
 }
 
 /* -------- Balances renderers (MATCH YOUR HTML IDs) -------- */
 function renderBalancesOverview(o) {
-  const monthStart = o?.month_start || o?.month || getSelectedMonth();
-  const monthLabel = formatMonthLabel(String(monthStart).slice(0, 7));
+  const data = (o && typeof o === "object" && "data" in o) ? o.data : o;
 
-  const totalDue  = Number(o?.total_due ?? 0);
-  const totalPaid = Number(o?.total_paid ?? 0);
-  const balTotal  = Number(o?.balance_total ?? 0);
-  const cr        = Number(o?.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0));
+  const monthStart = data?.month_start || data?.month || (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || state.currentMonth || yyyymm();
+  const ym = String(monthStart).slice(0, 7);
+  const monthLabel = formatMonthLabel(ym);
+
+  const totalDue  = Number(data?.total_due ?? data?.rent_due_total ?? data?.rent_subtotal_total ?? 0);
+  const totalPaid = Number(data?.total_paid ?? data?.paid_total ?? data?.amount_paid_total ?? data?.collected_amt ?? 0);
+  const balTotal  = Number(data?.balance_total ?? data?.total_outstanding ?? data?.balance ?? 0);
+  const cr        = Number(
+    data?.collection_rate_pct ??
+    (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0)
+  );
 
   setText("#balMonthLabel", monthLabel);
   setText("#balMonthDue", `${fmtKes(totalDue)} due`);
@@ -205,9 +219,9 @@ function renderBalancesByTenantTable(rows) {
 
   for (const r of rows) {
     const tenant = r.tenant ?? "—";
-    const due    = Number(r.total_due ?? 0);
-    const paid   = Number(r.paid_total ?? 0);
-    const bal    = Number(r.balance ?? 0);
+    const due    = Number(r.total_due ?? r.rent_due ?? r.invoiced_amt ?? 0);
+    const paid   = Number(r.total_paid ?? r.paid_total ?? r.collected_amt ?? r.amount_paid ?? 0);
+    const bal    = Number(r.balance ?? r.balance_total ?? r.total_outstanding ?? 0);
     const pct    = Number(r.collection_rate_pct ?? (due > 0 ? (paid / due) * 100 : 0));
 
     const tr = document.createElement("tr");
@@ -231,8 +245,8 @@ function renderOutstandingTable(rows) {
   empty && empty.classList.add("hidden");
 
   const list = (Array.isArray(rows) ? rows : [])
-    .filter(r => Number(r.balance ?? 0) > 0)
-    .sort((a, b) => Number(b.balance ?? 0) - Number(a.balance ?? 0));
+    .filter(r => Number(r.balance ?? r.balance_total ?? r.total_outstanding ?? 0) > 0)
+    .sort((a, b) => Number(b.balance ?? b.balance_total ?? 0) - Number(a.balance ?? a.balance_total ?? 0));
 
   if (!list.length) {
     if (empty) empty.classList.remove("hidden");
@@ -241,8 +255,12 @@ function renderOutstandingTable(rows) {
 
   for (const r of list) {
     const tenant = r.tenant ?? "—";
-    const bal    = Number(r.balance ?? 0);
-    const pct    = Number(r.collection_rate_pct ?? 0);
+    const bal    = Number(r.balance ?? r.balance_total ?? r.total_outstanding ?? 0);
+
+    // Use provided pct if present; else compute if we have due/paid
+    const due = Number(r.total_due ?? r.rent_due ?? 0);
+    const paid = Number(r.total_paid ?? r.paid_total ?? 0);
+    const pct = Number(r.collection_rate_pct ?? (due > 0 ? (paid / due) * 100 : 0));
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -254,42 +272,71 @@ function renderOutstandingTable(rows) {
   }
 }
 
+function renderDunningTable(rows) {
+  const tbody = $("#dunningBody");
+  const empty = $("#dunningEmpty");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+  empty && empty.classList.add("hidden");
+
+  const list = (Array.isArray(rows) ? rows : [])
+    .filter(r => Number(r.balance ?? r.balance_total ?? r.total_outstanding ?? 0) > 0)
+    .sort((a, b) => Number(b.balance ?? b.balance_total ?? 0) - Number(a.balance ?? a.balance_total ?? 0));
+
+  if (!list.length) {
+    if (empty) empty.classList.remove("hidden");
+    return;
+  }
+
+  for (const r of list) {
+    const tenant = r.tenant ?? "—";
+    const bal    = Number(r.balance ?? r.balance_total ?? r.total_outstanding ?? 0);
+
+    const due = Number(r.total_due ?? r.rent_due ?? 0);
+    const paid = Number(r.total_paid ?? r.paid_total ?? 0);
+    const pct = Number(r.collection_rate_pct ?? (due > 0 ? (paid / due) * 100 : 0));
+
+    const unit = r.unit_code || r.unit || "";
+
+    const tr = document.createElement("tr");
+
+    const tdTenant = document.createElement("td");
+    tdTenant.textContent = unit ? `${tenant} (${unit})` : tenant;
+
+    const tdBal = document.createElement("td");
+    tdBal.style.textAlign = "right";
+    tdBal.textContent = fmtKes(bal);
+
+    const tdPct = document.createElement("td");
+    tdPct.style.textAlign = "right";
+    tdPct.textContent = fmtPct(pct);
+
+    const tdAction = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.className = "btn ghost";
+    btn.type = "button";
+    btn.textContent = "WhatsApp";
+    btn.dataset.dunTenant = String(tenant);
+    btn.dataset.dunBalance = String(bal);
+    tdAction.appendChild(btn);
+
+    tr.appendChild(tdTenant);
+    tr.appendChild(tdBal);
+    tr.appendChild(tdPct);
+    tr.appendChild(tdAction);
+
+    tbody.appendChild(tr);
+  }
+}
+
 function setLastUpdatedBalances() {
   const now = new Date().toLocaleString("en-KE");
   setText("#balancesLastUpdated", `Last updated: ${now}`);
   setText("#outstandingLastUpdated", `Last updated: ${now}`);
-}
 
-/* -------- balances CSV export (ALWAYS works) -------- */
-async function exportBalancesCsv() {
-  const month = getSelectedMonth();
-  const base = state.apiBase.replace(/\/+$/, "");
-  const candidates = [
-    `${base}/dashboard/balances/export?month=${encodeURIComponent(month)}`,
-    `${base}/balances/export?month=${encodeURIComponent(month)}`,
-  ];
-
-  let lastErr = null;
-  for (const url of candidates) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `balances_${month}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1500);
-      return;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-
-  throw lastErr || new Error("Export failed");
+  // Safe: only updates if Dunning exists
+  setText("#dunningLastUpdated", `Last updated: ${now}`);
 }
 
 /* -------- core loaders -------- */
@@ -305,8 +352,16 @@ async function loadOverview() {
   const balEl     = $("#summaryMonthBalance");
   const rateEl    = $("#summaryMonthRate");
 
-  const ym = state.currentMonth || yyyymm();
-  if (!state.currentMonth) setCurrentMonth(ym, { triggerReload: false });
+  // ✅ Single source of truth: picker -> getSelectedMonth()
+  const ym =
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    state.currentMonth ||
+    yyyymm();
+
+  // ✅ Always sync state to the selected month (but don't trigger reload from inside loader)
+  if (state.currentMonth !== ym) {
+    setCurrentMonth(ym, { triggerReload: false });
+  }
 
   try {
     const [leases, payments, rentRollResp, dash] = await Promise.all([
@@ -331,7 +386,8 @@ async function loadOverview() {
 
     if (kpiBalance) kpiBalance.textContent = fmtKes(dash.balance_total ?? dash.total_outstanding ?? 0);
 
-    const monthLabel = formatMonthLabel(dash.month_start || ym);
+    // ✅ Label should reflect selected month even if API doesn't return month_start
+    const monthLabel = formatMonthLabel(dash?.month_start || (ym + "-01"));
     if (labelEl) labelEl.textContent = monthLabel;
 
     const totalDue  = dash.total_due ?? dash.rent_due_total ?? dash.rent_subtotal_total ?? 0;
@@ -661,11 +717,20 @@ async function loadRentRoll(initial = false) {
   }
 }
 
-/* --------------------------------------------------------------------------
+//* --------------------------------------------------------------------------
  * Balances loader (overview + by_tenant + outstanding derived)
  * -------------------------------------------------------------------------- */
 async function loadBalances() {
-  const month = getSelectedMonth();
+  const month =
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    state.currentMonth ||
+    yyyymm();
+
+  // keep state aligned (no reload loop)
+  if (state.currentMonth !== month) {
+    setCurrentMonth(month, { triggerReload: false });
+  }
+
   console.log("[BALDBG] loadBalances:", { month });
 
   try {
@@ -680,20 +745,33 @@ async function loadBalances() {
       `/balances/by_tenant?month=${encodeURIComponent(month)}`,
     ]);
 
-    const rows = Array.isArray(byTenant?.rows) ? byTenant.rows : [];
+    const rows = Array.isArray(byTenant?.rows) ? byTenant.rows : (Array.isArray(byTenant) ? byTenant : []);
     renderBalancesByTenantTable(rows);
 
     setText("#outstandingMonthLabel", formatMonthLabel(month));
     renderOutstandingTable(rows);
+
+    setText("#dunningMonthLabel", formatMonthLabel(month));
+    renderDunningTable(rows);
 
     setLastUpdatedBalances();
   } catch (err) {
     console.error("[BALDBG] loadBalances error:", err);
 
     // Safe reset so UI doesn't show stale/blank weirdness
-    renderBalancesOverview({ month_start: month + "-01", total_due: 0, total_paid: 0, balance_total: 0, collection_rate_pct: 0 });
+    renderBalancesOverview({
+      month_start: month + "-01",
+      total_due: 0,
+      total_paid: 0,
+      balance_total: 0,
+      collection_rate_pct: 0
+    });
     renderBalancesByTenantTable([]);
     renderOutstandingTable([]);
+    renderDunningTable([]);
+
+    setText("#outstandingMonthLabel", formatMonthLabel(month));
+    setText("#dunningMonthLabel", formatMonthLabel(month));
     setLastUpdatedBalances();
   }
 }
@@ -872,20 +950,56 @@ function initExports() {
 
 /* -------- navigation & settings -------- */
 function initTabs() {
-  const tabs = $$(".tab");
-  tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-      const target = tab.dataset.tab;
-      tabs.forEach((t) => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
-      const panels = ["overview","leases","payments","rentroll","balances","whatsapp","settings"];
-      panels.forEach((name) => {
-        const el = $(`#tab-${name}`);
-        if (!el) return;
-        if (name === target) el.classList.remove("hidden");
-        else el.classList.add("hidden");
-      });
+  // Any clickable thing with data-tab="overview" etc
+  const tabButtons = Array.from(document.querySelectorAll("[data-tab]"));
+  const panels = Array.from(document.querySelectorAll('.panel[id^="tab-"]'));
+
+  function activate(tabName, { pushState = true } = {}) {
+    // Hide all panels
+    panels.forEach((p) => p.classList.add("hidden"));
+
+    // Show the chosen panel
+    const panel = document.getElementById(`tab-${tabName}`);
+    if (panel) panel.classList.remove("hidden");
+
+    // Mark active button
+    tabButtons.forEach((b) => {
+      const isActive = (b.getAttribute("data-tab") === tabName);
+      b.classList.toggle("active", isActive);
+      b.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    // Remember
+    try { localStorage.setItem("rt_active_tab", tabName); } catch {}
+    state.activeTab = tabName;
+
+    // Optional: refresh data when entering certain tabs
+    if (tabName === "overview" && typeof loadOverview === "function") loadOverview();
+    if (tabName === "dunning" && typeof loadBalances === "function") loadBalances(); // dunning usually uses balances/outstanding
+  }
+
+  // ✅ expose helper (non-breaking)
+  window.activateTab = activate;
+
+  // Wire clicks
+  tabButtons.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const tabName = btn.getAttribute("data-tab");
+      if (tabName) activate(tabName);
     });
   });
+
+  // Initial tab
+  const saved = (() => {
+    try { return localStorage.getItem("rt_active_tab"); } catch { return null; }
+  })();
+
+  const initial =
+    (saved && document.getElementById(`tab-${saved}`)) ? saved :
+    (document.getElementById("tab-overview") ? "overview" : (panels[0]?.id?.replace("tab-","") || "overview"));
+
+  activate(initial, { pushState: false });
 }
 
 function initApiBaseControls() {
@@ -1016,16 +1130,53 @@ async function initMonthPicker() {
 
   const defaultMonth = months?.[0] || yyyymm();
 
+  // Set dropdown defaults
   ["paymentsMonth", "rentrollMonth", "balancesMonth"].forEach((id) => {
     const sel = document.getElementById(id);
     if (sel) sel.value = defaultMonth;
   });
 
+  // ✅ Also set Overview month input default
+  const mp = document.getElementById("monthPicker");
+  if (mp) mp.value = defaultMonth;
+
+  // ✅ State is driven by the chosen month
   setCurrentMonth(defaultMonth, { triggerReload: false });
 
+  // Existing wiring (dropdowns)
   wireMonthSelect(document.getElementById("paymentsMonth"));
   wireMonthSelect(document.getElementById("rentrollMonth"));
   wireMonthSelect(document.getElementById("balancesMonth"));
+
+  // ✅ Wire Overview monthPicker (type="month") to reload everything
+  if (mp && !mp.dataset.bound) {
+    mp.dataset.bound = "1";
+    mp.addEventListener("change", () => {
+      const ym = mp.value || yyyymm();
+
+      // Keep state in sync
+      setCurrentMonth(ym, { triggerReload: false });
+
+      // Keep dropdowns in sync so other tabs match Overview
+      const b = document.getElementById("balancesMonth");
+      if (b) b.value = ym;
+      const p = document.getElementById("paymentsMonth");
+      if (p) p.value = ym;
+      const r = document.getElementById("rentrollMonth");
+      if (r) r.value = ym;
+
+      // Now reload all views for that month
+      if (typeof reloadAllMonthViews === "function") reloadAllMonthViews();
+      else {
+        // Safe fallback if reloadAllMonthViews isn't present
+        loadOverview?.();
+        loadPayments?.(true);
+        loadRentRoll?.(true);
+        loadBalances?.();
+        loadBalancesByUnit?.();
+      }
+    });
+  }
 }
 
 /* -------- initial load -------- */
@@ -1044,6 +1195,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     setCurrentMonth(yyyymm(), { triggerReload: false });
   }
 
+  // ✅ Force state.currentMonth to match what the picker currently shows
+  const ym =
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    state.currentMonth ||
+    yyyymm();
+
+  setCurrentMonth(ym, { triggerReload: false });
+
+  // initial data load
   loadOverview();
   loadLeases();
   loadPayments(true);
@@ -1074,5 +1234,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     loadRentRoll();
   });
 
+  document.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
+  if (!btn) return;
+
+  const tenant = btn.dataset.dunTenant || btn.getAttribute("data-dun-tenant") || "";
+  const balance = Number(btn.dataset.dunBalance || btn.getAttribute("data-dun-balance") || 0);
+
+  const ym = (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || yyyymm();
+
+  if ($("#waTenant")) $("#waTenant").value = tenant;
+  if ($("#waPeriod")) $("#waPeriod").value = formatMonthLabel(ym);
+  if ($("#waBalance")) $("#waBalance").value = String(balance);
+
+  // Switch to WhatsApp tab (safe if helper exists)
+  if (typeof window.activateTab === "function") window.activateTab("whatsapp");
+});
+
   $("#leaseSearch")?.addEventListener("input", () => loadLeases());
+  $("#reloadDunning")?.addEventListener("click", () => loadBalances());
 });

@@ -1,4 +1,4 @@
-<!doctype html>
+<!doctype html> 
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -186,6 +186,10 @@
       <a class="tab" data-tab="payments">💸 Payments</a>
       <a class="tab" data-tab="rentroll">🧾 Rent Roll</a>
       <a class="tab" data-tab="balances">📊 Balances</a>
+
+      <!-- ✅ Added (does not affect existing tabs) -->
+      <a class="tab" data-tab="dunning">🔔 Dunning</a>
+
       <a class="tab" data-tab="whatsapp">📱 WhatsApp</a>
       <a class="tab" data-tab="settings">⚙️ Settings</a>
     </nav>
@@ -389,6 +393,36 @@
         <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
       </div>
 
+      <!-- ===== Dunning (NEW) ===== -->
+      <!-- NOTE: This is added without changing any existing IDs/sections. -->
+      <div class="panel hidden" id="tab-dunning">
+        <div class="bar-flex">
+          <h2>Dunning</h2>
+          <span class="chip" id="dunningMonthLabel">—</span>
+          <button id="reloadDunning" class="btn ghost">Reload</button>
+        </div>
+        <p id="dunningLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
+
+        <div class="table-wrap" style="margin-top:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th style="text-align:right">Outstanding</th>
+                <th style="text-align:right">Collection rate</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="dunningBody"></tbody>
+          </table>
+        </div>
+        <div id="dunningEmpty" class="empty hidden">No dunning items this month 🎉</div>
+
+        <p class="muted" style="margin:10px 0 0 0;">
+          Tip: We will wire this tab to the same balances/outstanding data in <b>app.js</b> (no changes needed to your existing Balances tab).
+        </p>
+      </div>
+
       <!-- ===== WhatsApp (ad-hoc) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
         <h2>WhatsApp Message</h2>
@@ -453,3 +487,4 @@
 <script src="./app.js?v=20251224a"></script>
 </body>
 </html>
+
