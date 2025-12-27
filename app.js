@@ -129,32 +129,45 @@ function normalizePhone(raw) {
 }
 
 /* -------- API helpers -------- */
+
 function getAdminTokenFromStorage() {
-  return localStorage.getItem("admin_token") || "";
+  return (localStorage.getItem("admin_token") || "").trim();
 }
 
-function apiUrl(path) {
-  // allow absolute urls if you ever pass one
-  if (/^https?:\/\//i.test(path)) return path;
-
-  const base = String(state.apiBase || localStorage.getItem("API_BASE") || "")
-    .trim()
-    .replace(/\/$/, "");
-
-  if (!base) throw new Error("API base not set");
-
-  const p = path.startsWith("/") ? path : `/${path}`;
-  return `${base}${p}`;
+// ✅ FIX: define authHeaders (your code calls it but it was missing)
+function authHeaders(extra = {}) {
+  const h = { ...extra };
+  const token = getAdminTokenFromStorage();
+  if (token) {
+    // keep the header name you’ve been using
+    h["x-admin-token"] = token;
+  }
+  return h;
 }
 
-async function apiGet(path) {
-  const url = apiUrl(path);
-  const res = await fetch(url, { headers: authHeaders() }); // keep your existing headers logic
+async function apiGet(path, opts = {}) {
+  const base = (state.apiBase || "").replace(/\/+$/, "");
+  if (!base) throw new Error("API base is not set");
+
+  const url = base + path;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: authHeaders({ Accept: "application/json" }),
+  });
+
+  // ✅ IMPORTANT: 404 for “no data” months should not break UI
+  if (opts.allow404 && res.status === 404) {
+    return opts.fallback ?? [];
+  }
+
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`GET ${path} -> ${res.status} ${res.statusText} ${txt}`);
+    throw new Error(`GET ${path} -> ${res.status} ${res.statusText}${txt ? " | " + txt : ""}`);
   }
-  return res.json();
+
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
 }
 
 /* Try multiple endpoints (helps when backend path names differ) */
@@ -417,28 +430,54 @@ async function loadOverview() {
   const kpiPayments = $("#kpiPayments");
   const kpiBalance  = $("#kpiBalance");
 
-  const labelEl   = $("#summaryMonthLabel");
-  const dueEl     = $("#summaryMonthDue");
-  const collEl    = $("#summaryMonthCollected");
-  const balEl     = $("#summaryMonthBalance");
-  const rateEl    = $("#summaryMonthRate");
+  const labelEl = $("#summaryMonthLabel");
+  const dueEl   = $("#summaryMonthDue");
+  const collEl  = $("#summaryMonthCollected");
+  const balEl   = $("#summaryMonthBalance");
+  const rateEl  = $("#summaryMonthRate");
 
-  // ✅ Single source of truth
-  const ym = getSelectedMonth();
+  // ✅ Single source of truth (but safe fallback)
+  const ym =
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    state.currentMonth ||
+    yyyymm();
 
   // ✅ keep state aligned (no reload loop)
-  if (state.currentMonth !== ym) setCurrentMonth(ym, { triggerReload: false });
+  if (state.currentMonth !== ym && typeof setCurrentMonth === "function") {
+    setCurrentMonth(ym, { triggerReload: false });
+  }
+
+  // local helper: format credits nicely without relying on global fmtKesCr
+  const fmtKesCrLocal = (n) => {
+    const x = Number(n) || 0;
+    return x < 0 ? `${fmtKes(Math.abs(x))} CR` : fmtKes(x);
+  };
 
   // small safe helper: never let 1 failing endpoint kill the whole Overview
   const safeGet = async (fn, fallback) => {
-    try { return await fn(); } catch (e) { console.warn("Overview safeGet:", e); return fallback; }
+    try { return await fn(); }
+    catch (e) { console.warn("Overview safeGet:", e); return fallback; }
+  };
+
+  // local apiGetFirst: try multiple endpoints until one works
+  const apiGetFirstLocal = async (paths) => {
+    let lastErr = null;
+    for (const p of paths) {
+      try {
+        const r = await apiGet(p);
+        if (r != null) return r;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error("All fallback endpoints failed");
   };
 
   try {
     // ✅ Use BALANCES overview so Overview == Balances (fixes SS1 vs SS2 mismatch)
-    const balOv = await apiGetFirst([
+    const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
-      `/balances/overview?month=${encodeURIComponent(ym)}`,
+      `/balances/overview?month=${encodeURIComponent(ym)}`
     ]);
 
     // optional helpers (don’t break Overview if they fail)
@@ -446,7 +485,9 @@ async function loadOverview() {
     const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), null);
     const rentRoll = rrResp?.data || rrResp || [];
 
-    if (kpiLeases) kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
+    if (kpiLeases) {
+      kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
+    }
 
     // open invoices count (fallback to 0)
     const openCount = Array.isArray(rentRoll)
@@ -464,7 +505,7 @@ async function loadOverview() {
 
     // KPIs (match balances)
     if (kpiPayments) kpiPayments.textContent = fmtKes(totalPaid);
-    if (kpiBalance)  kpiBalance.textContent  = fmtKesCr(balance);
+    if (kpiBalance)  kpiBalance.textContent  = fmtKesCrLocal(balance);
 
     // Month label always reflects selected month
     if (labelEl) labelEl.textContent = formatMonthLabel(ym);
