@@ -474,7 +474,7 @@ async function loadOverview() {
   };
 
   try {
-    // ✅ Use BALANCES overview so Overview == Balances (fixes SS1 vs SS2 mismatch)
+    // ✅ Use BALANCES overview so Overview == Balances
     const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
       `/balances/overview?month=${encodeURIComponent(ym)}`
@@ -489,7 +489,6 @@ async function loadOverview() {
       kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
     }
 
-    // open invoices count (fallback to 0)
     const openCount = Array.isArray(rentRoll)
       ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
       : 0;
@@ -501,7 +500,11 @@ async function loadOverview() {
     const totalDue  = Number(data?.total_due ?? data?.rent_due_total ?? data?.rent_subtotal_total ?? 0);
     const totalPaid = Number(data?.total_paid ?? data?.paid_total ?? data?.amount_paid_total ?? data?.collected_amt ?? 0);
     const balance   = Number(data?.balance_total ?? data?.total_outstanding ?? data?.balance ?? 0);
-    const rate      = Number(data?.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0));
+
+    // ✅ Rate logic: cap collection at 100%, show over-collection separately
+    const rawRate = (totalDue > 0) ? (totalPaid / totalDue) * 100 : 0;
+    const collectionRate = Math.min(100, rawRate);
+    const overPct = Math.max(0, rawRate - 100);
 
     // KPIs (match balances)
     if (kpiPayments) kpiPayments.textContent = fmtKes(totalPaid);
@@ -520,10 +523,11 @@ async function loadOverview() {
         : `${fmtKes(balance)} outstanding`;
     }
 
-    // show “over-collected” when rate > 100
+    // show capped rate + over-collected (if any)
     if (rateEl) {
-      const label = rate > 100 ? "over-collected" : "collection rate";
-      rateEl.textContent = `${fmtPct(rate)} ${label}`;
+      rateEl.textContent = overPct > 0
+        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
+        : `${fmtPct(collectionRate)} collection rate`;
     }
 
   } catch (err) {
