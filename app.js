@@ -73,6 +73,12 @@ function sum(rows, pick) {
   return (rows || []).reduce((acc, r) => acc + moneyToNumber(pick(r)), 0);
 }
 
+function fmtKesCr(n) {
+  const x = Number(n ?? 0);
+  if (!Number.isFinite(x)) return "KES 0";
+  return x < 0 ? `${fmtKes(Math.abs(x))} CR` : fmtKes(x);
+}
+
 /* -------- credit/over-collection display helpers -------- */
 function splitBalance(balance) {
   const b = Number(balance) || 0;
@@ -209,15 +215,14 @@ function wireMonthSelect(selectEl) {
 
 /* -------- month selection helper (single source of truth) -------- */
 function getSelectedMonth() {
-  // Overview month picker (type="month") should win if present
-  const m1 = $("#monthPicker")?.value;
-  if (m1) return m1;
-
-  // Balances dropdown (still supported)
-  const m2 = $("#balancesMonth")?.value;
-  if (m2) return m2;
-
-  return state.currentMonth || yyyymm();
+  return (
+    $("#monthPicker")?.value ||          // if you have the global month input
+    $("#balancesMonth")?.value ||
+    $("#paymentsMonth")?.value ||
+    $("#rentrollMonth")?.value ||
+    state.currentMonth ||
+    yyyymm()
+  );
 }
 
 /* -------- Balances renderers (MATCH YOUR HTML IDs) -------- */
@@ -404,70 +409,68 @@ async function loadOverview() {
   const balEl     = $("#summaryMonthBalance");
   const rateEl    = $("#summaryMonthRate");
 
-  // ✅ Single source of truth: picker -> getSelectedMonth()
-  const ym =
-    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
-    state.currentMonth ||
-    yyyymm();
+  // ✅ Single source of truth
+  const ym = getSelectedMonth();
 
-  // ✅ Keep state aligned (no reload loop)
-  if (state.currentMonth !== ym) {
-    setCurrentMonth(ym, { triggerReload: false });
-  }
+  // ✅ keep state aligned (no reload loop)
+  if (state.currentMonth !== ym) setCurrentMonth(ym, { triggerReload: false });
+
+  // small safe helper: never let 1 failing endpoint kill the whole Overview
+  const safeGet = async (fn, fallback) => {
+    try { return await fn(); } catch (e) { console.warn("Overview safeGet:", e); return fallback; }
+  };
 
   try {
-    const [leases, payments, rentRollResp, dashRaw] = await Promise.all([
-      apiGet("/leases?limit=1000"),
-      apiGet(`/payments?month=${encodeURIComponent(ym)}`),
-      apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`),
-      apiGet(`/dashboard/overview?month=${encodeURIComponent(ym)}`),
+    // ✅ Use BALANCES overview so Overview == Balances (fixes SS1 vs SS2 mismatch)
+    const balOv = await apiGetFirst([
+      `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
+      `/balances/overview?month=${encodeURIComponent(ym)}`,
     ]);
 
-    const dash = (dashRaw && typeof dashRaw === "object" && "data" in dashRaw) ? dashRaw.data : dashRaw;
+    // optional helpers (don’t break Overview if they fail)
+    const leases = await safeGet(() => apiGet("/leases?limit=1000"), []);
+    const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), null);
+    const rentRoll = rrResp?.data || rrResp || [];
 
-    const rentRoll = rentRollResp && rentRollResp.data ? rentRollResp.data : [];
+    if (kpiLeases) kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
 
-    if (kpiLeases) kpiLeases.textContent = leases.length ?? 0;
-
-    const openCount = rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length;
+    // open invoices count (fallback to 0)
+    const openCount = Array.isArray(rentRoll)
+      ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
+      : 0;
     if (kpiOpen) kpiOpen.textContent = openCount;
 
-    // Payments KPI = what /payments returns for month (keep as-is)
-    const paymentsTotal = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-    if (kpiPayments) kpiPayments.textContent = fmtKes(paymentsTotal);
+    // normalize balances overview payload
+    const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
 
-    // Overview totals from dashboard endpoint (with fallbacks)
-    const totalDue  = moneyToNumber(dash?.total_due ?? dash?.rent_due_total ?? dash?.rent_subtotal_total ?? 0);
-    const totalPaid = moneyToNumber(dash?.total_paid ?? dash?.amount_paid_total ?? 0);
+    const totalDue  = Number(data?.total_due ?? data?.rent_due_total ?? data?.rent_subtotal_total ?? 0);
+    const totalPaid = Number(data?.total_paid ?? data?.paid_total ?? data?.amount_paid_total ?? data?.collected_amt ?? 0);
+    const balance   = Number(data?.balance_total ?? data?.total_outstanding ?? data?.balance ?? 0);
+    const rate      = Number(data?.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0));
 
-    // Prefer API balance if provided; otherwise derive it
-    let balance = moneyToNumber(dash?.balance_total ?? dash?.total_outstanding ?? 0);
-    if ((dash?.balance_total == null && dash?.total_outstanding == null) && totalDue) {
-      balance = totalDue - totalPaid;
-    }
+    // KPIs (match balances)
+    if (kpiPayments) kpiPayments.textContent = fmtKes(totalPaid);
+    if (kpiBalance)  kpiBalance.textContent  = fmtKesCr(balance);
 
-    // ✅ KPI Balance: show CR if credit
-    if (kpiBalance) {
-      kpiBalance.textContent = (balance < 0) ? fmtKesCR(balance) : fmtKes(balance);
-    }
-
-    // ✅ Label should reflect selected month even if API doesn't return month_start
-    const monthLabel = formatMonthLabel(dash?.month_start || (ym + "-01"));
-    if (labelEl) labelEl.textContent = monthLabel;
-
-    const rate = Number(dash?.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0));
+    // Month label always reflects selected month
+    if (labelEl) labelEl.textContent = formatMonthLabel(ym);
 
     if (dueEl)  dueEl.textContent  = `${fmtKes(totalDue)} invoiced`;
     if (collEl) collEl.textContent = `${fmtKes(totalPaid)} collected`;
 
-    // ✅ If credit, label as credit not outstanding
-    if (balance < 0) {
-      if (balEl)  balEl.textContent  = `${fmtKesAbs(balance)} credit`;
-      if (rateEl) rateEl.textContent = `${fmtPct(rate)} over-collected`;
-    } else {
-      if (balEl)  balEl.textContent  = `${fmtKes(balance)} outstanding`;
-      if (rateEl) rateEl.textContent = `${fmtPct(rate)} collection rate`;
+    // show “credit” vs “outstanding”
+    if (balEl) {
+      balEl.textContent = balance < 0
+        ? `${fmtKes(Math.abs(balance))} credit`
+        : `${fmtKes(balance)} outstanding`;
     }
+
+    // show “over-collected” when rate > 100
+    if (rateEl) {
+      const label = rate > 100 ? "over-collected" : "collection rate";
+      rateEl.textContent = `${fmtPct(rate)} ${label}`;
+    }
+
   } catch (err) {
     console.error("loadOverview error:", err);
     if (kpiLeases)   kpiLeases.textContent   = "—";
