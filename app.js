@@ -37,6 +37,18 @@ function fmtKes(n) {
   return `KES ${fmtNumber(n)}`;
 }
 
+function fmtKesAbs(n) {
+  const x = Number(n) || 0;
+  return `KES ${fmtNumber(Math.abs(x))}`;
+}
+
+// Shows "KES 372,531 CR" when negative, otherwise "KES 372,531"
+function fmtKesCR(n, suffix = "CR") {
+  const x = Number(n) || 0;
+  if (x < 0) return `KES ${fmtNumber(Math.abs(x))} ${suffix}`;
+  return `KES ${fmtNumber(x)}`;
+}
+
 function moneyToNumber(v) {
   if (v == null) return 0;
   const s = String(v).trim();
@@ -235,11 +247,13 @@ function renderBalancesOverview(o) {
   setText("#balMonthDue", `${fmtKes(totalDue)} due`);
   setText("#balMonthCollected", `${fmtKes(totalPaid)} collected`);
 
-  // ✅ Show credit/outstanding correctly
-  setText("#balMonthBalance", fmtBalanceStatus(balTotal));
-
-  // ✅ Over-collection label when >100%
-  setText("#balMonthRate", fmtRateStatus(cr));
+  if (balTotal < 0) {
+    setText("#balMonthBalance", `${fmtKesAbs(balTotal)} credit`);
+    setText("#balMonthRate", `${fmtPct(cr)} over-collected`);
+  } else {
+    setText("#balMonthBalance", `${fmtKes(balTotal)} balance`);
+    setText("#balMonthRate", `${fmtPct(cr)} collection rate`);
+  }
 }
 
 function renderBalancesByTenantTable(rows) {
@@ -396,18 +410,20 @@ async function loadOverview() {
     state.currentMonth ||
     yyyymm();
 
-  // ✅ Always sync state to the selected month (but don't trigger reload from inside loader)
+  // ✅ Keep state aligned (no reload loop)
   if (state.currentMonth !== ym) {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
   try {
-    const [leases, payments, rentRollResp, dash] = await Promise.all([
+    const [leases, payments, rentRollResp, dashRaw] = await Promise.all([
       apiGet("/leases?limit=1000"),
       apiGet(`/payments?month=${encodeURIComponent(ym)}`),
       apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`),
       apiGet(`/dashboard/overview?month=${encodeURIComponent(ym)}`),
     ]);
+
+    const dash = (dashRaw && typeof dashRaw === "object" && "data" in dashRaw) ? dashRaw.data : dashRaw;
 
     const rentRoll = rentRollResp && rentRollResp.data ? rentRollResp.data : [];
 
@@ -416,32 +432,42 @@ async function loadOverview() {
     const openCount = rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length;
     if (kpiOpen) kpiOpen.textContent = openCount;
 
-    const paymentsTotal = (payments || []).reduce(
-      (sum, p) => sum + (Number(p.amount) || 0),
-      0
-    );
+    // Payments KPI = what /payments returns for month (keep as-is)
+    const paymentsTotal = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     if (kpiPayments) kpiPayments.textContent = fmtKes(paymentsTotal);
 
-    const kpiBal = dash.balance_total ?? dash.total_outstanding ?? 0;
-    if (kpiBalance) kpiBalance.textContent = fmtKpiBalance(kpiBal);
+    // Overview totals from dashboard endpoint (with fallbacks)
+    const totalDue  = moneyToNumber(dash?.total_due ?? dash?.rent_due_total ?? dash?.rent_subtotal_total ?? 0);
+    const totalPaid = moneyToNumber(dash?.total_paid ?? dash?.amount_paid_total ?? 0);
+
+    // Prefer API balance if provided; otherwise derive it
+    let balance = moneyToNumber(dash?.balance_total ?? dash?.total_outstanding ?? 0);
+    if ((dash?.balance_total == null && dash?.total_outstanding == null) && totalDue) {
+      balance = totalDue - totalPaid;
+    }
+
+    // ✅ KPI Balance: show CR if credit
+    if (kpiBalance) {
+      kpiBalance.textContent = (balance < 0) ? fmtKesCR(balance) : fmtKes(balance);
+    }
 
     // ✅ Label should reflect selected month even if API doesn't return month_start
     const monthLabel = formatMonthLabel(dash?.month_start || (ym + "-01"));
     if (labelEl) labelEl.textContent = monthLabel;
 
-    const totalDue  = dash.total_due ?? dash.rent_due_total ?? dash.rent_subtotal_total ?? 0;
-    const totalPaid = dash.total_paid ?? dash.amount_paid_total ?? 0;
-    const balance   = dash.balance_total ?? dash.total_outstanding ?? 0;
-    const rate      = dash.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0);
+    const rate = Number(dash?.collection_rate_pct ?? (totalDue > 0 ? (totalPaid / totalDue) * 100 : 0));
 
     if (dueEl)  dueEl.textContent  = `${fmtKes(totalDue)} invoiced`;
     if (collEl) collEl.textContent = `${fmtKes(totalPaid)} collected`;
 
-    // ✅ If negative, show as CREDIT (not outstanding)
-    if (balEl)  balEl.textContent  = fmtBalanceStatus(balance);
-
-    // ✅ If >100%, call it over-collected (still shows the %)
-    if (rateEl) rateEl.textContent = fmtRateStatus(rate);
+    // ✅ If credit, label as credit not outstanding
+    if (balance < 0) {
+      if (balEl)  balEl.textContent  = `${fmtKesAbs(balance)} credit`;
+      if (rateEl) rateEl.textContent = `${fmtPct(rate)} over-collected`;
+    } else {
+      if (balEl)  balEl.textContent  = `${fmtKes(balance)} outstanding`;
+      if (rateEl) rateEl.textContent = `${fmtPct(rate)} collection rate`;
+    }
   } catch (err) {
     console.error("loadOverview error:", err);
     if (kpiLeases)   kpiLeases.textContent   = "—";
