@@ -133,12 +133,26 @@ function getAdminTokenFromStorage() {
   return localStorage.getItem("admin_token") || "";
 }
 
+function apiUrl(path) {
+  // allow absolute urls if you ever pass one
+  if (/^https?:\/\//i.test(path)) return path;
+
+  const base = String(state.apiBase || localStorage.getItem("API_BASE") || "")
+    .trim()
+    .replace(/\/$/, "");
+
+  if (!base) throw new Error("API base not set");
+
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${p}`;
+}
+
 async function apiGet(path) {
-  const url = state.apiBase.replace(/\/+$/, "") + path;
-  const res = await fetch(url);
+  const url = apiUrl(path);
+  const res = await fetch(url, { headers: authHeaders() }); // keep your existing headers logic
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`GET ${path} -> ${res.status} ${txt}`);
+    throw new Error(`GET ${path} -> ${res.status} ${res.statusText} ${txt}`);
   }
   return res.json();
 }
@@ -1075,64 +1089,99 @@ function initTabs() {
 }
 
 function initApiBaseControls() {
-  const apiInput = $("#apiBase");
-  const apiInput2 = $("#apiBase2");
+  const apiInput = $("#apiBase");     // top bar input
+  const apiInput2 = $("#apiBase2");   // settings tab input
   const useBtn = $("#useApi");
   const saveSettings = $("#saveSettings");
   const resetSettings = $("#resetSettings");
   const adminInput = $("#adminToken");
+  const docsBtn = $("#openDocs");
 
-  const storedBase = localStorage.getItem("api_base");
-  if (storedBase) state.apiBase = storedBase;
+  // --- helpers ---
+  const normalizeBase = (v) => String(v || "").trim().replace(/\/+$/, "");
+  const readBase = () =>
+    normalizeBase(state.apiBase) ||
+    normalizeBase(localStorage.getItem("api_base")) ||
+    normalizeBase(typeof API_BASE !== "undefined" ? API_BASE : "");
 
-  apiInput && (apiInput.value = state.apiBase);
-  apiInput2 && (apiInput2.value = state.apiBase);
+  const writeBase = (v) => {
+    const base = normalizeBase(v);
+    state.apiBase = base;
+    if (base) localStorage.setItem("api_base", base);
+    else localStorage.removeItem("api_base");
+    if (apiInput) apiInput.value = base;
+    if (apiInput2) apiInput2.value = base;
+    return base;
+  };
 
+  // --- initial load: ALWAYS sync state + inputs from storage/default ---
+  writeBase(readBase());
+
+  // --- admin token initial ---
   const storedAdmin = getAdminTokenFromStorage();
   if (adminInput && storedAdmin) adminInput.value = storedAdmin;
 
+  // --- Use this API (top bar) ---
   if (useBtn) {
     useBtn.addEventListener("click", () => {
-      const v = (apiInput?.value || "").trim();
-      if (v) {
-        state.apiBase = v.replace(/\/+$/, "");
-        localStorage.setItem("api_base", state.apiBase);
-        if (apiInput2) apiInput2.value = state.apiBase;
+      const v = normalizeBase(apiInput?.value);
+      if (!v) return;
+
+      writeBase(v);
+
+      // Important: once base is set, do a reload of data so first requests
+      // don't accidentally go to the site domain.
+      try {
+        setCurrentMonth(getSelectedMonth(), { triggerReload: true });
+      } catch (_) {
+        // fallback if setCurrentMonth isn't available
+        if (typeof loadOverview === "function") loadOverview();
+        if (typeof loadLeases === "function") loadLeases();
+        if (typeof loadPayments === "function") loadPayments(true);
+        if (typeof loadRentRoll === "function") loadRentRoll(true);
+        if (typeof loadBalances === "function") loadBalances(true);
       }
     });
   }
 
+  // --- Save settings (Settings tab) ---
   if (saveSettings) {
     saveSettings.addEventListener("click", () => {
-      const base = (apiInput2?.value || "").trim();
-      const admin = (adminInput?.value || "").trim();
-      if (base) {
-        state.apiBase = base.replace(/\/+$/, "");
-        localStorage.setItem("api_base", state.apiBase);
-        if (apiInput) apiInput.value = state.apiBase;
-      }
+      const base = normalizeBase(apiInput2?.value);
+      const admin = normalizeBase(adminInput?.value);
+
+      if (base) writeBase(base);
+
       if (admin) localStorage.setItem("admin_token", admin);
+      else localStorage.removeItem("admin_token");
+
       alert("Settings saved (browser-local).");
     });
   }
 
+  // --- Reset settings ---
   if (resetSettings) {
     resetSettings.addEventListener("click", () => {
       localStorage.removeItem("api_base");
       localStorage.removeItem("admin_token");
-      state.apiBase = (typeof API_BASE !== "undefined" && API_BASE) || "";
-      if (apiInput) apiInput.value = state.apiBase;
-      if (apiInput2) apiInput2.value = state.apiBase;
+
+      // fall back to build-time default if present
+      writeBase(typeof API_BASE !== "undefined" ? API_BASE : "");
+
       if (adminInput) adminInput.value = "";
       alert("Settings reset.");
     });
   }
 
-  const docsBtn = $("#openDocs");
+  // --- Open docs ---
   if (docsBtn) {
     docsBtn.addEventListener("click", () => {
-      const url = state.apiBase.replace(/\/+$/, "") + "/docs";
-      window.open(url, "_blank", "noopener");
+      const base = readBase();
+      if (!base) {
+        alert("Set API base first (click 'Use this API').");
+        return;
+      }
+      window.open(base + "/docs", "_blank", "noopener");
     });
   }
 }
