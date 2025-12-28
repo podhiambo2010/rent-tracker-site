@@ -430,36 +430,32 @@ async function loadOverview() {
   const kpiPayments = $("#kpiPayments");
   const kpiBalance  = $("#kpiBalance");
 
-  const labelEl = $("#summaryMonthLabel");
-  const dueEl   = $("#summaryMonthDue");
-  const collEl  = $("#summaryMonthCollected");
-  const balEl   = $("#summaryMonthBalance");
-  const rateEl  = $("#summaryMonthRate"); // we will use this as the "100% collected" card
+  const summaryWrap = $("#collection-summary-month");
 
-  // ✅ Single source of truth (but safe fallback)
   const ym =
     (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
     state.currentMonth ||
     yyyymm();
 
-  // ✅ keep state aligned (no reload loop)
   if (state.currentMonth !== ym && typeof setCurrentMonth === "function") {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
-  // local helper: format credits nicely without relying on global fmtKesCr
-  const fmtKesCrLocal = (n) => {
+  const fmtDrCrSigned = (n) => {
     const x = Number(n) || 0;
-    return x < 0 ? `${fmtKes(Math.abs(x))} CR` : fmtKes(x);
+    if (x < 0) return `${fmtKes(Math.abs(x))} CR`;
+    if (x > 0) return `${fmtKes(x)} DR`;
+    return `${fmtKes(0)}`;
   };
 
-  // small safe helper: never let 1 failing endpoint kill the whole Overview
+  const fmtOpeningSplit = (cr, dr) =>
+    `${fmtKes(Number(cr) || 0)} CR / ${fmtKes(Number(dr) || 0)} DR`;
+
   const safeGet = async (fn, fallback) => {
     try { return await fn(); }
     catch (e) { console.warn("Overview safeGet:", e); return fallback; }
   };
 
-  // local apiGetFirst: try multiple endpoints until one works
   const apiGetFirstLocal = async (paths) => {
     let lastErr = null;
     for (const p of paths) {
@@ -473,95 +469,83 @@ async function loadOverview() {
     throw lastErr || new Error("All fallback endpoints failed");
   };
 
-  // ✅ Ensure extra summary cards exist without editing index.html
-  const summaryWrap = $("#collection-summary-month");
-
-  const ensureSummaryCard = (id, insertAfterEl) => {
-    let el = $("#" + id);
-    if (el) return el;
-
-    if (!summaryWrap) return null;
-
-    el = document.createElement("div");
-    el.id = id;
-    el.textContent = "—";
-
-    // try to place it right after a known card for nice ordering
-    if (insertAfterEl && insertAfterEl.parentNode === summaryWrap) {
-      summaryWrap.insertBefore(el, insertAfterEl.nextSibling);
-    } else {
-      summaryWrap.appendChild(el);
-    }
-    return el;
-  };
-
-  // We will add ONE extra card: over-collected %
-  const overPctEl = ensureSummaryCard("summaryMonthOverPct", rateEl);
-
   try {
-    // ✅ Use BALANCES overview so Overview == Balances
     const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
       `/balances/overview?month=${encodeURIComponent(ym)}`
     ]);
 
-    // optional helpers (don’t break Overview if they fail)
     const leases = await safeGet(() => apiGet("/leases?limit=1000"), []);
     const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), null);
     const rentRoll = rrResp?.data || rrResp || [];
 
-    if (kpiLeases) {
-      kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
-    }
+    if (kpiLeases) kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
 
     const openCount = Array.isArray(rentRoll)
       ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
       : 0;
     if (kpiOpen) kpiOpen.textContent = openCount;
 
-    // normalize balances overview payload
     const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
 
-    const totalDue  = Number(data?.total_due ?? data?.rent_due_total ?? data?.rent_subtotal_total ?? 0);
-    const totalPaid = Number(data?.total_paid ?? data?.paid_total ?? data?.amount_paid_total ?? data?.collected_amt ?? 0);
-    const balance   = Number(data?.balance_total ?? data?.total_outstanding ?? data?.balance ?? 0);
+    const invoiced  = Number(data?.total_due ?? 0);
+    const collected = Number(data?.total_paid ?? 0);
+    const closing   = Number(data?.balance_total ?? 0);
 
-    // ✅ Rate logic: cap collection at 100%, show over-collection separately
-    const rawRate = (totalDue > 0) ? (totalPaid / totalDue) * 100 : 0;
-    const collectedPct = Math.min(100, rawRate);
+    // ✅ opening split (from backend-added fields)
+    const openingCR = Number(data?.opening_credit_total ?? 0);
+    const openingDR = Number(data?.opening_debit_total ?? 0);
+
+    // ✅ net movement for the month (same logic you already agreed)
+    const movement = invoiced - collected;
+
+    // Rate: cap at 100%, show over-collected separately
+    const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
+    const collectionRate = Math.min(100, rawRate);
     const overPct = Math.max(0, rawRate - 100);
 
-    // KPIs (match balances)
-    if (kpiPayments) kpiPayments.textContent = fmtKes(totalPaid);
-    if (kpiBalance)  kpiBalance.textContent  = fmtKesCrLocal(balance);
+    if (kpiPayments) kpiPayments.textContent = fmtKes(collected);
+    if (kpiBalance)  kpiBalance.textContent  = (closing < 0) ? `${fmtKes(Math.abs(closing))} CR` : fmtKes(closing);
 
-    // Month label always reflects selected month
-    if (labelEl) labelEl.textContent = formatMonthLabel(ym);
+    if (summaryWrap) {
+      const monthLabel = formatMonthLabel(ym);
+      const rateText = overPct > 0
+        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
+        : `${fmtPct(collectionRate)} collection rate`;
 
-    if (dueEl)  dueEl.textContent  = `${fmtKes(totalDue)} invoiced`;
-    if (collEl) collEl.textContent = `${fmtKes(totalPaid)} collected`;
+      summaryWrap.innerHTML = `
+        <div><strong>${monthLabel}</strong></div>
 
-    // show “credit” vs “outstanding”
-    if (balEl) {
-      balEl.textContent = balance < 0
-        ? `${fmtKes(Math.abs(balance))} credit`
-        : `${fmtKes(balance)} outstanding`;
-    }
+        <div>
+          <strong>B/F (Opening)</strong><br/>
+          ${fmtOpeningSplit(openingCR, openingDR)}
+        </div>
 
-    // ✅ Put 100% collected in its own card (re-using existing #summaryMonthRate)
-    if (rateEl) {
-      rateEl.textContent = `${fmtPct(collectedPct)} collected`;
-    }
+        <div>
+          <strong>Invoiced (month)</strong><br/>
+          ${fmtKes(invoiced)}
+        </div>
 
-    // ✅ Put over-collected in its own card (auto-created in app.js)
-    if (overPctEl) {
-      if (overPct > 0.0001) {
-        overPctEl.style.display = "";
-        overPctEl.textContent = `${fmtPct(overPct)} over-collected`;
-      } else {
-        overPctEl.style.display = "none";
-        overPctEl.textContent = "—";
-      }
+        <div>
+          <strong>Collected (month)</strong><br/>
+          ${fmtKes(collected)}
+        </div>
+
+        <div>
+          <strong>Net movement (month)</strong><br/>
+          ${fmtDrCrSigned(movement)}
+        </div>
+
+        <div>
+          <strong>Closing balance</strong><br/>
+          ${fmtDrCrSigned(closing)}
+        </div>
+
+        <div>
+          <strong>Collection rate</strong><br/>
+          ${rateText}
+        </div>
+      `;
     }
 
   } catch (err) {
@@ -570,13 +554,7 @@ async function loadOverview() {
     if (kpiOpen)     kpiOpen.textContent     = "—";
     if (kpiPayments) kpiPayments.textContent = "—";
     if (kpiBalance)  kpiBalance.textContent  = "—";
-    if (labelEl)     labelEl.textContent     = "Error loading";
-
-    if (rateEl) rateEl.textContent = "—";
-    if (overPctEl) {
-      overPctEl.style.display = "none";
-      overPctEl.textContent = "—";
-    }
+    if (summaryWrap) summaryWrap.innerHTML = `<div><strong>Error loading</strong></div>`;
   }
 }
 
