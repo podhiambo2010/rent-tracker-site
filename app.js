@@ -448,6 +448,11 @@ async function loadOverview() {
     return `${fmtKes(0)}`;
   };
 
+  const fmtPctSafe = (n) => {
+    if (typeof fmtPct === "function") return fmtPct(n);
+    return `${Number(n || 0).toFixed(1)}%`;
+  };
+
   const safeGet = async (fn, fallback) => {
     try { return await fn(); }
     catch (e) { console.warn("Overview safeGet:", e); return fallback; }
@@ -487,7 +492,7 @@ async function loadOverview() {
       : 0;
     if (kpiOpen) kpiOpen.textContent = openCount;
 
-    // Core values
+    // Core values (match API payload)
     const openingCR = Number(data?.opening_credit_total ?? 0);
     const openingDR = Number(data?.opening_debit_total ?? 0);
 
@@ -496,10 +501,11 @@ async function loadOverview() {
 
     const closing   = Number(data?.closing_balance_total ?? data?.balance_total ?? 0);
 
-    // Net movement: over/under collection vs invoices (this month only)
-    const netMove = collected - invoiced; // + => over-collected (credit movement)
+    // IMPORTANT: movement = invoiced - collected
+    // (so over-collection shows as CR like your Nov example)
+    const movement = (invoiced - collected);
 
-    // Rate text
+    // Rate
     const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
     const collectionRate = Math.min(100, rawRate);
     const overPct = Math.max(0, rawRate - 100);
@@ -510,51 +516,51 @@ async function loadOverview() {
 
     // Monthly collection summary cards
     if (summaryWrap) {
-  const monthLabel = formatMonthLabel(ym);
+      const monthLabel = formatMonthLabel(ym);
 
-  const rateText = overPct > 0
-    ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
-    : `${fmtPct(collectionRate)} collection rate`;
+      const rateText = overPct > 0
+        ? `${fmtPctSafe(collectionRate)} collected • ${fmtPctSafe(overPct)} over-collected`
+        : `${fmtPctSafe(collectionRate)} collection rate`;
 
-  const openingTxt = `KES ${fmtNumber(opening_credit_total || 0)} CR / KES ${fmtNumber(opening_debit_total || 0)} DR`;
+      const openingTxt = `KES ${fmtNumber(openingCR)} CR / KES ${fmtNumber(openingDR)} DR`;
 
-  summaryWrap.innerHTML = `
-    <div>
-      <div class="sum-title">${monthLabel}</div>
-      <div class="sum-value">Monthly summary</div>
-    </div>
+      summaryWrap.innerHTML = `
+        <div>
+          <div class="sum-title">${monthLabel}</div>
+          <div class="sum-value">Monthly summary</div>
+        </div>
 
-    <div>
-      <div class="sum-title">B/F (Opening)</div>
-      <div class="sum-value">${openingTxt}</div>
-    </div>
+        <div>
+          <div class="sum-title">B/F (Opening)</div>
+          <div class="sum-value">${openingTxt}</div>
+        </div>
 
-    <div>
-      <div class="sum-title">Invoiced (month)</div>
-      <div class="sum-value">${fmtKes(invoiced)}</div>
-    </div>
+        <div>
+          <div class="sum-title">Invoiced (month)</div>
+          <div class="sum-value">${fmtKes(invoiced)}</div>
+        </div>
 
-    <div>
-      <div class="sum-title">Collected (month)</div>
-      <div class="sum-value">${fmtKes(collected)}</div>
-    </div>
+        <div>
+          <div class="sum-title">Collected (month)</div>
+          <div class="sum-value">${fmtKes(collected)}</div>
+        </div>
 
-    <div>
-      <div class="sum-title">Net movement (month)</div>
-      <div class="sum-value">${fmtDrCr(movement)}</div>
-    </div>
+        <div>
+          <div class="sum-title">Net movement (month)</div>
+          <div class="sum-value">${fmtDrCr(movement)}</div>
+        </div>
 
-    <div>
-      <div class="sum-title">Closing balance</div>
-      <div class="sum-value">${fmtDrCr(closing)}</div>
-    </div>
+        <div>
+          <div class="sum-title">Closing balance</div>
+          <div class="sum-value">${fmtDrCr(closing)}</div>
+        </div>
 
-    <div class="span-all">
-      <div class="sum-title">Collection rate</div>
-      <div class="sum-value">${rateText}</div>
-    </div>
-  `;
-}
+        <div class="span-all">
+          <div class="sum-title">Collection rate</div>
+          <div class="sum-value">${rateText}</div>
+        </div>
+      `;
+    }
 
   } catch (err) {
     console.error("loadOverview error:", err);
@@ -562,10 +568,11 @@ async function loadOverview() {
     if (kpiOpen)     kpiOpen.textContent     = "—";
     if (kpiPayments) kpiPayments.textContent = "—";
     if (kpiBalance)  kpiBalance.textContent  = "—";
-    if (summaryWrap) summaryWrap.innerHTML = `<div><strong>Error loading</strong></div>`;
+    if (summaryWrap) summaryWrap.innerHTML = `<div><div class="sum-title">Monthly collection summary</div><div class="sum-value">Error loading</div></div>`;
   }
 }
 
+// --- Payments tab ---
 async function loadPayments(initial = false) {
   const monthSelect = $("#paymentsMonth");
   const tenantFilter = ($("#paymentsTenant")?.value || "").trim().toLowerCase();
@@ -1016,38 +1023,41 @@ function isEndedLeaseStatus(status) {
 }
 
 function renderLeasesTable(rows) {
-  const tbody = getLeasesTbody();
+  const tbody = (typeof getLeasesTbody === "function") ? getLeasesTbody() : null;
   if (!tbody) {
-    console.warn(
-      "Leases table body not found (IDs may differ). Leases loaded:",
-      rows?.length || 0
-    );
+    console.warn("Leases table body not found (IDs may differ). Leases loaded:", rows?.length || 0);
     return;
   }
 
-  const out = (rows || [])
-    .map((r) => {
-      const x = pickLeaseFields(r);
-      const rentTxt = typeof fmtKes === "function" ? fmtKes(x.rent) : String(x.rent);
+  const esc = (v) => (typeof escapeHtml === "function" ? escapeHtml(String(v ?? "")) : String(v ?? ""));
+  const rentTxt = (n) => (typeof fmtKes === "function" ? fmtKes(n) : String(n ?? ""));
 
-      // ✅ If lease is ended/inactive/etc, tint the CYCLE cell
-      const cycleClass = isEndedLeaseStatus(x.status) ? "cycle-ended" : "";
+  const out = (rows || []).map((r) => {
+    const x = (typeof pickLeaseFields === "function") ? pickLeaseFields(r) : r;
 
-      return `
+    const status = String(x.status ?? "").toLowerCase().trim();
+    const isEnded =
+      status.includes("ended") ||
+      status.includes("inactive") ||
+      status.includes("terminated") ||
+      status.includes("closed") ||
+      status.includes("vacant") ||
+      status === "end";
+
+    const cycleClass = isEnded ? "cycle-ended" : "";
+
+    return `
       <tr>
-        <td>${escapeHtml ? escapeHtml(x.tenant) : x.tenant}</td>
-        <td>${escapeHtml ? escapeHtml(x.unit) : x.unit}</td>
-        <td>${rentTxt}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.status)) : String(x.status)}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.start || "")) : String(x.start || "")}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.dueDay || "")) : String(x.dueDay || "")}</td>
-        <td class="${cycleClass}">${
-          escapeHtml ? escapeHtml(String(x.billingCycle || "")) : String(x.billingCycle || "")
-        }</td>
+        <td>${esc(x.tenant)}</td>
+        <td>${esc(x.unit)}</td>
+        <td>${rentTxt(x.rent)}</td>
+        <td class="${cycleClass}">${esc(x.billingCycle ?? x.cycle ?? "")}</td>
+        <td>${esc(x.dueDay ?? "")}</td>
+        <td>${esc(x.status ?? "")}</td>
+        <td></td>
       </tr>
     `;
-    })
-    .join("");
+  }).join("");
 
   tbody.innerHTML = out || `<tr><td colspan="7">No leases found</td></tr>`;
 }
@@ -1450,84 +1460,7 @@ async function initMonthPicker() {
   }
 }
 
-function ensureUiTweaks() {
-  if (document.getElementById("rt-ui-tweaks")) return;
-
-  const style = document.createElement("style");
-  style.id = "rt-ui-tweaks";
-  style.textContent = `
-  /* ----------------------------
-     KPI cards: reduce huge numbers
-  -----------------------------*/
-  #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-    font-size: clamp(24px, 2.2vw, 42px) !important;
-    line-height: 1.1 !important;
-    letter-spacing: -0.02em;
-  }
-
-  /* ----------------------------
-     Monthly collection summary: responsive grid
-     (overrides old flex/min-width rules)
-  -----------------------------*/
-  #collection-summary-month{
-    margin-top: 12px !important;
-    display: grid !important;
-    gap: 12px !important;
-    grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
-    align-items: stretch !important;
-  }
-
-  @media (max-width: 980px){
-    #collection-summary-month{
-      grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
-    }
-  }
-  @media (max-width: 620px){
-    #collection-summary-month{
-      grid-template-columns: 1fr !important;
-    }
-  }
-
-  #collection-summary-month > div{
-    min-width: 0 !important;          /* kill the old min-width:150px */
-    padding: 10px 12px !important;
-    border-radius: 12px !important;
-  }
-
-  #collection-summary-month .sum-title{
-    font-size: 14px;
-    font-weight: 700;
-    opacity: .95;
-  }
-
-  #collection-summary-month .sum-value{
-    margin-top: 4px;
-    font-size: 16px;
-    font-weight: 650;
-    letter-spacing: -0.01em;
-  }
-
-  #collection-summary-month .span-all{
-    grid-column: 1 / -1 !important;   /* make it intentional */
-  }
-
-  /* Small “pills” for CR/DR split */
-  #collection-summary-month .pill{
-    display:inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    border: 1px solid var(--bd);
-    background: var(--panel-2);
-    font-size: 13px;
-    font-weight: 650;
-    margin-right: 8px;
-    margin-top: 6px;
-  }
-  `;
-  document.head.appendChild(style);
-}
-
-/* ---------------- CSS helper + UI tweaks ---------------- */
+/* ---------------- CSS helper (single source) ---------------- */
 function injectCssOnce(id, cssText) {
   if (document.getElementById(id)) return;
   const s = document.createElement("style");
@@ -1538,42 +1471,62 @@ function injectCssOnce(id, cssText) {
 
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  // Inject UI polish styles (safe, no dependency on index.html edits)
+  // UI polish styles (safe, no dependency on index.html edits)
   injectCssOnce("rt-ui-tweaks", `
     /* --- KPI numbers: reduce font size so cards look neat --- */
     #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-      font-size: 34px !important;
+      font-size: clamp(22px, 2.1vw, 40px) !important;
       line-height: 1.1 !important;
-      letter-spacing: -0.2px;
+      letter-spacing: -0.02em;
     }
-    @media (max-width: 900px){
-      #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-        font-size: 30px !important;
+
+    /* --- Monthly collection summary: clean responsive grid (no overlap) --- */
+    #collection-summary-month{
+      width: 100% !important;
+      margin-top: 14px !important;
+      display: grid !important;
+      gap: 12px !important;
+      grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
+      align-items: stretch !important;
+    }
+    @media (max-width: 980px){
+      #collection-summary-month{
+        grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
+      }
+    }
+    @media (max-width: 620px){
+      #collection-summary-month{
+        grid-template-columns: 1fr !important;
       }
     }
 
-    /* --- Monthly collection summary: prevent overlap + align wrap nicely --- */
-    #collection-summary-month{
-      margin-top: 14px !important;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
     #collection-summary-month > div{
-      flex: 1 1 240px;
-      min-width: 240px;
+      min-width: 0 !important;
+      padding: 10px 12px !important;
+      border-radius: 12px !important;
     }
-    @media (max-width: 900px){
-      #collection-summary-month > div{
-        min-width: 200px;
-        flex-basis: 200px;
-      }
+
+    #collection-summary-month .sum-title{
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      opacity: .90 !important;
+    }
+
+    #collection-summary-month .sum-value{
+      margin-top: 4px !important;
+      font-size: 16px !important;
+      font-weight: 650 !important;
+      letter-spacing: -0.01em !important;
+    }
+
+    #collection-summary-month .span-all{
+      grid-column: 1 / -1 !important;
     }
 
     /* --- Leases: make Cycle text muted when lease is ended/inactive --- */
     .cycle-ended{
       color: var(--muted) !important;
-      font-style: italic;
+      font-style: italic !important;
     }
   `);
 
@@ -1594,7 +1547,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // ✅ Force state.currentMonth to match what the picker currently shows
+  // Force state.currentMonth to match picker
   const ym =
     (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
     state.currentMonth ||
@@ -1604,7 +1557,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
-  // ---- safe caller (prevents crashes) ----
+  // safe caller (prevents crashes)
   const safeCall = (fnName, fn, ...args) => {
     if (typeof fn === "function") return fn(...args);
     console.warn(`${fnName} is not defined — skipping`);
@@ -1644,8 +1597,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeCall("loadRentRoll()", loadRentRoll);
   });
 
-  ensureUiTweaks();
-
   // Dunning -> WhatsApp quick fill
   document.addEventListener("click", (e) => {
     const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
@@ -1666,4 +1617,3 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases()", loadLeases));
   $("#reloadDunning")?.addEventListener("click", () => safeCall("loadBalances()", loadBalances));
 });
-
