@@ -202,15 +202,122 @@ async function apiPost(path, body, { admin = false } = {}) {
   return res.json();
 }
 
-/* -------- month sync (single source of truth) -------- */
-function reloadAllMonthViews() {
-  loadOverview();
-  loadPayments();
-  loadRentRoll();
-  loadBalances();
-  loadBalancesByUnit();
+/* ---------------------------------------------------------------------------
+   PAYMENTS TAB: Adapter to prevent "loadPayments is not defined"
+   and to ensure Payments always loads even if the underlying fn name differs.
+   Paste this block BEFORE DOMContentLoaded and BEFORE reloadAllMonthViews().
+--------------------------------------------------------------------------- */
+
+function getPaymentsTbody() {
+  return (
+    document.querySelector("#paymentsTable tbody") ||
+    document.querySelector("#paymentsTbody") ||
+    document.querySelector("#payments tbody") ||
+    document.querySelector("table[data-table='payments'] tbody") ||
+    document.querySelector("table#payments tbody") ||
+    null
+  );
 }
 
+function showPaymentsPlaceholder(msg) {
+  const tbody = getPaymentsTbody();
+  if (!tbody) return;
+  const safe = (typeof escapeHtml === "function") ? escapeHtml(String(msg)) : String(msg);
+  // Try to span a reasonable number of columns (fallback 6)
+  const cols =
+    tbody.closest("table")?.querySelectorAll("thead th")?.length ||
+    tbody.closest("table")?.rows?.[0]?.cells?.length ||
+    6;
+
+  tbody.innerHTML = `<tr><td colspan="${cols}">${safe}</td></tr>`;
+}
+
+/**
+ * Finds whichever payments loader exists in your app.
+ * We DO NOT rename your internal code — we just adapt safely.
+ */
+function resolvePaymentsLoaderFn() {
+  const candidates = [
+    "loadPayments",      // ideal / expected
+    "paymentsLoader",    // seen in your console warning
+    "loadPayment",       // older pattern
+    "loadPaymentsTable",
+    "loadPaymentsRows",
+  ];
+  for (const name of candidates) {
+    if (typeof window[name] === "function") return window[name];
+  }
+  return null;
+}
+
+/**
+ * Global loadPayments(force=true/false) — always available.
+ * If your project already has loadPayments, we won't override it.
+ */
+if (typeof window.loadPayments !== "function") {
+  window.loadPayments = async function loadPayments(force = false) {
+    const fn = resolvePaymentsLoaderFn();
+
+    if (!fn) {
+      console.warn(
+        "Payments loader not found (loadPayments/paymentsLoader/loadPayment) — skipping"
+      );
+      showPaymentsPlaceholder("Payments loader missing in app.js (no data loaded).");
+      return;
+    }
+
+    try {
+      const res = fn(force);
+      // Support both sync + async loaders
+      const out = (res && typeof res.then === "function") ? await res : res;
+
+      // If your loader doesn't render anything when empty, ensure user sees something.
+      const tbody = getPaymentsTbody();
+      if (tbody && !tbody.innerHTML.trim()) {
+        showPaymentsPlaceholder("No payments found for this month.");
+      }
+      return out;
+    } catch (e) {
+      console.error("loadPayments(adapter) failed:", e);
+      showPaymentsPlaceholder("Error loading payments.");
+    }
+  };
+}
+
+/* ---------------------------------------------------------------------------
+   SAFE month reload — prevents one broken loader from breaking other tabs.
+   Replace your existing reloadAllMonthViews() with this block.
+--------------------------------------------------------------------------- */
+function reloadAllMonthViews(opts = { initial: false }) {
+  const safeCall = (fnName, fn, ...args) => {
+    if (typeof fn === "function") return fn(...args);
+    console.warn(`${fnName} is not defined — skipping`);
+  };
+
+  // Always keep month in sync first (if these exist)
+  try {
+    const ym =
+      (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+      state?.currentMonth ||
+      (typeof yyyymm === "function" ? yyyymm() : null);
+
+    if (ym && typeof setCurrentMonth === "function") {
+      setCurrentMonth(ym, { triggerReload: false });
+    }
+  } catch (e) {
+    console.warn("reloadAllMonthViews month sync warning:", e);
+  }
+
+  // Now reload each view safely (one failing does NOT kill others)
+  safeCall("loadOverview()", window.loadOverview);
+  safeCall("loadLeases()", window.loadLeases);
+  safeCall("loadPayments(true)", window.loadPayments, true);
+  safeCall("loadRentRoll(true)", window.loadRentRoll, true);
+  safeCall("loadBalances()", window.loadBalances);
+  safeCall("loadBalancesByUnit()", window.loadBalancesByUnit);
+}
+
+/* -------- month selection setter (single source of truth) -------- */
 function setCurrentMonth(ym, { triggerReload = true } = {}) {
   if (!ym) return;
   state.currentMonth = ym;
