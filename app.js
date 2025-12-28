@@ -510,45 +510,51 @@ async function loadOverview() {
 
     // Monthly collection summary cards
     if (summaryWrap) {
-      const monthLabel = formatMonthLabel(ym);
-      const rateText = overPct > 0
-        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
-        : `${fmtPct(collectionRate)} collection rate`;
+  const monthLabel = formatMonthLabel(ym);
 
-      summaryWrap.innerHTML = `
-        <div><strong>${monthLabel}</strong></div>
+  const rateText = overPct > 0
+    ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
+    : `${fmtPct(collectionRate)} collection rate`;
 
-        <div>
-          <strong>B/F (Opening)</strong><br/>
-          ${fmtKes(openingCR)} CR / ${fmtKes(openingDR)} DR
-        </div>
+  const openingTxt = `KES ${fmtNumber(opening_credit_total || 0)} CR / KES ${fmtNumber(opening_debit_total || 0)} DR`;
 
-        <div>
-          <strong>Invoiced (month)</strong><br/>
-          ${fmtKes(invoiced)}
-        </div>
+  summaryWrap.innerHTML = `
+    <div>
+      <div class="sum-title">${monthLabel}</div>
+      <div class="sum-value">Monthly summary</div>
+    </div>
 
-        <div>
-          <strong>Collected (month)</strong><br/>
-          ${fmtKes(collected)}
-        </div>
+    <div>
+      <div class="sum-title">B/F (Opening)</div>
+      <div class="sum-value">${openingTxt}</div>
+    </div>
 
-        <div>
-          <strong>Net movement (month)</strong><br/>
-          ${netMove >= 0 ? `${fmtKes(netMove)} CR` : `${fmtKes(Math.abs(netMove))} DR`}
-        </div>
+    <div>
+      <div class="sum-title">Invoiced (month)</div>
+      <div class="sum-value">${fmtKes(invoiced)}</div>
+    </div>
 
-        <div>
-          <strong>Closing balance</strong><br/>
-          ${fmtDrCr(closing)}
-        </div>
+    <div>
+      <div class="sum-title">Collected (month)</div>
+      <div class="sum-value">${fmtKes(collected)}</div>
+    </div>
 
-        <div>
-          <strong>Collection rate</strong><br/>
-          ${rateText}
-        </div>
-      `;
-    }
+    <div>
+      <div class="sum-title">Net movement (month)</div>
+      <div class="sum-value">${fmtDrCr(movement)}</div>
+    </div>
+
+    <div>
+      <div class="sum-title">Closing balance</div>
+      <div class="sum-value">${fmtDrCr(closing)}</div>
+    </div>
+
+    <div class="span-all">
+      <div class="sum-title">Collection rate</div>
+      <div class="sum-value">${rateText}</div>
+    </div>
+  `;
+}
 
   } catch (err) {
     console.error("loadOverview error:", err);
@@ -1444,6 +1450,83 @@ async function initMonthPicker() {
   }
 }
 
+function ensureUiTweaks() {
+  if (document.getElementById("rt-ui-tweaks")) return;
+
+  const style = document.createElement("style");
+  style.id = "rt-ui-tweaks";
+  style.textContent = `
+  /* ----------------------------
+     KPI cards: reduce huge numbers
+  -----------------------------*/
+  #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
+    font-size: clamp(24px, 2.2vw, 42px) !important;
+    line-height: 1.1 !important;
+    letter-spacing: -0.02em;
+  }
+
+  /* ----------------------------
+     Monthly collection summary: responsive grid
+     (overrides old flex/min-width rules)
+  -----------------------------*/
+  #collection-summary-month{
+    margin-top: 12px !important;
+    display: grid !important;
+    gap: 12px !important;
+    grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
+    align-items: stretch !important;
+  }
+
+  @media (max-width: 980px){
+    #collection-summary-month{
+      grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
+    }
+  }
+  @media (max-width: 620px){
+    #collection-summary-month{
+      grid-template-columns: 1fr !important;
+    }
+  }
+
+  #collection-summary-month > div{
+    min-width: 0 !important;          /* kill the old min-width:150px */
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+  }
+
+  #collection-summary-month .sum-title{
+    font-size: 14px;
+    font-weight: 700;
+    opacity: .95;
+  }
+
+  #collection-summary-month .sum-value{
+    margin-top: 4px;
+    font-size: 16px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  #collection-summary-month .span-all{
+    grid-column: 1 / -1 !important;   /* make it intentional */
+  }
+
+  /* Small “pills” for CR/DR split */
+  #collection-summary-month .pill{
+    display:inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--bd);
+    background: var(--panel-2);
+    font-size: 13px;
+    font-weight: 650;
+    margin-right: 8px;
+    margin-top: 6px;
+  }
+  `;
+  document.head.appendChild(style);
+}
+
 /* ---------------- CSS helper + UI tweaks ---------------- */
 function injectCssOnce(id, cssText) {
   if (document.getElementById(id)) return;
@@ -1560,6 +1643,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const p = $("#rentrollProperty"); if (p) p.value = "";
     safeCall("loadRentRoll()", loadRentRoll);
   });
+
+  ensureUiTweaks();
 
   // Dunning -> WhatsApp quick fill
   document.addEventListener("click", (e) => {
