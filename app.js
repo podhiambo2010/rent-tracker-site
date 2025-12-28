@@ -441,15 +441,12 @@ async function loadOverview() {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
-  const fmtDrCrSigned = (n) => {
+  const fmtDrCr = (n) => {
     const x = Number(n) || 0;
     if (x < 0) return `${fmtKes(Math.abs(x))} CR`;
     if (x > 0) return `${fmtKes(x)} DR`;
     return `${fmtKes(0)}`;
   };
-
-  const fmtOpeningSplit = (cr, dr) =>
-    `${fmtKes(Number(cr) || 0)} CR / ${fmtKes(Number(dr) || 0)} DR`;
 
   const safeGet = async (fn, fallback) => {
     try { return await fn(); }
@@ -470,11 +467,15 @@ async function loadOverview() {
   };
 
   try {
+    // Single source of truth: balances overview
     const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
       `/balances/overview?month=${encodeURIComponent(ym)}`
     ]);
 
+    const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
+
+    // Optional helpers
     const leases = await safeGet(() => apiGet("/leases?limit=1000"), []);
     const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), null);
     const rentRoll = rrResp?.data || rrResp || [];
@@ -486,27 +487,28 @@ async function loadOverview() {
       : 0;
     if (kpiOpen) kpiOpen.textContent = openCount;
 
-    const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
-
-    const invoiced  = Number(data?.total_due ?? 0);
-    const collected = Number(data?.total_paid ?? 0);
-    const closing   = Number(data?.balance_total ?? 0);
-
-    // ✅ opening split (from backend-added fields)
+    // Core values
     const openingCR = Number(data?.opening_credit_total ?? 0);
     const openingDR = Number(data?.opening_debit_total ?? 0);
 
-    // ✅ net movement for the month (same logic you already agreed)
-    const movement = invoiced - collected;
+    const invoiced  = Number(data?.total_due ?? 0);
+    const collected = Number(data?.cash_collected_total ?? data?.total_paid ?? 0);
 
-    // Rate: cap at 100%, show over-collected separately
+    const closing   = Number(data?.closing_balance_total ?? data?.balance_total ?? 0);
+
+    // Net movement: over/under collection vs invoices (this month only)
+    const netMove = collected - invoiced; // + => over-collected (credit movement)
+
+    // Rate text
     const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
     const collectionRate = Math.min(100, rawRate);
     const overPct = Math.max(0, rawRate - 100);
 
+    // KPIs
     if (kpiPayments) kpiPayments.textContent = fmtKes(collected);
-    if (kpiBalance)  kpiBalance.textContent  = (closing < 0) ? `${fmtKes(Math.abs(closing))} CR` : fmtKes(closing);
+    if (kpiBalance)  kpiBalance.textContent  = fmtDrCr(closing);
 
+    // Monthly collection summary cards
     if (summaryWrap) {
       const monthLabel = formatMonthLabel(ym);
       const rateText = overPct > 0
@@ -518,7 +520,7 @@ async function loadOverview() {
 
         <div>
           <strong>B/F (Opening)</strong><br/>
-          ${fmtOpeningSplit(openingCR, openingDR)}
+          ${fmtKes(openingCR)} CR / ${fmtKes(openingDR)} DR
         </div>
 
         <div>
@@ -533,12 +535,12 @@ async function loadOverview() {
 
         <div>
           <strong>Net movement (month)</strong><br/>
-          ${fmtDrCrSigned(movement)}
+          ${netMove >= 0 ? `${fmtKes(netMove)} CR` : `${fmtKes(Math.abs(netMove))} DR`}
         </div>
 
         <div>
           <strong>Closing balance</strong><br/>
-          ${fmtDrCrSigned(closing)}
+          ${fmtDrCr(closing)}
         </div>
 
         <div>
@@ -1315,6 +1317,14 @@ async function initMonthPicker() {
 
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
+  // helper: call a function only if it exists
+  const safeCall = (fnName, ...args) => {
+    const fn = window[fnName];
+    if (typeof fn === "function") return fn(...args);
+    console.warn(`${fnName}() is not defined — skipping`);
+    return undefined;
+  };
+
   initTabs();
   initApiBaseControls();
   initWhatsAppBuilder();
@@ -1326,7 +1336,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initMonthPicker();
   } catch (e) {
     console.error("initMonthPicker failed:", e);
-    setCurrentMonth(yyyymm(), { triggerReload: false });
+    if (typeof setCurrentMonth === "function") {
+      setCurrentMonth(yyyymm(), { triggerReload: false });
+    } else {
+      state.currentMonth = yyyymm();
+    }
   }
 
   // ✅ Force state.currentMonth to match what the picker currently shows
@@ -1335,56 +1349,69 @@ document.addEventListener("DOMContentLoaded", async () => {
     state.currentMonth ||
     yyyymm();
 
-  setCurrentMonth(ym, { triggerReload: false });
+  if (typeof setCurrentMonth === "function") {
+    setCurrentMonth(ym, { triggerReload: false });
+  } else {
+    state.currentMonth = ym;
+  }
 
-  // initial data load
-  loadOverview();
-  loadLeases();
-  loadPayments(true);
-  loadRentRoll(true);
-  loadBalances();
-  loadBalancesByUnit();
+  // initial data load (guarded: never crash if a loader is missing)
+  safeCall("loadOverview");
+  safeCall("loadLeases", true);          // will be skipped if not defined
+  safeCall("loadPayments", true);
+  safeCall("loadRentRoll", true);
+  safeCall("loadBalances", true);
+  safeCall("loadBalancesByUnit", true);  // will be skipped if not defined
 
-  $("#reloadLeases")?.addEventListener("click", loadLeases);
+  // Buttons / filters (guarded)
+  $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases", true));
 
   $("#reloadBalances")?.addEventListener("click", () => {
-    loadBalances();
-    loadBalancesByUnit();
+    safeCall("loadBalances", true);
+    safeCall("loadBalancesByUnit", true);
   });
 
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () => loadBalances());
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () => safeCall("loadBalances", true));
 
-  $("#applyPayments")?.addEventListener("click", () => loadPayments());
+  $("#applyPayments")?.addEventListener("click", () => safeCall("loadPayments", true));
   $("#clearPayments")?.addEventListener("click", () => {
-    $("#paymentsTenant").value = "";
-    $("#paymentsStatus").value = "";
-    loadPayments();
+    const t = $("#paymentsTenant");
+    const s = $("#paymentsStatus");
+    if (t) t.value = "";
+    if (s) s.value = "";
+    safeCall("loadPayments", true);
   });
 
-  $("#applyRentroll")?.addEventListener("click", () => loadRentRoll());
+  $("#applyRentroll")?.addEventListener("click", () => safeCall("loadRentRoll", true));
   $("#clearRentroll")?.addEventListener("click", () => {
-    $("#rentrollTenant").value = "";
-    $("#rentrollProperty").value = "";
-    loadRentRoll();
+    const t = $("#rentrollTenant");
+    const p = $("#rentrollProperty");
+    if (t) t.value = "";
+    if (p) p.value = "";
+    safeCall("loadRentRoll", true);
   });
 
+  // Dunning -> WhatsApp quick fill (keep as-is, just safer)
   document.addEventListener("click", (e) => {
-  const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
-  if (!btn) return;
+    const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
+    if (!btn) return;
 
-  const tenant = btn.dataset.dunTenant || btn.getAttribute("data-dun-tenant") || "";
-  const balance = Number(btn.dataset.dunBalance || btn.getAttribute("data-dun-balance") || 0);
+    const tenant = btn.dataset.dunTenant || btn.getAttribute("data-dun-tenant") || "";
+    const balance = Number(btn.dataset.dunBalance || btn.getAttribute("data-dun-balance") || 0);
 
-  const ym = (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || yyyymm();
+    const ym = (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || yyyymm();
 
-  if ($("#waTenant")) $("#waTenant").value = tenant;
-  if ($("#waPeriod")) $("#waPeriod").value = formatMonthLabel(ym);
-  if ($("#waBalance")) $("#waBalance").value = String(balance);
+    const waTenant = $("#waTenant");
+    const waPeriod = $("#waPeriod");
+    const waBalance = $("#waBalance");
 
-  // Switch to WhatsApp tab (safe if helper exists)
-  if (typeof window.activateTab === "function") window.activateTab("whatsapp");
-});
+    if (waTenant) waTenant.value = tenant;
+    if (waPeriod) waPeriod.value = formatMonthLabel(ym);
+    if (waBalance) waBalance.value = String(balance);
 
-  $("#leaseSearch")?.addEventListener("input", () => loadLeases());
-  $("#reloadDunning")?.addEventListener("click", () => loadBalances());
+    if (typeof window.activateTab === "function") window.activateTab("whatsapp");
+  });
+
+  $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases", true));
+  $("#reloadDunning")?.addEventListener("click", () => safeCall("loadBalances", true));
 });
