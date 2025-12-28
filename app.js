@@ -429,16 +429,15 @@ async function loadOverview() {
   const kpiOpen     = $("#kpiOpen");
   const kpiPayments = $("#kpiPayments");
   const kpiBalance  = $("#kpiBalance");
-
   const summaryWrap = $("#collection-summary-month");
 
   const ym =
-    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    (typeof window.getSelectedMonth === "function" ? window.getSelectedMonth() : null) ||
     state.currentMonth ||
     yyyymm();
 
-  if (state.currentMonth !== ym && typeof setCurrentMonth === "function") {
-    setCurrentMonth(ym, { triggerReload: false });
+  if (state.currentMonth !== ym && typeof window.setCurrentMonth === "function") {
+    window.setCurrentMonth(ym, { triggerReload: false });
   }
 
   const fmtDrCr = (n) => {
@@ -448,12 +447,7 @@ async function loadOverview() {
     return `${fmtKes(0)}`;
   };
 
-  const safeGet = async (fn, fallback) => {
-    try { return await fn(); }
-    catch (e) { console.warn("Overview safeGet:", e); return fallback; }
-  };
-
-  const apiGetFirst = async (paths) => {
+  const apiGetFirstLocal = async (paths) => {
     let lastErr = null;
     for (const p of paths) {
       try {
@@ -467,26 +461,36 @@ async function loadOverview() {
   };
 
   try {
-    const balOv = await apiGetFirst([
+    // Source of truth: balances overview
+    const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
       `/balances/overview?month=${encodeURIComponent(ym)}`
     ]);
 
     const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
 
-    // Optional: leases + rent roll for counts
-    const leasesResp = await safeGet(() => apiGet("/leases?limit=1000"), []);
-    const leases = Array.isArray(leasesResp?.data) ? leasesResp.data : (Array.isArray(leasesResp) ? leasesResp : []);
+    // Optional: leases + rent roll
+    let leases = [];
+    try {
+      const lr = await apiGet("/leases?limit=1000");
+      leases = (lr?.data && Array.isArray(lr.data)) ? lr.data : (Array.isArray(lr) ? lr : []);
+    } catch {}
 
-    const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), []);
-    const rentRoll = Array.isArray(rrResp?.data) ? rrResp.data : (Array.isArray(rrResp) ? rrResp : []);
+    let rentRoll = [];
+    try {
+      const rr = await apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`);
+      rentRoll = (rr?.data && Array.isArray(rr.data)) ? rr.data : (Array.isArray(rr) ? rr : []);
+    } catch {}
 
+    // KPIs
     if (kpiLeases) kpiLeases.textContent = leases.length;
 
-    const openCount = rentRoll.filter((r) => (String(r.status || "").toLowerCase() !== "paid")).length;
+    const openCount = Array.isArray(rentRoll)
+      ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
+      : 0;
     if (kpiOpen) kpiOpen.textContent = openCount;
 
-    // Values from API
+    // Totals (robust)
     const openingCR = Number(data?.opening_credit_total ?? 0);
     const openingDR = Number(data?.opening_debit_total ?? 0);
 
@@ -495,66 +499,62 @@ async function loadOverview() {
 
     const closing   = Number(data?.closing_balance_total ?? data?.balance_total ?? 0);
 
-    // Net movement: INVOICED - COLLECTED (positive => DR)
+    // Net movement: invoiced - collected (your UI text says "Invoiced − Collected")
     const netMove = invoiced - collected;
 
-    // Rate
     const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
-    const ratePct = Math.min(100, rawRate);
+    const collectionRate = Math.max(0, Math.min(100, rawRate));
     const overPct = Math.max(0, rawRate - 100);
 
     if (kpiPayments) kpiPayments.textContent = fmtKes(collected);
     if (kpiBalance)  kpiBalance.textContent  = fmtDrCr(closing);
 
+    // Summary cards (6 cards = perfect 2 rows of 3)
     if (summaryWrap) {
-      // remove the duplicate outside label if it exists
-      removeMonthlyCollectionLabel?.();
-
-      const monthLabel = formatMonthLabel(ym);
-      const openingTxt = `KES ${fmtNumber(openingCR || 0)} CR / KES ${fmtNumber(openingDR || 0)} DR`;
+      const openingTxt = `${fmtKes(openingCR)} CR / ${fmtKes(openingDR)} DR`;
 
       const rateText = overPct > 0
-        ? `${fmtPct(ratePct)} collected • ${fmtPct(overPct)} over-collected`
-        : `${fmtPct(ratePct)} collection rate`;
+        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
+        : `${fmtPct(collectionRate)} collection rate`;
 
       summaryWrap.innerHTML = `
-        <div class="sum-header">
-          <div class="title">Monthly collection summary</div>
-          <div class="chip">${escapeHtml ? escapeHtml(monthLabel) : monthLabel}</div>
-        </div>
-
-        <div class="sum-card">
+        <div>
           <div class="sum-title">B/F (Opening)</div>
           <div class="sum-value">${openingTxt}</div>
         </div>
 
-        <div class="sum-card">
+        <div>
           <div class="sum-title">Invoiced (month)</div>
           <div class="sum-value">${fmtKes(invoiced)}</div>
         </div>
 
-        <div class="sum-card">
+        <div>
           <div class="sum-title">Collected (month)</div>
           <div class="sum-value">${fmtKes(collected)}</div>
           <div class="sum-sub">Cash collected (paid_at)</div>
         </div>
 
-        <div class="sum-card">
+        <div>
           <div class="sum-title">Net movement (month)</div>
           <div class="sum-value">${fmtDrCr(netMove)}</div>
           <div class="sum-sub">Invoiced − Collected</div>
         </div>
 
-        <div class="sum-card">
+        <div>
           <div class="sum-title">Closing balance</div>
           <div class="sum-value">${fmtDrCr(closing)}</div>
         </div>
 
-        <div class="sum-card">
+        <div>
           <div class="sum-title">Collection rate</div>
           <div class="sum-value">${rateText}</div>
         </div>
       `;
+    }
+
+    // Remove the duplicate standalone label (Overview only)
+    if (typeof removeDuplicateOverviewLabel === "function") {
+      removeDuplicateOverviewLabel();
     }
   } catch (err) {
     console.error("loadOverview error:", err);
@@ -562,7 +562,7 @@ async function loadOverview() {
     if (kpiOpen)     kpiOpen.textContent     = "—";
     if (kpiPayments) kpiPayments.textContent = "—";
     if (kpiBalance)  kpiBalance.textContent  = "—";
-    if (summaryWrap) summaryWrap.innerHTML = `<div class="sum-card"><strong>Error loading</strong></div>`;
+    if (summaryWrap) summaryWrap.innerHTML = `<div><strong>Error loading</strong></div>`;
   }
 }
 
@@ -931,33 +931,32 @@ function renderLeasesTable(rows) {
     return;
   }
 
-  const norm = (v) => String(v ?? "").toLowerCase();
-
   const out = (rows || []).map((r) => {
     const x = pickLeaseFields(r);
 
     const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent);
 
-    // Determine ended/inactive
-    const st = norm(x.status);
-    const ended =
-      st.includes("ended") ||
-      st.includes("inactive") ||
-      st.includes("terminated") ||
-      st.includes("closed") ||
-      st.includes("stopped");
+    const statusTxt = String(x.status || "").toLowerCase();
+    const isEnded =
+      statusTxt.includes("ended") ||
+      statusTxt.includes("inactive") ||
+      statusTxt.includes("terminated") ||
+      statusTxt.includes("closed");
 
-    const cycleClass = ended ? "cycle-ended" : "";
+    const cycleClass = isEnded ? "cycle-ended" : "";
 
+    const esc = (v) => (typeof escapeHtml === "function" ? escapeHtml(String(v ?? "")) : String(v ?? ""));
+
+    // Columns (7): Tenant | Unit | Rent | Cycle | Due Day | Status | WhatsApp (or blank)
     return `
       <tr>
-        <td>${escapeHtml ? escapeHtml(x.tenant) : x.tenant}</td>
-        <td>${escapeHtml ? escapeHtml(x.unit) : x.unit}</td>
-        <td>${rentTxt}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.status)) : String(x.status)}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.start || "")) : String(x.start || "")}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.dueDay || "")) : String(x.dueDay || "")}</td>
-        <td class="${cycleClass}">${escapeHtml ? escapeHtml(String(x.billingCycle || "")) : String(x.billingCycle || "")}</td>
+        <td>${esc(x.tenant)}</td>
+        <td>${esc(x.unit)}</td>
+        <td>${esc(rentTxt)}</td>
+        <td class="${cycleClass}">${esc(x.billingCycle || x.cycle || "")}</td>
+        <td>${esc(x.dueDay || "")}</td>
+        <td>${esc(x.status || "")}</td>
+        <td>${esc(x.whatsapp || "")}</td>
       </tr>
     `;
   }).join("");
@@ -981,7 +980,6 @@ async function loadLeases() {
         })
       : all;
 
-    // keep for other parts if needed
     state.leasesView = filtered;
 
     setLeasesCount(filtered.length);
@@ -1363,7 +1361,7 @@ async function initMonthPicker() {
   }
 }
 
-/* ---------------- CSS helper ---------------- */
+/* ---------------- CSS helper (inject once) ---------------- */
 function injectCssOnce(id, cssText) {
   if (document.getElementById(id)) return;
   const s = document.createElement("style");
@@ -1372,199 +1370,177 @@ function injectCssOnce(id, cssText) {
   document.head.appendChild(s);
 }
 
-/* -------- remove the duplicate 'Monthly collection summary' label above cards -------- */
-function removeMonthlyCollectionLabel() {
-  const wrap = document.getElementById("collection-summary-month");
-  if (!wrap) return;
-
-  // Try the element immediately before the wrap (most common)
-  let prev = wrap.previousElementSibling;
-  if (prev && (prev.textContent || "").trim().toLowerCase() === "monthly collection summary") {
-    prev.remove();
-    return;
-  }
-
-  // Fallback: remove the first nearby element that exactly matches that text
-  const candidates = Array.from(document.querySelectorAll("h1,h2,h3,h4,div,p,span"));
-  for (const el of candidates) {
-    const t = (el.textContent || "").trim().toLowerCase();
-    if (t !== "monthly collection summary") continue;
-
-    // Only remove if it's visually near the summary container
-    const r1 = el.getBoundingClientRect();
-    const r2 = wrap.getBoundingClientRect();
-    if (Math.abs(r1.bottom - r2.top) < 80) {
-      el.remove();
-      break;
-    }
-  }
-}
-
-/* -------- initial load -------- */
-document.addEventListener("DOMContentLoaded", async () => {
-  // === UI polish (safe, no HTML edits required) ===
-  injectCssOnce("rt-ui-tweaks", `
-    /* --- KPI numbers: smaller, consistent --- */
+/* ---------------- UI polish (NO breaking other tabs) ---------------- */
+function applyUiPolish() {
+  injectCssOnce(
+    "rt-ui-polish",
+    `
+    /* KPI numbers: smaller + responsive (prevents huge typography) */
     #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-      font-size: clamp(20px, 1.6vw, 30px) !important;
-      line-height: 1.15 !important;
+      font-size: clamp(22px, 2.0vw, 34px) !important;
+      line-height: 1.12 !important;
       letter-spacing: -0.02em !important;
       font-weight: 750 !important;
-      white-space: nowrap;
-    }
-    @media (max-width: 900px){
-      #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-        font-size: 22px !important;
-      }
     }
 
-    /* --- Monthly summary grid: neat 3 columns, no overlap --- */
+    /* Monthly collection summary cards layout: neat 2 rows (3 + 3) */
     #collection-summary-month{
       margin-top: 12px !important;
       display: grid !important;
       gap: 12px !important;
-      grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
+      grid-template-columns: repeat(3, minmax(240px, 1fr)) !important;
       align-items: stretch !important;
     }
+
     @media (max-width: 980px){
-      #collection-summary-month{
-        grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
-      }
+      #collection-summary-month{ grid-template-columns: repeat(2, minmax(220px, 1fr)) !important; }
     }
-    @media (max-width: 620px){
-      #collection-summary-month{
-        grid-template-columns: 1fr !important;
-      }
+    @media (max-width: 640px){
+      #collection-summary-month{ grid-template-columns: 1fr !important; }
     }
 
-    /* Cards inside summary */
-    #collection-summary-month .sum-card{
+    #collection-summary-month > div{
+      min-width: 0 !important;
       padding: 12px 14px !important;
       border-radius: 14px !important;
-      border: 1px solid var(--bd) !important;
-      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
-      min-width: 0 !important;
     }
+
     #collection-summary-month .sum-title{
       font-size: 13px !important;
       font-weight: 700 !important;
-      opacity: .9 !important;
-      margin-bottom: 6px !important;
+      opacity: .92 !important;
     }
     #collection-summary-month .sum-value{
+      margin-top: 6px !important;
       font-size: 16px !important;
-      font-weight: 750 !important;
+      font-weight: 700 !important;
       letter-spacing: -0.01em !important;
     }
     #collection-summary-month .sum-sub{
       margin-top: 6px !important;
-      font-size: 12.5px !important;
-      opacity: .75 !important;
-      font-weight: 650 !important;
-    }
-
-    /* Summary header row inside the grid */
-    #collection-summary-month .sum-header{
-      grid-column: 1 / -1 !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      gap: 12px !important;
-      padding: 10px 12px !important;
-      border-radius: 14px !important;
-      border: 1px solid var(--bd) !important;
-      background: rgba(255,255,255,0.02) !important;
-    }
-    #collection-summary-month .sum-header .title{
-      font-size: 16px !important;
-      font-weight: 800 !important;
-      letter-spacing: -0.01em !important;
-    }
-    #collection-summary-month .sum-header .chip{
-      padding: 6px 10px !important;
-      border-radius: 999px !important;
-      border: 1px solid var(--bd) !important;
-      background: var(--panel-2) !important;
       font-size: 13px !important;
-      font-weight: 750 !important;
-      opacity: .95 !important;
-      white-space: nowrap;
+      opacity: .75 !important;
+      font-weight: 600 !important;
     }
 
-    /* --- Leases: mute Cycle when ended --- */
+    /* Leases: Cycle text muted when lease ended */
     .cycle-ended{
       color: var(--muted) !important;
       font-style: italic !important;
+      opacity: .9 !important;
     }
-  `);
+  `
+  );
+}
 
-  // Init (all safe)
-  initTabs?.();
-  initApiBaseControls?.();
-  initWhatsAppBuilder?.();
-  initInvoiceActions?.();
-  initExports?.();
-  initRowWhatsAppButtons?.();
+/* ---------------- Remove ONLY the duplicate small label in Overview ----------------
+   This does NOT touch other tabs. It only removes the loose standalone heading
+   that repeats the title again above the big summary card.
+----------------------------------------------------------------------- */
+function removeDuplicateOverviewLabel() {
+  const scope =
+    document.querySelector("#tab-overview") ||
+    document.querySelector('[data-tab="overview"]') ||
+    document.querySelector("#overview") ||
+    document.body;
 
+  const targets = Array.from(scope.querySelectorAll("h1,h2,h3,h4,div,p,span"))
+    .filter((el) => el && el.children && el.children.length === 0)
+    .filter((el) => (el.textContent || "").trim() === "Monthly collection summary");
+
+  // Remove only the “loose” one (usually there is 1)
+  targets.forEach((el) => el.remove());
+}
+
+/* ---------------- Safe global invoker ----------------
+   This NEVER throws even if the function doesn't exist.
+------------------------------------------------------ */
+function invokeGlobal(fnName, ...args) {
   try {
-    await initMonthPicker?.();
+    const fn = window[fnName];
+    if (typeof fn === "function") return fn(...args);
+    console.warn(`${fnName} is not defined — skipping`);
+  } catch (e) {
+    console.warn(`${fnName} failed:`, e);
+  }
+}
+
+/* Optional: month-wide refresh hook used by month picker */
+window.reloadAllMonthlyViews = function reloadAllMonthlyViewsSafe() {
+  invokeGlobal("loadOverview");
+  invokeGlobal("loadLeases");
+  invokeGlobal("loadPayments", true);
+  invokeGlobal("loadRentRoll", true);
+  invokeGlobal("loadBalances");
+  invokeGlobal("loadBalancesByUnit");
+  removeDuplicateOverviewLabel();
+};
+
+/* -------- initial load -------- */
+document.addEventListener("DOMContentLoaded", async () => {
+  // UI polish styles
+  applyUiPolish();
+
+  // Init (safe)
+  invokeGlobal("initTabs");
+  invokeGlobal("initApiBaseControls");
+  invokeGlobal("initWhatsAppBuilder");
+  invokeGlobal("initInvoiceActions");
+  invokeGlobal("initExports");
+  invokeGlobal("initRowWhatsAppButtons");
+
+  // Month picker init (safe async)
+  try {
+    if (typeof window.initMonthPicker === "function") {
+      await window.initMonthPicker();
+    } else {
+      console.warn("initMonthPicker is not defined — skipping");
+    }
   } catch (e) {
     console.error("initMonthPicker failed:", e);
-    if (typeof setCurrentMonth === "function") setCurrentMonth(yyyymm(), { triggerReload: false });
+    if (typeof window.setCurrentMonth === "function") {
+      window.setCurrentMonth(yyyymm(), { triggerReload: false });
+    }
   }
 
-  // Force state.currentMonth to match picker
+  // Force state.currentMonth to match picker selection
   const ym =
-    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
+    (typeof window.getSelectedMonth === "function" ? window.getSelectedMonth() : null) ||
     state.currentMonth ||
     yyyymm();
 
-  if (typeof setCurrentMonth === "function") setCurrentMonth(ym, { triggerReload: false });
+  if (typeof window.setCurrentMonth === "function") {
+    window.setCurrentMonth(ym, { triggerReload: false });
+  }
 
-  // ---- safe caller ----
-  const safeCall = (fnName, fn, ...args) => {
-    if (typeof fn === "function") return fn(...args);
-    console.warn(`${fnName} is not defined — skipping`);
-  };
+  // Initial loads (safe by name — no ReferenceError)
+  window.reloadAllMonthlyViews();
 
-  // Remove the duplicate label above the summary cards
-  removeMonthlyCollectionLabel();
-
-  // initial data load (safe)
-  safeCall("loadOverview()", loadOverview);
-  safeCall("loadLeases()", loadLeases);
-  safeCall("loadPayments(true)", loadPayments, true);
-  safeCall("loadRentRoll(true)", loadRentRoll, true);
-  safeCall("loadBalances()", loadBalances);
-  safeCall("loadBalancesByUnit()", loadBalancesByUnit);
-
-  // Buttons / actions
-  $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases()", loadLeases));
+  // Buttons / actions (safe)
+  $("#reloadLeases")?.addEventListener("click", () => invokeGlobal("loadLeases"));
 
   $("#reloadBalances")?.addEventListener("click", () => {
-    safeCall("loadBalances()", loadBalances);
-    safeCall("loadBalancesByUnit()", loadBalancesByUnit);
+    invokeGlobal("loadBalances");
+    invokeGlobal("loadBalancesByUnit");
   });
 
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () =>
-    safeCall("loadBalances()", loadBalances)
-  );
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () => invokeGlobal("loadBalances"));
 
-  $("#applyPayments")?.addEventListener("click", () => safeCall("loadPayments()", loadPayments));
+  $("#applyPayments")?.addEventListener("click", () => invokeGlobal("loadPayments"));
   $("#clearPayments")?.addEventListener("click", () => {
     const t = $("#paymentsTenant"); if (t) t.value = "";
     const s = $("#paymentsStatus"); if (s) s.value = "";
-    safeCall("loadPayments()", loadPayments);
+    invokeGlobal("loadPayments");
   });
 
-  $("#applyRentroll")?.addEventListener("click", () => safeCall("loadRentRoll()", loadRentRoll));
+  $("#applyRentroll")?.addEventListener("click", () => invokeGlobal("loadRentRoll"));
   $("#clearRentroll")?.addEventListener("click", () => {
     const t = $("#rentrollTenant"); if (t) t.value = "";
     const p = $("#rentrollProperty"); if (p) p.value = "";
-    safeCall("loadRentRoll()", loadRentRoll);
+    invokeGlobal("loadRentRoll");
   });
 
-  // Dunning -> WhatsApp quick fill
+  // Dunning -> WhatsApp quick fill (safe)
   document.addEventListener("click", (e) => {
     const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
     if (!btn) return;
@@ -1572,7 +1548,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const tenant = btn.dataset.dunTenant || btn.getAttribute("data-dun-tenant") || "";
     const balance = Number(btn.dataset.dunBalance || btn.getAttribute("data-dun-balance") || 0);
 
-    const ym = (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || yyyymm();
+    const ym =
+      (typeof window.getSelectedMonth === "function" ? window.getSelectedMonth() : null) || yyyymm();
 
     if ($("#waTenant")) $("#waTenant").value = tenant;
     if ($("#waPeriod")) $("#waPeriod").value = formatMonthLabel(ym);
@@ -1581,6 +1558,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (typeof window.activateTab === "function") window.activateTab("whatsapp");
   });
 
-  $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases()", loadLeases));
-  $("#reloadDunning")?.addEventListener("click", () => safeCall("loadBalances()", loadBalances));
+  $("#leaseSearch")?.addEventListener("input", () => invokeGlobal("loadLeases"));
+  $("#reloadDunning")?.addEventListener("click", () => invokeGlobal("loadBalances"));
 });
