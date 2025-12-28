@@ -996,18 +996,38 @@ function getLeasesTbody() {
   );
 }
 
+function isEndedLeaseStatus(status) {
+  const s = String(status || "").toLowerCase().trim();
+  return ["ended", "inactive", "terminated", "closed", "vacant", "expired"].some(k => s.includes(k));
+}
+
+// helper (keep near renderLeasesTable)
+function isEndedLeaseStatus(status) {
+  const s = String(status || "").toLowerCase().trim();
+  return ["ended", "inactive", "terminated", "closed", "vacant", "expired"].some((k) =>
+    s.includes(k)
+  );
+}
+
 function renderLeasesTable(rows) {
   const tbody = getLeasesTbody();
   if (!tbody) {
-    console.warn("Leases table body not found (IDs may differ). Leases loaded:", rows?.length || 0);
+    console.warn(
+      "Leases table body not found (IDs may differ). Leases loaded:",
+      rows?.length || 0
+    );
     return;
   }
 
-  const out = (rows || []).map((r) => {
-    const x = pickLeaseFields(r);
-    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent);
+  const out = (rows || [])
+    .map((r) => {
+      const x = pickLeaseFields(r);
+      const rentTxt = typeof fmtKes === "function" ? fmtKes(x.rent) : String(x.rent);
 
-    return `
+      // ✅ If lease is ended/inactive/etc, tint the CYCLE cell
+      const cycleClass = isEndedLeaseStatus(x.status) ? "cycle-ended" : "";
+
+      return `
       <tr>
         <td>${escapeHtml ? escapeHtml(x.tenant) : x.tenant}</td>
         <td>${escapeHtml ? escapeHtml(x.unit) : x.unit}</td>
@@ -1015,10 +1035,13 @@ function renderLeasesTable(rows) {
         <td>${escapeHtml ? escapeHtml(String(x.status)) : String(x.status)}</td>
         <td>${escapeHtml ? escapeHtml(String(x.start || "")) : String(x.start || "")}</td>
         <td>${escapeHtml ? escapeHtml(String(x.dueDay || "")) : String(x.dueDay || "")}</td>
-        <td>${escapeHtml ? escapeHtml(String(x.billingCycle || "")) : String(x.billingCycle || "")}</td>
+        <td class="${cycleClass}">${
+          escapeHtml ? escapeHtml(String(x.billingCycle || "")) : String(x.billingCycle || "")
+        }</td>
       </tr>
     `;
-  }).join("");
+    })
+    .join("");
 
   tbody.innerHTML = out || `<tr><td colspan="7">No leases found</td></tr>`;
 }
@@ -1421,8 +1444,57 @@ async function initMonthPicker() {
   }
 }
 
+/* ---------------- CSS helper + UI tweaks ---------------- */
+function injectCssOnce(id, cssText) {
+  if (document.getElementById(id)) return;
+  const s = document.createElement("style");
+  s.id = id;
+  s.textContent = cssText;
+  document.head.appendChild(s);
+}
+
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
+  // Inject UI polish styles (safe, no dependency on index.html edits)
+  injectCssOnce("rt-ui-tweaks", `
+    /* --- KPI numbers: reduce font size so cards look neat --- */
+    #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
+      font-size: 34px !important;
+      line-height: 1.1 !important;
+      letter-spacing: -0.2px;
+    }
+    @media (max-width: 900px){
+      #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
+        font-size: 30px !important;
+      }
+    }
+
+    /* --- Monthly collection summary: prevent overlap + align wrap nicely --- */
+    #collection-summary-month{
+      margin-top: 14px !important;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    #collection-summary-month > div{
+      flex: 1 1 240px;
+      min-width: 240px;
+    }
+    @media (max-width: 900px){
+      #collection-summary-month > div{
+        min-width: 200px;
+        flex-basis: 200px;
+      }
+    }
+
+    /* --- Leases: make Cycle text muted when lease is ended/inactive --- */
+    .cycle-ended{
+      color: var(--muted) !important;
+      font-style: italic;
+    }
+  `);
+
+  // Init (all safe)
   initTabs?.();
   initApiBaseControls?.();
   initWhatsAppBuilder?.();
@@ -1463,6 +1535,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   safeCall("loadBalances()", loadBalances);
   safeCall("loadBalancesByUnit()", loadBalancesByUnit);
 
+  // Buttons / actions (safe)
   $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases()", loadLeases));
 
   $("#reloadBalances")?.addEventListener("click", () => {
@@ -1470,7 +1543,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeCall("loadBalancesByUnit()", loadBalancesByUnit);
   });
 
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () => safeCall("loadBalances()", loadBalances));
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () =>
+    safeCall("loadBalances()", loadBalances)
+  );
 
   $("#applyPayments")?.addEventListener("click", () => safeCall("loadPayments()", loadPayments));
   $("#clearPayments")?.addEventListener("click", () => {
@@ -1486,6 +1561,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     safeCall("loadRentRoll()", loadRentRoll);
   });
 
+  // Dunning -> WhatsApp quick fill
   document.addEventListener("click", (e) => {
     const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
     if (!btn) return;
@@ -1505,3 +1581,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases()", loadLeases));
   $("#reloadDunning")?.addEventListener("click", () => safeCall("loadBalances()", loadBalances));
 });
+
