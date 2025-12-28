@@ -429,6 +429,7 @@ async function loadOverview() {
   const kpiOpen     = $("#kpiOpen");
   const kpiPayments = $("#kpiPayments");
   const kpiBalance  = $("#kpiBalance");
+
   const summaryWrap = $("#collection-summary-month");
 
   const ym =
@@ -440,7 +441,6 @@ async function loadOverview() {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
-  // positive => DR, negative => CR
   const fmtDrCr = (n) => {
     const x = Number(n) || 0;
     if (x < 0) return `${fmtKes(Math.abs(x))} CR`;
@@ -467,38 +467,33 @@ async function loadOverview() {
   };
 
   try {
-    // Single source of truth: balances overview endpoint
+    // Single source of truth: balances overview
     const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
-      `/balances/overview?month=${encodeURIComponent(ym)}`,
+      `/balances/overview?month=${encodeURIComponent(ym)}`
     ]);
+
     const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
 
-    // Optional helpers (don’t break Overview if they fail)
+    // Optional helpers (don’t break overview if they fail)
     const leases = await safeGet(() => apiGet("/leases?limit=1000"), []);
     const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), null);
     const rentRoll = rrResp?.data || rrResp || [];
 
-    // KPI: Total leases
-    if (kpiLeases) {
-      const count = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
-      kpiLeases.textContent = String(count);
-    }
+    if (kpiLeases) kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
 
-    // KPI: Open invoices
     const openCount = Array.isArray(rentRoll)
       ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
       : 0;
-    if (kpiOpen) kpiOpen.textContent = String(openCount);
+    if (kpiOpen) kpiOpen.textContent = openCount;
 
-    // Core values from balances endpoint
+    // Numbers from API
     const openingCR = Number(data?.opening_credit_total ?? 0);
     const openingDR = Number(data?.opening_debit_total ?? 0);
 
     const invoiced  = Number(data?.total_due ?? 0);
 
-    // "Collected (month)" should be CASH collected if available (paid_at in month)
-    // fallback to total_paid if cash_collected_total isn't present
+    // Prefer cash_collected_total (paid_at). Fall back to total_paid.
     const collected = Number(
       data?.cash_collected_total ??
       data?.total_paid ??
@@ -511,77 +506,67 @@ async function loadOverview() {
       0
     );
 
-    // Movement for the month (matches your Dec screenshot)
-    // invoices increase DR, cash collected reduces DR (or makes CR)
+    // Net movement: Invoiced - Collected (so positive => DR, negative => CR)
     const movement = invoiced - collected;
 
-    // Rate text (show over-collection clearly)
+    // Rate
     const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
-    const collectionRate = Math.min(100, rawRate);
-    const overPct = Math.max(0, rawRate - 100);
+    const rateText =
+      rawRate > 100
+        ? `${fmtPct(100)} collected • ${fmtPct(rawRate - 100)} over-collected`
+        : `${fmtPct(rawRate)} collection rate`;
 
     // KPIs
     if (kpiPayments) kpiPayments.textContent = fmtKes(collected);
     if (kpiBalance)  kpiBalance.textContent  = fmtDrCr(closing);
 
-    // Monthly summary render (neat + non-overlapping)
+    // Render summary cards (clean 3x2)
     if (summaryWrap) {
-      const monthLabel = formatMonthLabel(ym);
+      // Remove the duplicate heading line (if still present)
+      removeDuplicateMonthlySummaryLabel?.();
 
       const openingTxt = `KES ${fmtNumber(openingCR)} CR / KES ${fmtNumber(openingDR)} DR`;
 
-      const rateText = overPct > 0
-        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
-        : `${fmtPct(collectionRate)} collection rate`;
-
       summaryWrap.innerHTML = `
-        <div class="ms-head">
-          <div class="ms-title">Monthly collection summary</div>
-          <div class="ms-month">${monthLabel}</div>
+        <div class="sum-card">
+          <div class="sum-title">B/F (Opening)</div>
+          <div class="sum-value">${openingTxt}</div>
         </div>
 
-        <div class="ms-grid">
-          <div class="ms-card">
-            <div class="ms-label">B/F (Opening)</div>
-            <div class="ms-value">${openingTxt}</div>
-          </div>
+        <div class="sum-card">
+          <div class="sum-title">Invoiced (month)</div>
+          <div class="sum-value">${fmtKes(invoiced)}</div>
+        </div>
 
-          <div class="ms-card">
-            <div class="ms-label">Invoiced (month)</div>
-            <div class="ms-value">${fmtKes(invoiced)}</div>
-          </div>
+        <div class="sum-card">
+          <div class="sum-title">Collected (month)</div>
+          <div class="sum-value">${fmtKes(collected)}</div>
+        </div>
 
-          <div class="ms-card">
-            <div class="ms-label">Collected (month)</div>
-            <div class="ms-value">${fmtKes(collected)}</div>
-            <div class="ms-sub">Cash collected (paid_at)</div>
-          </div>
+        <div class="sum-card">
+          <div class="sum-title">Net movement (month)</div>
+          <div class="sum-value">${fmtDrCr(movement)}</div>
+        </div>
 
-          <div class="ms-card">
-            <div class="ms-label">Net movement (month)</div>
-            <div class="ms-value">${fmtDrCr(movement)}</div>
-            <div class="ms-sub">Invoiced − Collected</div>
-          </div>
+        <div class="sum-card">
+          <div class="sum-title">Closing balance</div>
+          <div class="sum-value">${fmtDrCr(closing)}</div>
+        </div>
 
-          <div class="ms-card">
-            <div class="ms-label">Closing balance</div>
-            <div class="ms-value">${fmtDrCr(closing)}</div>
-          </div>
-
-          <div class="ms-card ms-span-all">
-            <div class="ms-label">Collection rate</div>
-            <div class="ms-value">${rateText}</div>
-          </div>
+        <div class="sum-card">
+          <div class="sum-title">Collection rate</div>
+          <div class="sum-value">${rateText}</div>
         </div>
       `;
     }
+
   } catch (err) {
     console.error("loadOverview error:", err);
     if (kpiLeases)   kpiLeases.textContent   = "—";
     if (kpiOpen)     kpiOpen.textContent     = "—";
     if (kpiPayments) kpiPayments.textContent = "—";
     if (kpiBalance)  kpiBalance.textContent  = "—";
-    if (summaryWrap) summaryWrap.innerHTML = `<div class="ms-head"><div class="ms-title">Monthly collection summary</div></div><div class="ms-card"><div class="ms-value">Error loading</div></div>`;
+    if (summaryWrap) summaryWrap.innerHTML = `<div class="sum-card"><div class="sum-title">Monthly summary</div><div class="sum-value">Error loading</div></div>`;
   }
 }
 
@@ -952,22 +937,23 @@ function renderLeasesTable(rows) {
 
   const esc = (v) => (typeof escapeHtml === "function" ? escapeHtml(String(v ?? "")) : String(v ?? ""));
 
+  const isEnded = (status) => {
+    const s = String(status || "").toLowerCase();
+    return ["ended", "inactive", "terminated", "closed", "stopped"].includes(s);
+  };
+
   const out = (rows || []).map((r) => {
     const x = pickLeaseFields(r);
+    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent);
 
-    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent ?? "");
-    const statusTxt = String(x.status ?? "");
-    const statusLc = statusTxt.toLowerCase();
-
-    // Treat anything not "active" as ended/inactive for styling the Cycle column
-    const cycleClass = (statusLc && statusLc !== "active") ? "cycle-ended" : "";
+    const cycleClass = isEnded(x.status) ? "cycle-ended" : "";
 
     return `
       <tr>
         <td>${esc(x.tenant)}</td>
         <td>${esc(x.unit)}</td>
-        <td>${esc(rentTxt)}</td>
-        <td>${esc(statusTxt)}</td>
+        <td>${rentTxt}</td>
+        <td>${esc(x.status)}</td>
         <td>${esc(x.start || "")}</td>
         <td>${esc(x.dueDay || "")}</td>
         <td class="${cycleClass}">${esc(x.billingCycle || "")}</td>
@@ -1385,105 +1371,79 @@ function injectCssOnce(id, cssText) {
   document.head.appendChild(s);
 }
 
+/* ---------------- UI polish helpers ---------------- */
+function removeDuplicateMonthlySummaryLabel() {
+  // Remove the static heading that duplicates the section we render
+  // (the highlighted "Monthly collection summary" text line)
+  const wrap = $("#collection-summary-month");
+  if (!wrap) return;
+
+  // Most common: <div>Monthly collection summary</div> right before the wrap
+  const prev = wrap.previousElementSibling;
+  if (prev && (prev.textContent || "").trim().toLowerCase() === "monthly collection summary") {
+    prev.remove();
+  }
+}
+
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  // UI polish styles (no index.html edits needed)
-  injectCssOnce("rt-ui-tweaks", `
-    /* --- KPI numbers: reduce font size so cards look neat --- */
+  // UI polish styles (safe, no HTML edits required)
+  injectCssOnce(
+    "rt-ui-tweaks",
+    `
+    /* --- KPI numbers: reduce font so cards look neat --- */
     #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-      font-size: clamp(18px, 2.0vw, 34px) !important;
-      line-height: 1.08 !important;
-      letter-spacing: -0.3px;
-      white-space: nowrap;
+      font-size: clamp(20px, 2.2vw, 34px) !important;
+      line-height: 1.1 !important;
+      letter-spacing: -0.02em;
+      font-weight: 700;
     }
 
-    /* --- Monthly collection summary: clean header + grid (no overlap) --- */
+    /* --- Monthly collection summary: 3+3 grid, no overlap under month picker --- */
     #collection-summary-month{
-      margin-top: 14px !important;
-    }
-
-    #collection-summary-month .ms-head{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin: 4px 0 10px 0;
-    }
-
-    #collection-summary-month .ms-title{
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: -0.2px;
-      opacity: .95;
-    }
-
-    #collection-summary-month .ms-month{
-      font-size: 13px;
-      font-weight: 750;
-      padding: 6px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--bd);
-      background: var(--panel-2);
-      color: var(--text);
-      opacity: .95;
-      white-space: nowrap;
-    }
-
-    #collection-summary-month .ms-grid{
-      display:grid;
-      gap: 12px;
-      grid-template-columns: repeat(3, minmax(220px, 1fr));
-      align-items: stretch;
+      margin-top: 12px !important;
+      display: grid !important;
+      gap: 12px !important;
+      grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
+      align-items: stretch !important;
     }
     @media (max-width: 980px){
-      #collection-summary-month .ms-grid{
-        grid-template-columns: repeat(2, minmax(200px, 1fr));
+      #collection-summary-month{
+        grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
       }
     }
     @media (max-width: 620px){
-      #collection-summary-month .ms-grid{
-        grid-template-columns: 1fr;
+      #collection-summary-month{
+        grid-template-columns: 1fr !important;
       }
     }
 
-    #collection-summary-month .ms-card{
-      border: 1px solid var(--bd);
-      background: var(--panel-2);
-      border-radius: 14px;
-      padding: 10px 12px;
-      min-width: 0;
+    #collection-summary-month .sum-card{
+      min-width: 0 !important;
+      padding: 12px 14px !important;
+      border-radius: 14px !important;
+      border: 1px solid var(--bd) !important;
+      background: var(--panel-2) !important;
+    }
+    #collection-summary-month .sum-title{
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      color: var(--muted) !important;
+      margin-bottom: 6px !important;
+    }
+    #collection-summary-month .sum-value{
+      font-size: 16px !important;
+      font-weight: 750 !important;
+      letter-spacing: -0.01em !important;
     }
 
-    #collection-summary-month .ms-label{
-      font-size: 13px;
-      font-weight: 750;
-      opacity: .9;
-    }
-
-    #collection-summary-month .ms-value{
-      margin-top: 4px;
-      font-size: 16px;
-      font-weight: 800;
-      letter-spacing: -0.15px;
-    }
-
-    #collection-summary-month .ms-sub{
-      margin-top: 4px;
-      font-size: 13px;
-      opacity: .85;
-      font-weight: 650;
-    }
-
-    #collection-summary-month .ms-span-all{
-      grid-column: 1 / -1;
-    }
-
-    /* --- Leases: make Billing Cycle text muted when lease is ended/inactive --- */
+    /* --- Leases: make Cycle text muted when lease is ended/inactive --- */
     .cycle-ended{
       color: var(--muted) !important;
       font-style: italic;
     }
-  `);
+    `
+  );
 
   // Init (safe)
   initTabs?.();
@@ -1497,28 +1457,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initMonthPicker?.();
   } catch (e) {
     console.error("initMonthPicker failed:", e);
-    if (typeof setCurrentMonth === "function") {
-      setCurrentMonth(yyyymm(), { triggerReload: false });
-    }
+    if (typeof setCurrentMonth === "function") setCurrentMonth(yyyymm(), { triggerReload: false });
   }
 
-  // Force state.currentMonth to match what the picker shows
+  // Force state.currentMonth to match what the picker currently shows
   const ym =
     (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
     state.currentMonth ||
     yyyymm();
 
-  if (typeof setCurrentMonth === "function") {
-    setCurrentMonth(ym, { triggerReload: false });
-  }
+  if (typeof setCurrentMonth === "function") setCurrentMonth(ym, { triggerReload: false });
 
-  // Safe caller (prevents crashes if a function is missing)
+  // Prevent crashes if any loader is missing
   const safeCall = (fnName, fn, ...args) => {
     if (typeof fn === "function") return fn(...args);
     console.warn(`${fnName} is not defined — skipping`);
   };
 
-  // Initial data load (safe)
+  // Initial load
   safeCall("loadOverview()", loadOverview);
   safeCall("loadLeases()", loadLeases);
   safeCall("loadPayments(true)", loadPayments, true);
@@ -1526,7 +1482,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   safeCall("loadBalances()", loadBalances);
   safeCall("loadBalancesByUnit()", loadBalancesByUnit);
 
-  // Buttons / actions (safe)
+  // Remove the duplicate heading line (your highlighted one)
+  removeDuplicateMonthlySummaryLabel();
+
+  // Buttons / actions
   $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases()", loadLeases));
 
   $("#reloadBalances")?.addEventListener("click", () => {
