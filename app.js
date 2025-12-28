@@ -429,7 +429,6 @@ async function loadOverview() {
   const kpiOpen     = $("#kpiOpen");
   const kpiPayments = $("#kpiPayments");
   const kpiBalance  = $("#kpiBalance");
-
   const summaryWrap = $("#collection-summary-month");
 
   const ym =
@@ -441,16 +440,12 @@ async function loadOverview() {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
+  // positive => DR, negative => CR
   const fmtDrCr = (n) => {
     const x = Number(n) || 0;
     if (x < 0) return `${fmtKes(Math.abs(x))} CR`;
     if (x > 0) return `${fmtKes(x)} DR`;
     return `${fmtKes(0)}`;
-  };
-
-  const fmtPctSafe = (n) => {
-    if (typeof fmtPct === "function") return fmtPct(n);
-    return `${Number(n || 0).toFixed(1)}%`;
   };
 
   const safeGet = async (fn, fallback) => {
@@ -472,40 +467,55 @@ async function loadOverview() {
   };
 
   try {
-    // Single source of truth: balances overview
+    // Single source of truth: balances overview endpoint
     const balOv = await apiGetFirstLocal([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
-      `/balances/overview?month=${encodeURIComponent(ym)}`
+      `/balances/overview?month=${encodeURIComponent(ym)}`,
     ]);
-
     const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
 
-    // Optional helpers
+    // Optional helpers (don’t break Overview if they fail)
     const leases = await safeGet(() => apiGet("/leases?limit=1000"), []);
     const rrResp = await safeGet(() => apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`), null);
     const rentRoll = rrResp?.data || rrResp || [];
 
-    if (kpiLeases) kpiLeases.textContent = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
+    // KPI: Total leases
+    if (kpiLeases) {
+      const count = Array.isArray(leases) ? leases.length : (leases?.length ?? 0);
+      kpiLeases.textContent = String(count);
+    }
 
+    // KPI: Open invoices
     const openCount = Array.isArray(rentRoll)
       ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
       : 0;
-    if (kpiOpen) kpiOpen.textContent = openCount;
+    if (kpiOpen) kpiOpen.textContent = String(openCount);
 
-    // Core values (match API payload)
+    // Core values from balances endpoint
     const openingCR = Number(data?.opening_credit_total ?? 0);
     const openingDR = Number(data?.opening_debit_total ?? 0);
 
     const invoiced  = Number(data?.total_due ?? 0);
-    const collected = Number(data?.cash_collected_total ?? data?.total_paid ?? 0);
 
-    const closing   = Number(data?.closing_balance_total ?? data?.balance_total ?? 0);
+    // "Collected (month)" should be CASH collected if available (paid_at in month)
+    // fallback to total_paid if cash_collected_total isn't present
+    const collected = Number(
+      data?.cash_collected_total ??
+      data?.total_paid ??
+      0
+    );
 
-    // IMPORTANT: movement = invoiced - collected
-    // (so over-collection shows as CR like your Nov example)
-    const movement = (invoiced - collected);
+    const closing = Number(
+      data?.closing_balance_total ??
+      data?.balance_total ??
+      0
+    );
 
-    // Rate
+    // Movement for the month (matches your Dec screenshot)
+    // invoices increase DR, cash collected reduces DR (or makes CR)
+    const movement = invoiced - collected;
+
+    // Rate text (show over-collection clearly)
     const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
     const collectionRate = Math.min(100, rawRate);
     const overPct = Math.max(0, rawRate - 100);
@@ -514,153 +524,64 @@ async function loadOverview() {
     if (kpiPayments) kpiPayments.textContent = fmtKes(collected);
     if (kpiBalance)  kpiBalance.textContent  = fmtDrCr(closing);
 
-    // Monthly collection summary cards
+    // Monthly summary render (neat + non-overlapping)
     if (summaryWrap) {
       const monthLabel = formatMonthLabel(ym);
 
-      const rateText = overPct > 0
-        ? `${fmtPctSafe(collectionRate)} collected • ${fmtPctSafe(overPct)} over-collected`
-        : `${fmtPctSafe(collectionRate)} collection rate`;
-
       const openingTxt = `KES ${fmtNumber(openingCR)} CR / KES ${fmtNumber(openingDR)} DR`;
 
+      const rateText = overPct > 0
+        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
+        : `${fmtPct(collectionRate)} collection rate`;
+
       summaryWrap.innerHTML = `
-        <div>
-          <div class="sum-title">${monthLabel}</div>
-          <div class="sum-value">Monthly summary</div>
+        <div class="ms-head">
+          <div class="ms-title">Monthly collection summary</div>
+          <div class="ms-month">${monthLabel}</div>
         </div>
 
-        <div>
-          <div class="sum-title">B/F (Opening)</div>
-          <div class="sum-value">${openingTxt}</div>
-        </div>
+        <div class="ms-grid">
+          <div class="ms-card">
+            <div class="ms-label">B/F (Opening)</div>
+            <div class="ms-value">${openingTxt}</div>
+          </div>
 
-        <div>
-          <div class="sum-title">Invoiced (month)</div>
-          <div class="sum-value">${fmtKes(invoiced)}</div>
-        </div>
+          <div class="ms-card">
+            <div class="ms-label">Invoiced (month)</div>
+            <div class="ms-value">${fmtKes(invoiced)}</div>
+          </div>
 
-        <div>
-          <div class="sum-title">Collected (month)</div>
-          <div class="sum-value">${fmtKes(collected)}</div>
-        </div>
+          <div class="ms-card">
+            <div class="ms-label">Collected (month)</div>
+            <div class="ms-value">${fmtKes(collected)}</div>
+            <div class="ms-sub">Cash collected (paid_at)</div>
+          </div>
 
-        <div>
-          <div class="sum-title">Net movement (month)</div>
-          <div class="sum-value">${fmtDrCr(movement)}</div>
-        </div>
+          <div class="ms-card">
+            <div class="ms-label">Net movement (month)</div>
+            <div class="ms-value">${fmtDrCr(movement)}</div>
+            <div class="ms-sub">Invoiced − Collected</div>
+          </div>
 
-        <div>
-          <div class="sum-title">Closing balance</div>
-          <div class="sum-value">${fmtDrCr(closing)}</div>
-        </div>
+          <div class="ms-card">
+            <div class="ms-label">Closing balance</div>
+            <div class="ms-value">${fmtDrCr(closing)}</div>
+          </div>
 
-        <div class="span-all">
-          <div class="sum-title">Collection rate</div>
-          <div class="sum-value">${rateText}</div>
+          <div class="ms-card ms-span-all">
+            <div class="ms-label">Collection rate</div>
+            <div class="ms-value">${rateText}</div>
+          </div>
         </div>
       `;
     }
-
   } catch (err) {
     console.error("loadOverview error:", err);
     if (kpiLeases)   kpiLeases.textContent   = "—";
     if (kpiOpen)     kpiOpen.textContent     = "—";
     if (kpiPayments) kpiPayments.textContent = "—";
     if (kpiBalance)  kpiBalance.textContent  = "—";
-    if (summaryWrap) summaryWrap.innerHTML = `<div><div class="sum-title">Monthly collection summary</div><div class="sum-value">Error loading</div></div>`;
-  }
-}
-
-// --- Payments tab ---
-async function loadPayments(initial = false) {
-  const monthSelect = $("#paymentsMonth");
-  const tenantFilter = ($("#paymentsTenant")?.value || "").trim().toLowerCase();
-  const statusFilter = ($("#paymentsStatus")?.value || "").trim().toLowerCase();
-  const body = $("#paymentsBody");
-  const empty = $("#paymentsEmpty");
-
-  const countChip = $("#paymentsCountChip");
-  const totalChip = $("#paymentsTotalChip");
-
-  if (!body) return;
-
-  body.innerHTML = "";
-  empty && empty.classList.add("hidden");
-
-  if (countChip) countChip.textContent = "0";
-  if (totalChip) totalChip.textContent = fmtKes(0);
-
-  try {
-    if (initial && monthSelect) {
-      const raw = await apiGetFirst(["/payments/months", "/months"]);
-      const rows = Array.isArray(raw) ? raw : (raw?.data || []);
-      let months = rows
-        .map(r => (typeof r === "string" ? r : (r?.ym || r?.month)))
-        .filter(Boolean);
-
-      months = Array.from(new Set(months)).sort((a, b) => b.localeCompare(a));
-
-      monthSelect.innerHTML = "";
-
-      if (state.currentMonth && !months.includes(state.currentMonth)) months.unshift(state.currentMonth);
-      if (!months.length && state.currentMonth) months.push(state.currentMonth);
-
-      for (const ym of months) {
-        const opt = document.createElement("option");
-        opt.value = ym;
-        opt.textContent = formatMonthLabel(ym);
-        monthSelect.appendChild(opt);
-      }
-
-      monthSelect.value = state.currentMonth || months[0] || yyyymm();
-      wireMonthSelect(monthSelect);
-    }
-
-    const month = (monthSelect?.value || state.currentMonth);
-    if (month && month !== state.currentMonth) setCurrentMonth(month, { triggerReload: false });
-
-    const payments = await apiGet(`/payments?month=${encodeURIComponent(month)}`);
-
-    const filtered = (payments || []).filter((p) => {
-      if (tenantFilter) {
-        const t = (p.tenant || "").toLowerCase();
-        if (!t.includes(tenantFilter)) return false;
-      }
-      if (statusFilter) {
-        const s = (p.status || "posted").toLowerCase();
-        if (s !== statusFilter) return false;
-      }
-      return true;
-    });
-
-    const totalPaid = filtered.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-    if (countChip) countChip.textContent = String(filtered.length);
-    if (totalChip) totalChip.textContent = fmtKes(totalPaid);
-
-    if (!filtered.length) {
-      empty && empty.classList.remove("hidden");
-      return;
-    }
-
-    for (const p of filtered) {
-      const tr = document.createElement("tr");
-      const dt = p.paid_at || p.created_at;
-      tr.innerHTML = `
-        <td>${dt ? new Date(dt).toLocaleString() : ""}</td>
-        <td>${p.tenant || ""}</td>
-        <td>${p.method || ""}</td>
-        <td>${(p.status || "posted")}</td>
-        <td style="text-align:right">${fmtKes(p.amount || 0)}</td>
-      `;
-      body.appendChild(tr);
-    }
-  } catch (err) {
-    console.error("loadPayments error:", err);
-    if (empty) {
-      empty.textContent = "Error loading payments.";
-      empty.classList.remove("hidden");
-    }
+    if (summaryWrap) summaryWrap.innerHTML = `<div class="ms-head"><div class="ms-title">Monthly collection summary</div></div><div class="ms-card"><div class="ms-value">Error loading</div></div>`;
   }
 }
 
@@ -1023,38 +944,33 @@ function isEndedLeaseStatus(status) {
 }
 
 function renderLeasesTable(rows) {
-  const tbody = (typeof getLeasesTbody === "function") ? getLeasesTbody() : null;
+  const tbody = getLeasesTbody();
   if (!tbody) {
     console.warn("Leases table body not found (IDs may differ). Leases loaded:", rows?.length || 0);
     return;
   }
 
   const esc = (v) => (typeof escapeHtml === "function" ? escapeHtml(String(v ?? "")) : String(v ?? ""));
-  const rentTxt = (n) => (typeof fmtKes === "function" ? fmtKes(n) : String(n ?? ""));
 
   const out = (rows || []).map((r) => {
-    const x = (typeof pickLeaseFields === "function") ? pickLeaseFields(r) : r;
+    const x = pickLeaseFields(r);
 
-    const status = String(x.status ?? "").toLowerCase().trim();
-    const isEnded =
-      status.includes("ended") ||
-      status.includes("inactive") ||
-      status.includes("terminated") ||
-      status.includes("closed") ||
-      status.includes("vacant") ||
-      status === "end";
+    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent ?? "");
+    const statusTxt = String(x.status ?? "");
+    const statusLc = statusTxt.toLowerCase();
 
-    const cycleClass = isEnded ? "cycle-ended" : "";
+    // Treat anything not "active" as ended/inactive for styling the Cycle column
+    const cycleClass = (statusLc && statusLc !== "active") ? "cycle-ended" : "";
 
     return `
       <tr>
         <td>${esc(x.tenant)}</td>
         <td>${esc(x.unit)}</td>
-        <td>${rentTxt(x.rent)}</td>
-        <td class="${cycleClass}">${esc(x.billingCycle ?? x.cycle ?? "")}</td>
-        <td>${esc(x.dueDay ?? "")}</td>
-        <td>${esc(x.status ?? "")}</td>
-        <td></td>
+        <td>${esc(rentTxt)}</td>
+        <td>${esc(statusTxt)}</td>
+        <td>${esc(x.start || "")}</td>
+        <td>${esc(x.dueDay || "")}</td>
+        <td class="${cycleClass}">${esc(x.billingCycle || "")}</td>
       </tr>
     `;
   }).join("");
@@ -1460,7 +1376,7 @@ async function initMonthPicker() {
   }
 }
 
-/* ---------------- CSS helper (single source) ---------------- */
+/* ---------------- CSS helper ---------------- */
 function injectCssOnce(id, cssText) {
   if (document.getElementById(id)) return;
   const s = document.createElement("style");
@@ -1471,66 +1387,105 @@ function injectCssOnce(id, cssText) {
 
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  // UI polish styles (safe, no dependency on index.html edits)
+  // UI polish styles (no index.html edits needed)
   injectCssOnce("rt-ui-tweaks", `
     /* --- KPI numbers: reduce font size so cards look neat --- */
     #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-      font-size: clamp(22px, 2.1vw, 40px) !important;
-      line-height: 1.1 !important;
-      letter-spacing: -0.02em;
+      font-size: clamp(18px, 2.0vw, 34px) !important;
+      line-height: 1.08 !important;
+      letter-spacing: -0.3px;
+      white-space: nowrap;
     }
 
-    /* --- Monthly collection summary: clean responsive grid (no overlap) --- */
+    /* --- Monthly collection summary: clean header + grid (no overlap) --- */
     #collection-summary-month{
-      width: 100% !important;
       margin-top: 14px !important;
-      display: grid !important;
-      gap: 12px !important;
-      grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
-      align-items: stretch !important;
+    }
+
+    #collection-summary-month .ms-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin: 4px 0 10px 0;
+    }
+
+    #collection-summary-month .ms-title{
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+      opacity: .95;
+    }
+
+    #collection-summary-month .ms-month{
+      font-size: 13px;
+      font-weight: 750;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--bd);
+      background: var(--panel-2);
+      color: var(--text);
+      opacity: .95;
+      white-space: nowrap;
+    }
+
+    #collection-summary-month .ms-grid{
+      display:grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      align-items: stretch;
     }
     @media (max-width: 980px){
-      #collection-summary-month{
-        grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
+      #collection-summary-month .ms-grid{
+        grid-template-columns: repeat(2, minmax(200px, 1fr));
       }
     }
     @media (max-width: 620px){
-      #collection-summary-month{
-        grid-template-columns: 1fr !important;
+      #collection-summary-month .ms-grid{
+        grid-template-columns: 1fr;
       }
     }
 
-    #collection-summary-month > div{
-      min-width: 0 !important;
-      padding: 10px 12px !important;
-      border-radius: 12px !important;
+    #collection-summary-month .ms-card{
+      border: 1px solid var(--bd);
+      background: var(--panel-2);
+      border-radius: 14px;
+      padding: 10px 12px;
+      min-width: 0;
     }
 
-    #collection-summary-month .sum-title{
-      font-size: 13px !important;
-      font-weight: 700 !important;
-      opacity: .90 !important;
+    #collection-summary-month .ms-label{
+      font-size: 13px;
+      font-weight: 750;
+      opacity: .9;
     }
 
-    #collection-summary-month .sum-value{
-      margin-top: 4px !important;
-      font-size: 16px !important;
-      font-weight: 650 !important;
-      letter-spacing: -0.01em !important;
+    #collection-summary-month .ms-value{
+      margin-top: 4px;
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.15px;
     }
 
-    #collection-summary-month .span-all{
-      grid-column: 1 / -1 !important;
+    #collection-summary-month .ms-sub{
+      margin-top: 4px;
+      font-size: 13px;
+      opacity: .85;
+      font-weight: 650;
     }
 
-    /* --- Leases: make Cycle text muted when lease is ended/inactive --- */
+    #collection-summary-month .ms-span-all{
+      grid-column: 1 / -1;
+    }
+
+    /* --- Leases: make Billing Cycle text muted when lease is ended/inactive --- */
     .cycle-ended{
       color: var(--muted) !important;
-      font-style: italic !important;
+      font-style: italic;
     }
   `);
 
-  // Init (all safe)
+  // Init (safe)
   initTabs?.();
   initApiBaseControls?.();
   initWhatsAppBuilder?.();
@@ -1547,7 +1502,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  // Force state.currentMonth to match picker
+  // Force state.currentMonth to match what the picker shows
   const ym =
     (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
     state.currentMonth ||
@@ -1557,13 +1512,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     setCurrentMonth(ym, { triggerReload: false });
   }
 
-  // safe caller (prevents crashes)
+  // Safe caller (prevents crashes if a function is missing)
   const safeCall = (fnName, fn, ...args) => {
     if (typeof fn === "function") return fn(...args);
     console.warn(`${fnName} is not defined — skipping`);
   };
 
-  // initial data load (safe)
+  // Initial data load (safe)
   safeCall("loadOverview()", loadOverview);
   safeCall("loadLeases()", loadLeases);
   safeCall("loadPayments(true)", loadPayments, true);
