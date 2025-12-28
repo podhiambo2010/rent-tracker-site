@@ -203,85 +203,197 @@ async function apiPost(path, body, { admin = false } = {}) {
 }
 
 /* ---------------------------------------------------------------------------
-   PAYMENTS TAB: Adapter to prevent "loadPayments is not defined"
-   and to ensure Payments always loads even if the underlying fn name differs.
-   Paste this block BEFORE DOMContentLoaded and BEFORE reloadAllMonthViews().
---------------------------------------------------------------------------- */
+   PAYMENTS TAB — RESTORED REAL LOADER (no adapters, no recursion)
+   --------------------------------------------------------------------------- */
 
 function getPaymentsTbody() {
-  return (
+  // Try common IDs first
+  let tbody =
     document.querySelector("#paymentsTable tbody") ||
+    document.querySelector("#paymentsBody") ||
     document.querySelector("#paymentsTbody") ||
-    document.querySelector("#payments tbody") ||
-    document.querySelector("table[data-table='payments'] tbody") ||
     document.querySelector("table#payments tbody") ||
-    null
-  );
-}
+    document.querySelector("table[data-table='payments'] tbody");
 
-function showPaymentsPlaceholder(msg) {
-  const tbody = getPaymentsTbody();
-  if (!tbody) return;
-  const safe = (typeof escapeHtml === "function") ? escapeHtml(String(msg)) : String(msg);
-  // Try to span a reasonable number of columns (fallback 6)
-  const cols =
-    tbody.closest("table")?.querySelectorAll("thead th")?.length ||
-    tbody.closest("table")?.rows?.[0]?.cells?.length ||
-    6;
-
-  tbody.innerHTML = `<tr><td colspan="${cols}">${safe}</td></tr>`;
-}
-
-/**
- * Finds whichever payments loader exists in your app.
- * We DO NOT rename your internal code — we just adapt safely.
- */
-function resolvePaymentsLoaderFn() {
-  const candidates = [
-    "loadPayments",      // ideal / expected
-    "paymentsLoader",    // seen in your console warning
-    "loadPayment",       // older pattern
-    "loadPaymentsTable",
-    "loadPaymentsRows",
-  ];
-  for (const name of candidates) {
-    if (typeof window[name] === "function") return window[name];
+  // Fallback: find the first table inside the Payments tab panel
+  if (!tbody) {
+    const panel =
+      document.querySelector("#tab-payments") ||
+      document.querySelector("[data-panel='payments']") ||
+      document.querySelector(".panel#tab-payments");
+    const t = panel ? panel.querySelector("table tbody") : null;
+    if (t) tbody = t;
   }
-  return null;
+
+  return tbody || null;
+}
+
+function paymentsColspan(tbody, fallback = 5) {
+  try {
+    const table = tbody.closest("table");
+    const thCount = table?.querySelectorAll("thead th")?.length;
+    if (thCount) return thCount;
+  } catch (_) {}
+  return fallback;
+}
+
+function setPaymentsChips({ count = 0, total = 0 } = {}) {
+  const countEl =
+    document.querySelector("#paymentsCount") ||
+    document.querySelector("#paymentsCountChip") ||
+    document.querySelector("[data-payments-count]");
+  const totalEl =
+    document.querySelector("#paymentsTotal") ||
+    document.querySelector("#paymentsTotalChip") ||
+    document.querySelector("[data-payments-total]");
+
+  if (countEl) countEl.textContent = String(count);
+  if (totalEl) totalEl.textContent = (typeof fmtKes === "function") ? fmtKes(total) : String(total);
+}
+
+function showPaymentsRowMessage(tbody, msg) {
+  const safe = (typeof escapeHtml === "function") ? escapeHtml(String(msg)) : String(msg);
+  const cs = paymentsColspan(tbody, 5);
+  tbody.innerHTML = `<tr><td colspan="${cs}">${safe}</td></tr>`;
+}
+
+function normalizeRespToRows(resp) {
+  if (!resp) return [];
+  if (Array.isArray(resp)) return resp;
+  if (Array.isArray(resp.data)) return resp.data;
+  if (Array.isArray(resp.rows)) return resp.rows;
+  return [];
+}
+
+function pickPaymentFields(r) {
+  const dateRaw = r.paid_at || r.payment_date || r.date || r.created_at || "";
+  let dateTxt = "—";
+  try {
+    // show YYYY-MM-DD if possible
+    const d = new Date(dateRaw);
+    dateTxt = Number.isNaN(d.getTime()) ? String(dateRaw || "—") : d.toISOString().slice(0, 10);
+  } catch (_) {
+    dateTxt = String(dateRaw || "—");
+  }
+
+  const tenant = r.tenant || r.full_name || r.payer_name || r.tenant_name || "—";
+  const method = r.method || r.pay_method || "—";
+
+  // status is optional; infer if missing
+  const status =
+    r.status ||
+    r.allocation_status ||
+    (r.invoice_id ? "allocated" : "unallocated");
+
+  const amount = Number(r.amount ?? r.paid_amount ?? r.value ?? 0) || 0;
+
+  return { dateTxt, tenant, method, status, amount };
 }
 
 /**
- * Global loadPayments(force=true/false) — always available.
- * If your project already has loadPayments, we won't override it.
+ * Real Payments loader: fetch + filter + render.
+ * Called by Apply/Clear buttons and by reloadAllMonthViews().
  */
-if (typeof window.loadPayments !== "function") {
-  window.loadPayments = async function loadPayments(force = false) {
-    const fn = resolvePaymentsLoaderFn();
+async function loadPayments(initial = false) {
+  const tbody = getPaymentsTbody();
+  if (!tbody) {
+    console.warn("Payments: tbody not found — check Payments table IDs in HTML.");
+    return;
+  }
 
-    if (!fn) {
-      console.warn(
-        "Payments loader not found (loadPayments/paymentsLoader/loadPayment) — skipping"
-      );
-      showPaymentsPlaceholder("Payments loader missing in app.js (no data loaded).");
+  // UI -> inputs
+  const monthSel = document.querySelector("#paymentsMonth");
+  const tenantQ = (document.querySelector("#paymentsTenant")?.value || "").trim().toLowerCase();
+  const statusQ = (document.querySelector("#paymentsStatus")?.value || "").trim().toLowerCase();
+
+  const ym = (monthSel?.value || state.currentMonth || yyyymm());
+  if (ym && ym !== state.currentMonth) setCurrentMonth(ym, { triggerReload: false });
+
+  // Clear + show loading
+  tbody.innerHTML = "";
+  setPaymentsChips({ count: 0, total: 0 });
+  showPaymentsRowMessage(tbody, "Loading payments…");
+
+  // Helper: treat 404 as empty list (no crash)
+  const getEmptyOn404 = async (path) => {
+    try {
+      return await apiGet(path);
+    } catch (e) {
+      if (String(e?.message || "").includes("404")) return [];
+      throw e;
+    }
+  };
+
+  try {
+    const resp = await (async () => {
+      const paths = [
+        `/payments?month=${encodeURIComponent(ym)}`,
+        `/dashboard/payments?month=${encodeURIComponent(ym)}`,
+        `/form_payments?month=${encodeURIComponent(ym)}`,
+      ];
+
+      let lastErr = null;
+      for (const p of paths) {
+        try {
+          return await getEmptyOn404(p);
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error("Payments endpoints all failed");
+    })();
+
+    let rows = normalizeRespToRows(resp);
+
+    // Apply filters (client-side, safe)
+    if (tenantQ) {
+      rows = rows.filter((r) => {
+        const t = String(r.tenant || r.full_name || r.payer_name || r.tenant_name || "").toLowerCase();
+        return t.includes(tenantQ);
+      });
+    }
+    if (statusQ) {
+      rows = rows.filter((r) => String(r.status || r.allocation_status || "").toLowerCase().includes(statusQ));
+    }
+
+    // No data
+    if (!rows.length) {
+      tbody.innerHTML = "";
+      setPaymentsChips({ count: 0, total: 0 });
+      showPaymentsRowMessage(tbody, "No payments found for this month.");
       return;
     }
 
-    try {
-      const res = fn(force);
-      // Support both sync + async loaders
-      const out = (res && typeof res.then === "function") ? await res : res;
+    // Render rows
+    tbody.innerHTML = "";
+    const frag = document.createDocumentFragment();
 
-      // If your loader doesn't render anything when empty, ensure user sees something.
-      const tbody = getPaymentsTbody();
-      if (tbody && !tbody.innerHTML.trim()) {
-        showPaymentsPlaceholder("No payments found for this month.");
-      }
-      return out;
-    } catch (e) {
-      console.error("loadPayments(adapter) failed:", e);
-      showPaymentsPlaceholder("Error loading payments.");
+    let totalAmt = 0;
+
+    for (const r of rows) {
+      const x = pickPaymentFields(r);
+      totalAmt += x.amount;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(x.dateTxt)}</td>
+        <td>${escapeHtml(x.tenant)}</td>
+        <td>${escapeHtml(x.method)}</td>
+        <td>${escapeHtml(String(x.status || "—"))}</td>
+        <td style="text-align:right">${fmtKes(x.amount)}</td>
+      `;
+      frag.appendChild(tr);
     }
-  };
+
+    tbody.appendChild(frag);
+    setPaymentsChips({ count: rows.length, total: totalAmt });
+
+  } catch (e) {
+    console.error("Payments load failed:", e);
+    tbody.innerHTML = "";
+    setPaymentsChips({ count: 0, total: 0 });
+    showPaymentsRowMessage(tbody, "Error loading payments. Check console/network.");
+  }
 }
 
 /* ---------------------------------------------------------------------------
