@@ -429,15 +429,16 @@ async function loadOverview() {
   const kpiOpen     = $("#kpiOpen");
   const kpiPayments = $("#kpiPayments");
   const kpiBalance  = $("#kpiBalance");
+
   const summaryWrap = $("#collection-summary-month");
 
   const ym =
-    (typeof window.getSelectedMonth === "function" ? window.getSelectedMonth() : null) ||
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
     state.currentMonth ||
     yyyymm();
 
-  if (state.currentMonth !== ym && typeof window.setCurrentMonth === "function") {
-    window.setCurrentMonth(ym, { triggerReload: false });
+  if (state.currentMonth !== ym && typeof setCurrentMonth === "function") {
+    setCurrentMonth(ym, { triggerReload: false });
   }
 
   const fmtDrCr = (n) => {
@@ -447,12 +448,12 @@ async function loadOverview() {
     return `${fmtKes(0)}`;
   };
 
-  const apiGetFirstLocal = async (paths) => {
+  const apiGetFirst = async (paths) => {
     let lastErr = null;
     for (const p of paths) {
       try {
         const r = await apiGet(p);
-        if (r != null) return r;
+        return (r && typeof r === "object" && "data" in r) ? r.data : r;
       } catch (e) {
         lastErr = e;
       }
@@ -462,35 +463,34 @@ async function loadOverview() {
 
   try {
     // Source of truth: balances overview
-    const balOv = await apiGetFirstLocal([
+    const data = await apiGetFirst([
       `/dashboard/balances/overview?month=${encodeURIComponent(ym)}`,
       `/balances/overview?month=${encodeURIComponent(ym)}`
     ]);
 
-    const data = (balOv && typeof balOv === "object" && "data" in balOv) ? balOv.data : balOv;
-
-    // Optional: leases + rent roll
-    let leases = [];
+    // Leases KPI (count)
+    let leasesCount = 0;
     try {
-      const lr = await apiGet("/leases?limit=1000");
-      leases = (lr?.data && Array.isArray(lr.data)) ? lr.data : (Array.isArray(lr) ? lr : []);
+      const leasesResp = await apiGet("/leases?limit=1000");
+      const leases = (leasesResp && typeof leasesResp === "object" && "data" in leasesResp)
+        ? leasesResp.data
+        : leasesResp;
+      leasesCount = Array.isArray(leases) ? leases.length : 0;
     } catch {}
+    if (kpiLeases) kpiLeases.textContent = String(leasesCount);
 
-    let rentRoll = [];
+    // Open invoices KPI (from rent roll)
+    let openCount = 0;
     try {
       const rr = await apiGet(`/rent-roll?month=${encodeURIComponent(ym)}`);
-      rentRoll = (rr?.data && Array.isArray(rr.data)) ? rr.data : (Array.isArray(rr) ? rr : []);
+      const rentRoll = (rr && typeof rr === "object" && "data" in rr) ? rr.data : rr;
+      openCount = Array.isArray(rentRoll)
+        ? rentRoll.filter(r => String(r.status || "").toLowerCase() !== "paid").length
+        : 0;
     } catch {}
+    if (kpiOpen) kpiOpen.textContent = String(openCount);
 
-    // KPIs
-    if (kpiLeases) kpiLeases.textContent = leases.length;
-
-    const openCount = Array.isArray(rentRoll)
-      ? rentRoll.filter((r) => (r.status || "").toLowerCase() !== "paid").length
-      : 0;
-    if (kpiOpen) kpiOpen.textContent = openCount;
-
-    // Totals (robust)
+    // Core values
     const openingCR = Number(data?.opening_credit_total ?? 0);
     const openingDR = Number(data?.opening_debit_total ?? 0);
 
@@ -499,23 +499,22 @@ async function loadOverview() {
 
     const closing   = Number(data?.closing_balance_total ?? data?.balance_total ?? 0);
 
-    // Net movement: invoiced - collected (your UI text says "Invoiced − Collected")
-    const netMove = invoiced - collected;
+    // Movement shown as "Invoiced – Collected"
+    const movement = invoiced - collected;
 
-    const rawRate = (invoiced > 0) ? (collected / invoiced) * 100 : 0;
-    const collectionRate = Math.max(0, Math.min(100, rawRate));
+    const rawRate = invoiced > 0 ? (collected / invoiced) * 100 : 0;
+    const collectionRate = Math.min(100, rawRate);
     const overPct = Math.max(0, rawRate - 100);
 
     if (kpiPayments) kpiPayments.textContent = fmtKes(collected);
     if (kpiBalance)  kpiBalance.textContent  = fmtDrCr(closing);
 
-    // Summary cards (6 cards = perfect 2 rows of 3)
+    // Ensure we don't keep that duplicate heading
+    hideFirstDuplicateHeading("Monthly collection summary");
+
+    // Render only the metric cards (do NOT add another title card)
     if (summaryWrap) {
       const openingTxt = `${fmtKes(openingCR)} CR / ${fmtKes(openingDR)} DR`;
-
-      const rateText = overPct > 0
-        ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
-        : `${fmtPct(collectionRate)} collection rate`;
 
       summaryWrap.innerHTML = `
         <div>
@@ -536,8 +535,8 @@ async function loadOverview() {
 
         <div>
           <div class="sum-title">Net movement (month)</div>
-          <div class="sum-value">${fmtDrCr(netMove)}</div>
-          <div class="sum-sub">Invoiced − Collected</div>
+          <div class="sum-value">${fmtDrCr(movement)}</div>
+          <div class="sum-sub">Invoiced – Collected</div>
         </div>
 
         <div>
@@ -547,14 +546,13 @@ async function loadOverview() {
 
         <div>
           <div class="sum-title">Collection rate</div>
-          <div class="sum-value">${rateText}</div>
+          <div class="sum-value">${
+            overPct > 0
+              ? `${fmtPct(collectionRate)} collected • ${fmtPct(overPct)} over-collected`
+              : `${fmtPct(collectionRate)} collection rate`
+          }</div>
         </div>
       `;
-    }
-
-    // Remove the duplicate standalone label (Overview only)
-    if (typeof removeDuplicateOverviewLabel === "function") {
-      removeDuplicateOverviewLabel();
     }
   } catch (err) {
     console.error("loadOverview error:", err);
@@ -925,38 +923,33 @@ function isEndedLeaseStatus(status) {
 }
 
 function renderLeasesTable(rows) {
-  const tbody = getLeasesTbody();
+  const tbody = getLeasesTbody?.();
   if (!tbody) {
-    console.warn("Leases table body not found (IDs may differ). Leases loaded:", rows?.length || 0);
+    console.warn("Leases table body not found. Leases loaded:", rows?.length || 0);
     return;
   }
+
+  const esc = (s) => (typeof escapeHtml === "function" ? escapeHtml(String(s ?? "")) : String(s ?? ""));
 
   const out = (rows || []).map((r) => {
     const x = pickLeaseFields(r);
 
-    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent);
+    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent ?? "");
 
-    const statusTxt = String(x.status || "").toLowerCase();
-    const isEnded =
-      statusTxt.includes("ended") ||
-      statusTxt.includes("inactive") ||
-      statusTxt.includes("terminated") ||
-      statusTxt.includes("closed");
+    const st = String(x.status || "").toLowerCase();
+    const ended = ["ended", "inactive", "terminated", "closed", "stopped"].some(k => st.includes(k));
 
-    const cycleClass = isEnded ? "cycle-ended" : "";
+    const cycleClass = ended ? "cycle-ended" : "";
 
-    const esc = (v) => (typeof escapeHtml === "function" ? escapeHtml(String(v ?? "")) : String(v ?? ""));
-
-    // Columns (7): Tenant | Unit | Rent | Cycle | Due Day | Status | WhatsApp (or blank)
     return `
       <tr>
         <td>${esc(x.tenant)}</td>
         <td>${esc(x.unit)}</td>
         <td>${esc(rentTxt)}</td>
-        <td class="${cycleClass}">${esc(x.billingCycle || x.cycle || "")}</td>
+        <td>${esc(x.status)}</td>
+        <td>${esc(x.start || "")}</td>
         <td>${esc(x.dueDay || "")}</td>
-        <td>${esc(x.status || "")}</td>
-        <td>${esc(x.whatsapp || "")}</td>
+        <td class="${cycleClass}">${esc(x.billingCycle || "")}</td>
       </tr>
     `;
   }).join("");
@@ -969,25 +962,25 @@ async function loadLeases() {
     const rows = await apiGet("/leases?limit=1000");
     const all = Array.isArray(rows?.data) ? rows.data : (Array.isArray(rows) ? rows : []);
 
-    const q = getLeasesSearchQuery();
+    const q = (getLeasesSearchQuery?.() || "").trim().toLowerCase();
     const filtered = q
       ? all.filter((r) => {
           const x = pickLeaseFields(r);
           return (
-            String(x.tenant).toLowerCase().includes(q) ||
-            String(x.unit).toLowerCase().includes(q)
+            String(x.tenant || "").toLowerCase().includes(q) ||
+            String(x.unit || "").toLowerCase().includes(q)
           );
         })
       : all;
 
     state.leasesView = filtered;
 
-    setLeasesCount(filtered.length);
+    setLeasesCount?.(filtered.length);
     renderLeasesTable(filtered);
   } catch (e) {
     console.error("loadLeases failed:", e);
-    setLeasesCount(0);
-    const tbody = getLeasesTbody();
+    setLeasesCount?.(0);
+    const tbody = getLeasesTbody?.();
     if (tbody) tbody.innerHTML = `<tr><td colspan="7">Error loading leases</td></tr>`;
   }
 }
@@ -1361,7 +1354,7 @@ async function initMonthPicker() {
   }
 }
 
-/* ---------------- CSS helper (inject once) ---------------- */
+/* ---------------- CSS helper + UI polish ---------------- */
 function injectCssOnce(id, cssText) {
   if (document.getElementById(id)) return;
   const s = document.createElement("style");
@@ -1370,33 +1363,56 @@ function injectCssOnce(id, cssText) {
   document.head.appendChild(s);
 }
 
-/* ---------------- UI polish (NO breaking other tabs) ---------------- */
+/**
+ * Hides the FIRST occurrence of a repeated heading text (keeps the 2nd one).
+ * We use it to remove the duplicate "Monthly collection summary" line
+ * above the card, while keeping the card header.
+ */
+function hideFirstDuplicateHeading(exactText) {
+  const want = String(exactText || "").trim().toLowerCase();
+  if (!want) return;
+
+  const hs = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+    .filter(h => (h.textContent || "").trim().toLowerCase() === want);
+
+  if (hs.length >= 2) {
+    hs[0].style.display = "none";
+  }
+}
+
+/**
+ * Single place for UI polish:
+ * - Reduce KPI font sizes (top cards)
+ * - Make Monthly summary grid responsive + clean
+ * - Muted/italic cycle text for ended leases
+ */
 function applyUiPolish() {
-  injectCssOnce(
-    "rt-ui-polish",
-    `
-    /* KPI numbers: smaller + responsive (prevents huge typography) */
+  injectCssOnce("rt-ui-tweaks", `
+    /* --- KPI numbers: smaller + consistent --- */
     #kpiLeases, #kpiOpen, #kpiPayments, #kpiBalance{
-      font-size: clamp(22px, 2.0vw, 34px) !important;
-      line-height: 1.12 !important;
+      font-size: clamp(22px, 1.8vw, 34px) !important;
+      line-height: 1.08 !important;
       letter-spacing: -0.02em !important;
-      font-weight: 750 !important;
+      white-space: nowrap;
     }
 
-    /* Monthly collection summary cards layout: neat 2 rows (3 + 3) */
+    /* --- Monthly collection summary: clean grid that won't overlap controls --- */
     #collection-summary-month{
       margin-top: 12px !important;
       display: grid !important;
       gap: 12px !important;
-      grid-template-columns: repeat(3, minmax(240px, 1fr)) !important;
+      grid-template-columns: repeat(3, minmax(220px, 1fr)) !important;
       align-items: stretch !important;
     }
-
     @media (max-width: 980px){
-      #collection-summary-month{ grid-template-columns: repeat(2, minmax(220px, 1fr)) !important; }
+      #collection-summary-month{
+        grid-template-columns: repeat(2, minmax(200px, 1fr)) !important;
+      }
     }
-    @media (max-width: 640px){
-      #collection-summary-month{ grid-template-columns: 1fr !important; }
+    @media (max-width: 620px){
+      #collection-summary-month{
+        grid-template-columns: 1fr !important;
+      }
     }
 
     #collection-summary-month > div{
@@ -1408,12 +1424,12 @@ function applyUiPolish() {
     #collection-summary-month .sum-title{
       font-size: 13px !important;
       font-weight: 700 !important;
-      opacity: .92 !important;
+      opacity: .9 !important;
+      margin-bottom: 6px !important;
     }
     #collection-summary-month .sum-value{
-      margin-top: 6px !important;
-      font-size: 16px !important;
-      font-weight: 700 !important;
+      font-size: 18px !important;
+      font-weight: 750 !important;
       letter-spacing: -0.01em !important;
     }
     #collection-summary-month .sum-sub{
@@ -1423,124 +1439,107 @@ function applyUiPolish() {
       font-weight: 600 !important;
     }
 
-    /* Leases: Cycle text muted when lease ended */
+    /* --- Leases: show ended lease cycle as muted/italic --- */
     .cycle-ended{
       color: var(--muted) !important;
       font-style: italic !important;
-      opacity: .9 !important;
+      font-weight: 600 !important;
     }
-  `
-  );
+  `);
+
+  // Remove the duplicate text line above the card (keeps the card header)
+  hideFirstDuplicateHeading("Monthly collection summary");
 }
-
-/* ---------------- Remove ONLY the duplicate small label in Overview ----------------
-   This does NOT touch other tabs. It only removes the loose standalone heading
-   that repeats the title again above the big summary card.
------------------------------------------------------------------------ */
-function removeDuplicateOverviewLabel() {
-  const scope =
-    document.querySelector("#tab-overview") ||
-    document.querySelector('[data-tab="overview"]') ||
-    document.querySelector("#overview") ||
-    document.body;
-
-  const targets = Array.from(scope.querySelectorAll("h1,h2,h3,h4,div,p,span"))
-    .filter((el) => el && el.children && el.children.length === 0)
-    .filter((el) => (el.textContent || "").trim() === "Monthly collection summary");
-
-  // Remove only the “loose” one (usually there is 1)
-  targets.forEach((el) => el.remove());
-}
-
-/* ---------------- Safe global invoker ----------------
-   This NEVER throws even if the function doesn't exist.
------------------------------------------------------- */
-function invokeGlobal(fnName, ...args) {
-  try {
-    const fn = window[fnName];
-    if (typeof fn === "function") return fn(...args);
-    console.warn(`${fnName} is not defined — skipping`);
-  } catch (e) {
-    console.warn(`${fnName} failed:`, e);
-  }
-}
-
-/* Optional: month-wide refresh hook used by month picker */
-window.reloadAllMonthlyViews = function reloadAllMonthlyViewsSafe() {
-  invokeGlobal("loadOverview");
-  invokeGlobal("loadLeases");
-  invokeGlobal("loadPayments", true);
-  invokeGlobal("loadRentRoll", true);
-  invokeGlobal("loadBalances");
-  invokeGlobal("loadBalancesByUnit");
-  removeDuplicateOverviewLabel();
-};
 
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  // UI polish styles
+  // UI polish first (safe; no dependency on other functions)
   applyUiPolish();
 
-  // Init (safe)
-  invokeGlobal("initTabs");
-  invokeGlobal("initApiBaseControls");
-  invokeGlobal("initWhatsAppBuilder");
-  invokeGlobal("initInvoiceActions");
-  invokeGlobal("initExports");
-  invokeGlobal("initRowWhatsAppButtons");
+  // Init (all safe)
+  initTabs?.();
+  initApiBaseControls?.();
+  initWhatsAppBuilder?.();
+  initInvoiceActions?.();
+  initExports?.();
+  initRowWhatsAppButtons?.();
 
-  // Month picker init (safe async)
   try {
-    if (typeof window.initMonthPicker === "function") {
-      await window.initMonthPicker();
-    } else {
-      console.warn("initMonthPicker is not defined — skipping");
-    }
+    await initMonthPicker?.();
   } catch (e) {
     console.error("initMonthPicker failed:", e);
-    if (typeof window.setCurrentMonth === "function") {
-      window.setCurrentMonth(yyyymm(), { triggerReload: false });
+    if (typeof setCurrentMonth === "function") {
+      setCurrentMonth(yyyymm(), { triggerReload: false });
     }
   }
 
-  // Force state.currentMonth to match picker selection
+  // Force state.currentMonth to match picker
   const ym =
-    (typeof window.getSelectedMonth === "function" ? window.getSelectedMonth() : null) ||
+    (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) ||
     state.currentMonth ||
     yyyymm();
 
-  if (typeof window.setCurrentMonth === "function") {
-    window.setCurrentMonth(ym, { triggerReload: false });
+  if (typeof setCurrentMonth === "function") {
+    setCurrentMonth(ym, { triggerReload: false });
   }
 
-  // Initial loads (safe by name — no ReferenceError)
-  window.reloadAllMonthlyViews();
+  // Loader aliases (prevents "loadPayments is not defined" mistakes)
+  const paymentsLoader = (typeof loadPayments === "function")
+    ? loadPayments
+    : (typeof loadPayment === "function" ? loadPayment : null);
 
-  // Buttons / actions (safe)
-  $("#reloadLeases")?.addEventListener("click", () => invokeGlobal("loadLeases"));
+  const rentRollLoader = (typeof loadRentRoll === "function")
+    ? loadRentRoll
+    : (typeof loadRentroll === "function" ? loadRentroll : null);
 
-  $("#reloadBalances")?.addEventListener("click", () => {
-    invokeGlobal("loadBalances");
-    invokeGlobal("loadBalancesByUnit");
-  });
+  const balancesLoader = (typeof loadBalances === "function") ? loadBalances : null;
+  const balancesByUnitLoader = (typeof loadBalancesByUnit === "function") ? loadBalancesByUnit : null;
 
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () => invokeGlobal("loadBalances"));
+  // Safe caller
+  const safeCall = (fnName, fn, ...args) => {
+    if (typeof fn === "function") return fn(...args);
+    console.warn(`${fnName} is not defined — skipping`);
+  };
 
-  $("#applyPayments")?.addEventListener("click", () => invokeGlobal("loadPayments"));
+  // Initial data load
+  safeCall("loadOverview()", loadOverview);
+  safeCall("loadLeases()", loadLeases);
+  safeCall("paymentsLoader(true)", paymentsLoader, true);
+  safeCall("rentRollLoader(true)", rentRollLoader, true);
+  safeCall("loadBalances()", balancesLoader);
+  safeCall("loadBalancesByUnit()", balancesByUnitLoader);
+
+  // Buttons/actions
+  $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases()", loadLeases));
+
+  $("#applyPayments")?.addEventListener("click", () => safeCall("paymentsLoader()", paymentsLoader));
   $("#clearPayments")?.addEventListener("click", () => {
     const t = $("#paymentsTenant"); if (t) t.value = "";
     const s = $("#paymentsStatus"); if (s) s.value = "";
-    invokeGlobal("loadPayments");
+    safeCall("paymentsLoader()", paymentsLoader);
   });
 
-  $("#applyRentroll")?.addEventListener("click", () => invokeGlobal("loadRentRoll"));
+  $("#applyRentroll")?.addEventListener("click", () => safeCall("rentRollLoader()", rentRollLoader));
   $("#clearRentroll")?.addEventListener("click", () => {
     const t = $("#rentrollTenant"); if (t) t.value = "";
     const p = $("#rentrollProperty"); if (p) p.value = "";
-    invokeGlobal("loadRentRoll");
+    safeCall("rentRollLoader()", rentRollLoader);
   });
 
-  // Dunning -> WhatsApp quick fill (safe)
+  $("#reloadBalances")?.addEventListener("click", () => {
+    safeCall("loadBalances()", balancesLoader);
+    safeCall("loadBalancesByUnit()", balancesByUnitLoader);
+  });
+
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () =>
+    safeCall("loadBalances()", balancesLoader)
+  );
+
+  $("#reloadDunning")?.addEventListener("click", () =>
+    safeCall("loadBalances()", balancesLoader)
+  );
+
+  // Dunning -> WhatsApp quick fill
   document.addEventListener("click", (e) => {
     const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
     if (!btn) return;
@@ -1548,16 +1547,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     const tenant = btn.dataset.dunTenant || btn.getAttribute("data-dun-tenant") || "";
     const balance = Number(btn.dataset.dunBalance || btn.getAttribute("data-dun-balance") || 0);
 
-    const ym =
-      (typeof window.getSelectedMonth === "function" ? window.getSelectedMonth() : null) || yyyymm();
+    const m = (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || yyyymm();
 
     if ($("#waTenant")) $("#waTenant").value = tenant;
-    if ($("#waPeriod")) $("#waPeriod").value = formatMonthLabel(ym);
+    if ($("#waPeriod")) $("#waPeriod").value = formatMonthLabel(m);
     if ($("#waBalance")) $("#waBalance").value = String(balance);
 
     if (typeof window.activateTab === "function") window.activateTab("whatsapp");
   });
 
-  $("#leaseSearch")?.addEventListener("input", () => invokeGlobal("loadLeases"));
-  $("#reloadDunning")?.addEventListener("click", () => invokeGlobal("loadBalances"));
+  $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases()", loadLeases));
 });
