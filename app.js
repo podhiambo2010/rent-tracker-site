@@ -946,6 +946,112 @@ async function loadBalancesByUnit() {
   }
 }
 
+/* -------- Leases loader (RESTORED) -------- */
+
+function pickLeaseFields(r) {
+  return {
+    tenant:
+      r.tenant ||
+      r.full_name ||
+      r.tenant_name ||
+      r.tenant_full_name ||
+      "-",
+    unit:
+      r.unit ||
+      r.unit_code ||
+      r.unit_name ||
+      r.unit_label ||
+      "-",
+    rent:
+      Number(r.rent_amount ?? r.rent ?? r.amount ?? 0),
+    status:
+      r.status || r.lease_status || "active",
+    start:
+      r.start_date || r.start || "",
+    dueDay:
+      r.due_day ?? r.dueDay ?? "",
+    billingCycle:
+      r.billing_cycle || r.billingCycle || "monthly",
+  };
+}
+
+function getLeasesSearchQuery() {
+  const el = $("#leaseSearch") || $("#leasesSearch") || $("#leasesQuery");
+  return (el?.value || "").toLowerCase().trim();
+}
+
+function setLeasesCount(n) {
+  const el = $("#leasesCount") || $("#kpiLeases"); // fallback
+  if (el) el.textContent = String(n ?? 0);
+}
+
+function getLeasesTbody() {
+  // Try the most likely IDs first
+  return (
+    $("#leasesTbody") ||
+    $("#leasesBody") ||
+    $("#leasesTableBody") ||
+    document.querySelector("#leasesTable tbody") ||
+    document.querySelector("#tblLeases tbody")
+  );
+}
+
+function renderLeasesTable(rows) {
+  const tbody = getLeasesTbody();
+  if (!tbody) {
+    console.warn("Leases table body not found (IDs may differ). Leases loaded:", rows?.length || 0);
+    return;
+  }
+
+  const out = (rows || []).map((r) => {
+    const x = pickLeaseFields(r);
+    const rentTxt = (typeof fmtKes === "function") ? fmtKes(x.rent) : String(x.rent);
+
+    return `
+      <tr>
+        <td>${escapeHtml ? escapeHtml(x.tenant) : x.tenant}</td>
+        <td>${escapeHtml ? escapeHtml(x.unit) : x.unit}</td>
+        <td>${rentTxt}</td>
+        <td>${escapeHtml ? escapeHtml(String(x.status)) : String(x.status)}</td>
+        <td>${escapeHtml ? escapeHtml(String(x.start || "")) : String(x.start || "")}</td>
+        <td>${escapeHtml ? escapeHtml(String(x.dueDay || "")) : String(x.dueDay || "")}</td>
+        <td>${escapeHtml ? escapeHtml(String(x.billingCycle || "")) : String(x.billingCycle || "")}</td>
+      </tr>
+    `;
+  }).join("");
+
+  tbody.innerHTML = out || `<tr><td colspan="7">No leases found</td></tr>`;
+}
+
+async function loadLeases() {
+  try {
+    const rows = await apiGet("/leases?limit=1000");
+    const all = Array.isArray(rows?.data) ? rows.data : (Array.isArray(rows) ? rows : []);
+
+    const q = getLeasesSearchQuery();
+    const filtered = q
+      ? all.filter((r) => {
+          const x = pickLeaseFields(r);
+          return (
+            String(x.tenant).toLowerCase().includes(q) ||
+            String(x.unit).toLowerCase().includes(q)
+          );
+        })
+      : all;
+
+    // keep for other parts if needed
+    state.leasesView = filtered;
+
+    setLeasesCount(filtered.length);
+    renderLeasesTable(filtered);
+  } catch (e) {
+    console.error("loadLeases failed:", e);
+    setLeasesCount(0);
+    const tbody = getLeasesTbody();
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7">Error loading leases</td></tr>`;
+  }
+}
+
 /* -------- WhatsApp ad-hoc builder -------- */
 function initWhatsAppBuilder() {
   const btn = $("#waBuild");
@@ -1317,29 +1423,19 @@ async function initMonthPicker() {
 
 /* -------- initial load -------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  // helper: call a function only if it exists
-  const safeCall = (fnName, ...args) => {
-    const fn = window[fnName];
-    if (typeof fn === "function") return fn(...args);
-    console.warn(`${fnName}() is not defined — skipping`);
-    return undefined;
-  };
-
-  initTabs();
-  initApiBaseControls();
-  initWhatsAppBuilder();
-  initInvoiceActions();
-  initExports();
-  initRowWhatsAppButtons();
+  initTabs?.();
+  initApiBaseControls?.();
+  initWhatsAppBuilder?.();
+  initInvoiceActions?.();
+  initExports?.();
+  initRowWhatsAppButtons?.();
 
   try {
-    await initMonthPicker();
+    await initMonthPicker?.();
   } catch (e) {
     console.error("initMonthPicker failed:", e);
     if (typeof setCurrentMonth === "function") {
       setCurrentMonth(yyyymm(), { triggerReload: false });
-    } else {
-      state.currentMonth = yyyymm();
     }
   }
 
@@ -1351,47 +1447,45 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (typeof setCurrentMonth === "function") {
     setCurrentMonth(ym, { triggerReload: false });
-  } else {
-    state.currentMonth = ym;
   }
 
-  // initial data load (guarded: never crash if a loader is missing)
-  safeCall("loadOverview");
-  safeCall("loadLeases", true);          // will be skipped if not defined
-  safeCall("loadPayments", true);
-  safeCall("loadRentRoll", true);
-  safeCall("loadBalances", true);
-  safeCall("loadBalancesByUnit", true);  // will be skipped if not defined
+  // ---- safe caller (prevents crashes) ----
+  const safeCall = (fnName, fn, ...args) => {
+    if (typeof fn === "function") return fn(...args);
+    console.warn(`${fnName} is not defined — skipping`);
+  };
 
-  // Buttons / filters (guarded)
-  $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases", true));
+  // initial data load (safe)
+  safeCall("loadOverview()", loadOverview);
+  safeCall("loadLeases()", loadLeases);
+  safeCall("loadPayments(true)", loadPayments, true);
+  safeCall("loadRentRoll(true)", loadRentRoll, true);
+  safeCall("loadBalances()", loadBalances);
+  safeCall("loadBalancesByUnit()", loadBalancesByUnit);
+
+  $("#reloadLeases")?.addEventListener("click", () => safeCall("loadLeases()", loadLeases));
 
   $("#reloadBalances")?.addEventListener("click", () => {
-    safeCall("loadBalances", true);
-    safeCall("loadBalancesByUnit", true);
+    safeCall("loadBalances()", loadBalances);
+    safeCall("loadBalancesByUnit()", loadBalancesByUnit);
   });
 
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () => safeCall("loadBalances", true));
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () => safeCall("loadBalances()", loadBalances));
 
-  $("#applyPayments")?.addEventListener("click", () => safeCall("loadPayments", true));
+  $("#applyPayments")?.addEventListener("click", () => safeCall("loadPayments()", loadPayments));
   $("#clearPayments")?.addEventListener("click", () => {
-    const t = $("#paymentsTenant");
-    const s = $("#paymentsStatus");
-    if (t) t.value = "";
-    if (s) s.value = "";
-    safeCall("loadPayments", true);
+    const t = $("#paymentsTenant"); if (t) t.value = "";
+    const s = $("#paymentsStatus"); if (s) s.value = "";
+    safeCall("loadPayments()", loadPayments);
   });
 
-  $("#applyRentroll")?.addEventListener("click", () => safeCall("loadRentRoll", true));
+  $("#applyRentroll")?.addEventListener("click", () => safeCall("loadRentRoll()", loadRentRoll));
   $("#clearRentroll")?.addEventListener("click", () => {
-    const t = $("#rentrollTenant");
-    const p = $("#rentrollProperty");
-    if (t) t.value = "";
-    if (p) p.value = "";
-    safeCall("loadRentRoll", true);
+    const t = $("#rentrollTenant"); if (t) t.value = "";
+    const p = $("#rentrollProperty"); if (p) p.value = "";
+    safeCall("loadRentRoll()", loadRentRoll);
   });
 
-  // Dunning -> WhatsApp quick fill (keep as-is, just safer)
   document.addEventListener("click", (e) => {
     const btn = e.target?.closest?.("button[data-dun-tenant],button[data-dunTenant]");
     if (!btn) return;
@@ -1401,17 +1495,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const ym = (typeof getSelectedMonth === "function" ? getSelectedMonth() : null) || yyyymm();
 
-    const waTenant = $("#waTenant");
-    const waPeriod = $("#waPeriod");
-    const waBalance = $("#waBalance");
-
-    if (waTenant) waTenant.value = tenant;
-    if (waPeriod) waPeriod.value = formatMonthLabel(ym);
-    if (waBalance) waBalance.value = String(balance);
+    if ($("#waTenant")) $("#waTenant").value = tenant;
+    if ($("#waPeriod")) $("#waPeriod").value = formatMonthLabel(ym);
+    if ($("#waBalance")) $("#waBalance").value = String(balance);
 
     if (typeof window.activateTab === "function") window.activateTab("whatsapp");
   });
 
-  $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases", true));
-  $("#reloadDunning")?.addEventListener("click", () => safeCall("loadBalances", true));
+  $("#leaseSearch")?.addEventListener("input", () => safeCall("loadLeases()", loadLeases));
+  $("#reloadDunning")?.addEventListener("click", () => safeCall("loadBalances()", loadBalances));
 });
