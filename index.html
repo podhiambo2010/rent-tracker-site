@@ -22,9 +22,7 @@
       background:linear-gradient(180deg,var(--bg),#060a19 60%); color:var(--text)
     }
     a{color:#7aa7ff}
-
-    th.num,
-    td.num { text-align: right; }
+    th.num, td.num { text-align: right; }
 
     /* Shell */
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
@@ -117,12 +115,13 @@
       border-right:1px solid var(--bd);
       border-top-right-radius:10px;border-bottom-right-radius:10px
     }
-    .status{padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--bd)}
+
+    .status{padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--bd);display:inline-block}
     .status.ok{background:rgba(34,197,94,.08);color:#86efac}
     .status.due{background:rgba(239,68,68,.08);color:#fecaca}
+    .status.ended{background:rgba(148,163,184,.08);color:#cbd5e1}
 
     .filters{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 6px}
-
     .payments-totals{display:flex;gap:10px;align-items:center;margin-left:auto;}
     .rentroll-totals{display:flex;gap:10px;align-items:center;margin-left:auto;}
 
@@ -144,29 +143,14 @@
     }
     #monthPicker::-webkit-calendar-picker-indicator{filter:invert(1);}
 
-    @media (max-width:980px){
-      main{grid-template-columns:1fr}
-      nav{position:static}
-      .kpi{grid-column:span 6}
-    }
-    @media (max-width:640px){
-      .kpi{grid-column:span 12}
-      .env input{max-width:100%;width:220px}
-      .table-wrap{max-height:50vh}
-    }
-
-    /* Section divider (Balances: Outstanding) */
+    /* Section divider */
     .section-split{
       display:flex;
       align-items:center;
       gap:12px;
       opacity:.95;
     }
-    .section-split .split-line{
-      height:1px;
-      flex:1;
-      background: var(--bd);
-    }
+    .section-split .split-line{ height:1px; flex:1; background: var(--bd); }
     .section-split .split-label{
       font-size:12px;
       letter-spacing:.12em;
@@ -178,18 +162,32 @@
       background: rgba(255,255,255,.03);
     }
 
-    /* Invoice actions card (inside Balances) */
-    .card{
-      background: var(--panel-2);
-      border: 1px solid var(--bd);
-      border-radius: 14px;
-      padding: 12px;
+    /* Dunning action strip */
+    .dunning-actions{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin-top:8px;
     }
-    .card h3{margin:0 0 10px;font-size:14px}
-    .card-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .card-row input{
-      flex:1;min-width:260px;padding:8px 10px;border-radius:10px;
-      border:1px solid var(--bd);background:#0f1730;color:#fff;
+    .dunning-links{
+      margin-top:10px;
+      padding:10px;
+      border:1px solid var(--bd);
+      border-radius:12px;
+      background: rgba(255,255,255,.03);
+    }
+    .dunning-links a{display:block;margin:6px 0;}
+
+    @media (max-width:980px){
+      main{grid-template-columns:1fr}
+      nav{position:static}
+      .kpi{grid-column:span 6}
+    }
+    @media (max-width:640px){
+      .kpi{grid-column:span 12}
+      .env input{max-width:100%;width:220px}
+      .table-wrap{max-height:50vh}
     }
   </style>
 </head>
@@ -230,19 +228,20 @@
       <!-- ===== Overview ===== -->
       <div class="panel" id="tab-overview">
         <h2>Overview</h2>
+
         <div class="grid" id="kpis">
           <div class="kpi"><h3>Total Leases</h3><div class="v" id="kpiLeases">—</div></div>
           <div class="kpi"><h3>Open Invoices (month)</h3><div class="v" id="kpiOpen">—</div></div>
           <div class="kpi"><h3>Payments (month)</h3><div class="v" id="kpiPayments">—</div></div>
           <div class="kpi"><h3>Balance Due (month)</h3><div class="v" id="kpiBalance">—</div></div>
         </div>
+
         <div class="filters">
           <div class="month-wrapper">
             <span>Month</span>
             <input id="monthPicker" type="month" />
           </div>
-          <button id="btnSendAll" class="btn">Send All (This Month)</button>
-          <button id="btnMarkSelected" class="btn secondary">Mark Selected as Sent</button>
+          <span class="muted">Collections actions moved to <b>Dunning</b>.</span>
         </div>
 
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
@@ -260,14 +259,26 @@
         <div class="bar-flex">
           <h2>Leases</h2><span class="chip" id="leasesCount">—</span>
         </div>
+
         <div class="filters">
           <input id="leaseSearch" placeholder="Search tenant or unit…"/>
+          <button class="btn" id="applyLeases">Apply</button>
+          <button class="btn ghost" id="clearLeases">Clear</button>
           <button class="btn ghost" id="reloadLeases">Reload</button>
         </div>
+
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Tenant</th><th>Unit</th><th>Rent</th><th>Cycle</th><th>Due Day</th><th>Status</th><th>WhatsApp</th></tr>
+              <tr>
+                <th>Tenant</th>
+                <th>Unit</th>
+                <th class="num">Rent</th>
+                <th>Cycle</th>
+                <th>Due day</th>
+                <th>Status</th>
+                <th>WhatsApp</th>
+              </tr>
             </thead>
             <tbody id="leasesBody"></tbody>
           </table>
@@ -282,9 +293,11 @@
         </div>
         <div class="filters">
           <select id="paymentsMonth"></select>
-          <input id="paymentsTenant" placeholder="Tenant contains…"/>
+          <input id="paymentsTenant" placeholder="Tenant / payer contains…"/>
           <select id="paymentsStatus">
             <option value="">Any status</option>
+            <option value="allocated">allocated</option>
+            <option value="unallocated">unallocated</option>
             <option value="posted">posted</option>
             <option value="pending">pending</option>
             <option value="failed">failed</option>
@@ -300,7 +313,7 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Date</th><th>Tenant</th><th>Method</th><th class="muted">Status</th><th style="text-align:right">Amount</th></tr>
+              <tr><th>Date</th><th>Tenant / payer</th><th>Method</th><th class="muted">Status</th><th class="num">Amount</th></tr>
             </thead>
             <tbody id="paymentsBody"></tbody>
           </table>
@@ -336,10 +349,10 @@
                 <th>Unit</th>
                 <th>Tenant</th>
                 <th>Period</th>
-                <th>Rent</th>
-                <th>Late fees</th>
+                <th class="num">Rent</th>
+                <th class="num">Late fees</th>
                 <th>Status</th>
-                <th style="text-align:right">Balance</th>
+                <th class="num">Closing balance</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -361,40 +374,15 @@
           <select id="balancesMonth"></select>
         </div>
 
-        <!-- This month totals -->
-        <div style="margin-top:12px;">
-          <h3 style="margin:0 0 6px 0;font-size:14px;">This month totals (all tenants)</h3>
-          <div id="balances-summary">
-            <div class="chip"><strong id="balMonthLabel">—</strong></div>
-            <div class="chip" id="balMonthDue">KES 0 due</div>
-            <div class="chip" id="balMonthCollected">KES 0 collected</div>
-            <div class="chip" id="balMonthBalance">KES 0 balance</div>
-            <div class="chip" id="balMonthRate">0.0% collection rate</div>
-          </div>
-          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
-        </div>
-
-        <!-- Invoice Actions (Admin) -->
-        <div class="card" id="invoiceActions" style="margin-top:14px;">
-          <h3>Invoice Actions</h3>
-          <div class="card-row">
-            <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)">
-            <button id="btnMarkSent" class="btn">Mark as sent</button>
-            <button id="btnHealth" class="btn ghost">Auth ping</button>
-          </div>
-          <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
-        </div>
-
-        <!-- Balances by tenant -->
         <div class="table-wrap" style="margin-top:12px;">
           <table>
             <thead>
               <tr>
                 <th>Tenant</th>
-                <th class="num">Rent due</th>
-                <th class="num">Paid</th>
-                <th class="num">Balance</th>
-                <th class="num">Collection rate</th>
+                <th class="num">Rent due (month)</th>
+                <th class="num">Paid (month)</th>
+                <th class="num">Closing balance (incl. arrears)</th>
+                <th class="num">Collection rate (month)</th>
               </tr>
             </thead>
             <tbody id="balancesBody"></tbody>
@@ -402,7 +390,19 @@
         </div>
         <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
 
-        <!-- Section divider -->
+        <div style="margin-top:24px;">
+          <h3 style="margin:0 0 8px 0;">This month totals (all tenants)</h3>
+          <div id="balances-summary">
+            <div class="chip"><strong id="balMonthLabel">—</strong></div>
+            <div class="chip" id="balMonthDue">KES 0 due</div>
+            <div class="chip" id="balMonthCollected">KES 0 collected</div>
+            <div class="chip" id="balMonthBalance">KES 0 closing balance</div>
+            <div class="chip" id="balMonthRate">0.0% collection rate</div>
+          </div>
+          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
+        </div>
+
+        <!-- Divider -->
         <div class="section-split" style="margin-top:24px;">
           <div class="split-line"></div>
           <div class="split-label">Outstanding</div>
@@ -413,42 +413,58 @@
           <h3 style="margin:0;">Outstanding by tenant (this month)</h3>
           <span class="chip" id="outstandingMonthLabel">—</span>
           <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
+          <span class="muted">Actions moved to <b>Dunning</b>.</span>
         </div>
 
         <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
 
-        <div class="table-wrap" style="margin-top:10px;">
+        <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Tenant</th>
-                <th style="text-align:right">Outstanding</th>
-                <th style="text-align:right">Collection rate</th>
+                <th class="num">Outstanding</th>
+                <th class="num">Collection rate</th>
               </tr>
             </thead>
             <tbody id="outstandingBody"></tbody>
           </table>
         </div>
         <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
-      </div><!-- ✅ IMPORTANT: close tab-balances here -->
+      </div>
 
-      <!-- ===== Dunning ===== -->
+      <!-- ===== Dunning (Action Center) ===== -->
       <div class="panel hidden" id="tab-dunning">
         <div class="bar-flex">
           <h2>Dunning</h2>
           <span class="chip" id="dunningMonthLabel">—</span>
           <button id="reloadDunning" class="btn ghost">Reload</button>
         </div>
+
         <p id="dunningLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
+
+        <div class="dunning-actions">
+          <label class="muted" style="display:flex;gap:8px;align-items:center;">
+            <input type="checkbox" id="dunningSelectAll"/>
+            Select all
+          </label>
+
+          <button class="btn" id="btnDunningBuildLinks">Build WhatsApp links (Selected)</button>
+          <button class="btn secondary" id="btnDunningMarkSent">Mark Selected as Sent</button>
+
+          <span class="muted" id="dunningMsg"></span>
+        </div>
 
         <div class="table-wrap" style="margin-top:10px;">
           <table>
             <thead>
               <tr>
+                <th></th>
                 <th>Tenant</th>
-                <th style="text-align:right">Outstanding</th>
-                <th style="text-align:right">Collection rate</th>
-                <th>Action</th>
+                <th class="num">Outstanding</th>
+                <th class="num">Collection rate</th>
+                <th>WhatsApp</th>
+                <th>Invoice</th>
               </tr>
             </thead>
             <tbody id="dunningBody"></tbody>
@@ -456,23 +472,26 @@
         </div>
         <div id="dunningEmpty" class="empty hidden">No dunning items this month 🎉</div>
 
-        <p class="muted" style="margin:10px 0 0 0;">
-          This tab uses the same month + balances data (auto-loads when you open it).
-        </p>
+        <div id="dunningLinks" class="dunning-links hidden">
+          <div class="muted" style="margin-bottom:6px;">
+            Click links below (this avoids pop-up blockers when sending many messages):
+          </div>
+          <div id="dunningLinksBody"></div>
+        </div>
       </div>
 
-      <!-- ===== WhatsApp (ad-hoc) ===== -->
+      <!-- ===== WhatsApp (ad-hoc builder) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
-        <h2>WhatsApp Message</h2>
+        <h2>WhatsApp Message (ad-hoc)</h2>
         <div class="filters">
           <input id="waTenant" placeholder="Tenant name"/>
           <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
-          <input id="waPeriod" placeholder="Period label (e.g., Nov 2025)"/>
+          <input id="waPeriod" placeholder="Period label (e.g., Dec 2025)"/>
           <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
           <button class="btn" id="waBuild">Build Link</button>
         </div>
         <p class="muted">
-          For real leases, use the WhatsApp button in <b>Rent Roll</b> or the overview “Send All”.
+          For collections, use <b>Dunning</b> (it uses month + outstanding data).
         </p>
         <div id="waResult" class="muted"></div>
       </div>
@@ -481,6 +500,7 @@
       <div class="panel hidden" id="tab-settings">
         <h2>Settings</h2>
         <p class="muted">Saved only in this browser (localStorage).</p>
+
         <div class="filters" style="gap:14px;align-items:center;flex-wrap:wrap">
           <label style="display:flex;gap:8px;align-items:center">API Base
             <input id="apiBase2" placeholder="https://rent-tracker-api-16i0.onrender.com"/>
@@ -491,13 +511,24 @@
           <button class="btn" id="saveSettings">Save</button>
           <button class="btn ghost" id="resetSettings">Reset</button>
         </div>
+
+        <!-- Invoice Actions moved here -->
+        <div class="panel" style="margin-top:14px;">
+          <h3 style="margin:0 0 8px;">Admin Tools — Invoice Actions</h3>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
+                   style="flex:1;min-width:260px;padding:8px;border-radius:10px;border:1px solid var(--bd);background:var(--panel-2);color:var(--text);">
+            <button id="btnMarkSent" class="btn">Mark as sent</button>
+            <button id="btnHealth" class="btn ghost">Auth ping</button>
+          </div>
+          <div id="actionMsg" style="margin-top:8px;font-size:14px;color:var(--muted);"></div>
+        </div>
       </div>
 
     </section>
   </main>
 </div>
 
-<!-- Keep your admin token helper exactly as you had it -->
 <script>
 (function(){
   window.getAdminToken = window.getAdminToken || function(){
@@ -524,22 +555,5 @@
 </script>
 
 <script src="app.js?v=20251230-1"></script>
-
-<!-- Non-breaking helpers: wire buttons that app.js may not bind -->
-<script>
-(function(){
-  const bind = (id, handler) => {
-    const el = document.getElementById(id);
-    if (!el || el.dataset.bound2 === "1") return;
-    el.dataset.bound2 = "1";
-    el.addEventListener("click", handler);
-  };
-
-  // These reload buttons exist in your HTML; this ensures they work even if app.js doesn't bind them.
-  bind("reloadOutstandingByTenant", () => { if (typeof loadBalances === "function") loadBalances(); });
-  bind("reloadDunning", () => { if (typeof loadBalances === "function") loadBalances(); });
-})();
-</script>
-
 </body>
 </html>
