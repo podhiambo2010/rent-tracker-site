@@ -1297,6 +1297,60 @@ function initInvoiceActions() {
   }
 }
 
+<!-- ===== Balances ===== -->
+<div class="panel hidden" id="tab-balances">
+  <div class="bar-flex">
+    <h2>Balances</h2>
+    <button id="reloadBalances" class="btn ghost">Reload</button>
+    <button id="btnExportBalances" class="btn ghost">Export CSV</button>
+  </div>
+
+  <div class="filters">
+    <select id="balancesMonth"></select>
+  </div>
+
+  <div class="table-wrap" style="margin-top:12px;">
+    <table>
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th class="num">Rent due</th>
+          <th class="num">Paid</th>
+          <th class="num">Balance</th>
+          <th class="num">Collection rate</th>
+        </tr>
+      </thead>
+      <tbody id="balancesBody"></tbody>
+    </table>
+  </div>
+  <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
+
+  <div style="margin-top:24px;">
+    <h3>This month totals (all tenants)</h3>
+    <div id="balances-summary">
+      <div class="chip"><strong id="balMonthLabel">—</strong></div>
+      <div class="chip" id="balMonthDue">KES 0 due</div>
+      <div class="chip" id="balMonthCollected">KES 0 collected</div>
+      <div class="chip" id="balMonthBalance">KES 0 balance</div>
+      <div class="chip" id="balMonthRate">0.0% collection rate</div>
+    </div>
+    <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
+  </div>
+
+  <!-- ===== Invoice Actions / Admin (always visible) ===== -->
+  <div class="panel" id="invoiceActions" style="margin:0 0 16px;">
+    <h3 style="margin:0 0 8px;">Invoice Actions</h3>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
+             style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
+      <button id="btnMarkSent" class="btn">Mark as sent</button>
+      <button id="btnHealth" class="btn ghost">Auth ping</button>
+    </div>
+    <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
+  </div>
+
+  <!-- (the rest of your Balances tab continues below as-is: Outstanding by tenant, etc.) -->
+
 /* -------- export helpers -------- */
 function initExports() {
   const btn = $("#btnExportBalances");
