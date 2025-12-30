@@ -1297,7 +1297,7 @@ function initInvoiceActions() {
   }
 }
 
-<!-- ===== Balances ===== -->
+</*-- ===== Balances ===== --*/>
 <div class="panel hidden" id="tab-balances">
   <div class="bar-flex">
     <h2>Balances</h2>
@@ -1337,7 +1337,7 @@ function initInvoiceActions() {
     <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
   </div>
 
-  <!-- ===== Invoice Actions / Admin (always visible) ===== -->
+  /*</div>-- ===== Invoice Actions / Admin (always visible) ===== --*/
   <div class="panel" id="invoiceActions" style="margin:0 0 16px;">
     <h3 style="margin:0 0 8px;">Invoice Actions</h3>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -1349,8 +1349,7 @@ function initInvoiceActions() {
     <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
   </div>
 
-  <!-- (the rest of your Balances tab continues below as-is: Outstanding by tenant, etc.) -->
-
+  
 /* -------- export helpers -------- */
 function initExports() {
   const btn = $("#btnExportBalances");
