@@ -1,4 +1,4 @@
-<!doctype html> 
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -24,9 +24,7 @@
     a{color:#7aa7ff}
 
     th.num,
-    td.num {
-      text-align: right;
-    }
+    td.num { text-align: right; }
 
     /* Shell */
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
@@ -71,9 +69,7 @@
       padding:8px 10px;
       min-width:150px;
     }
-    #collection-summary-month strong{
-      font-size:13px;
-    }
+    #collection-summary-month strong{ font-size:13px; }
 
     /* Balances totals strip */
     #balances-summary {
@@ -160,28 +156,41 @@
     }
 
     /* Section divider (Balances: Outstanding) */
-.section-split{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  opacity:.95;
-}
-.section-split .split-line{
-  height:1px;
-  flex:1;
-  background: var(--bd);
-}
-.section-split .split-label{
-  font-size:12px;
-  letter-spacing:.12em;
-  text-transform:uppercase;
-  color: var(--muted);
-  padding:6px 10px;
-  border:1px solid var(--bd);
-  border-radius:999px;
-  background: rgba(255,255,255,.03);
-}
+    .section-split{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      opacity:.95;
+    }
+    .section-split .split-line{
+      height:1px;
+      flex:1;
+      background: var(--bd);
+    }
+    .section-split .split-label{
+      font-size:12px;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color: var(--muted);
+      padding:6px 10px;
+      border:1px solid var(--bd);
+      border-radius:999px;
+      background: rgba(255,255,255,.03);
+    }
 
+    /* Invoice actions card (inside Balances) */
+    .card{
+      background: var(--panel-2);
+      border: 1px solid var(--bd);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .card h3{margin:0 0 10px;font-size:14px}
+    .card-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .card-row input{
+      flex:1;min-width:260px;padding:8px 10px;border-radius:10px;
+      border:1px solid var(--bd);background:#0f1730;color:#fff;
+    }
   </style>
 </head>
 
@@ -210,10 +219,7 @@
       <a class="tab" data-tab="payments">💸 Payments</a>
       <a class="tab" data-tab="rentroll">🧾 Rent Roll</a>
       <a class="tab" data-tab="balances">📊 Balances</a>
-
-      <!-- ✅ Added (does not affect existing tabs) -->
       <a class="tab" data-tab="dunning">🔔 Dunning</a>
-
       <a class="tab" data-tab="whatsapp">📱 WhatsApp</a>
       <a class="tab" data-tab="settings">⚙️ Settings</a>
     </nav>
@@ -344,88 +350,89 @@
       </div>
 
       <!-- ===== Balances ===== -->
-<div class="panel hidden" id="tab-balances">
-  <div class="bar-flex">
-    <h2>Balances</h2>
-    <button id="reloadBalances" class="btn ghost">Reload</button>
-    <button id="btnExportBalances" class="btn ghost">Export CSV</button>
-  </div>
+      <div class="panel hidden" id="tab-balances">
+        <div class="bar-flex">
+          <h2>Balances</h2>
+          <button id="reloadBalances" class="btn ghost">Reload</button>
+          <button id="btnExportBalances" class="btn ghost">Export CSV</button>
+        </div>
 
-  <div class="filters">
-    <select id="balancesMonth"></select>
-  </div>
+        <div class="filters">
+          <select id="balancesMonth"></select>
+        </div>
 
-  <div class="table-wrap" style="margin-top:12px;">
-    <table>
-      <thead>
-        <tr>
-          <th>Tenant</th>
-          <th class="num">Rent due</th>
-          <th class="num">Paid</th>
-          <th class="num">Balance</th>
-          <th class="num">Collection rate</th>
-        </tr>
-      </thead>
-      <tbody id="balancesBody"></tbody>
-    </table>
-  </div>
-  <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
+        <!-- This month totals -->
+        <div style="margin-top:12px;">
+          <h3 style="margin:0 0 6px 0;font-size:14px;">This month totals (all tenants)</h3>
+          <div id="balances-summary">
+            <div class="chip"><strong id="balMonthLabel">—</strong></div>
+            <div class="chip" id="balMonthDue">KES 0 due</div>
+            <div class="chip" id="balMonthCollected">KES 0 collected</div>
+            <div class="chip" id="balMonthBalance">KES 0 balance</div>
+            <div class="chip" id="balMonthRate">0.0% collection rate</div>
+          </div>
+          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
+        </div>
 
-  <div style="margin-top:24px;">
-    <h3>This month totals (all tenants)</h3>
-    <div id="balances-summary">
-      <div class="chip"><strong id="balMonthLabel">—</strong></div>
-      <div class="chip" id="balMonthDue">KES 0 due</div>
-      <div class="chip" id="balMonthCollected">KES 0 collected</div>
-      <div class="chip" id="balMonthBalance">KES 0 balance</div>
-      <div class="chip" id="balMonthRate">0.0% collection rate</div>
-    </div>
-    <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
-  </div>
+        <!-- Invoice Actions (Admin) -->
+        <div class="card" id="invoiceActions" style="margin-top:14px;">
+          <h3>Invoice Actions</h3>
+          <div class="card-row">
+            <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)">
+            <button id="btnMarkSent" class="btn">Mark as sent</button>
+            <button id="btnHealth" class="btn ghost">Auth ping</button>
+          </div>
+          <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
+        </div>
 
-  <!-- ===== Invoice Actions / Admin (always visible) ===== -->
-  <div class="panel" id="invoiceActions" style="margin:0 0 16px;">
-    <h3 style="margin:0 0 8px;">Invoice Actions</h3>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <input id="invoiceIdInput" type="text" placeholder="invoice_id (UUID)"
-             style="flex:1;min-width:260px;padding:8px;border-radius:8px;border:1px solid #2a345a;background:#0f1730;color:#fff;">
-      <button id="btnMarkSent" class="btn">Mark as sent</button>
-      <button id="btnHealth" class="btn ghost">Auth ping</button>
-    </div>
-    <div id="actionMsg" style="margin-top:8px;font-size:14px;color:#93a4c4;"></div>
-  </div>
+        <!-- Balances by tenant -->
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th class="num">Rent due</th>
+                <th class="num">Paid</th>
+                <th class="num">Balance</th>
+                <th class="num">Collection rate</th>
+              </tr>
+            </thead>
+            <tbody id="balancesBody"></tbody>
+          </table>
+        </div>
+        <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
 
-     <!-- Section divider -->
-      <div class="section-split" style="margin-top:24px;">
-        <div class="split-line"></div>
-        <div class="split-label">Outstanding</div>
-        <div class="split-line"></div>
-      </div>
+        <!-- Section divider -->
+        <div class="section-split" style="margin-top:24px;">
+          <div class="split-line"></div>
+          <div class="split-label">Outstanding</div>
+          <div class="split-line"></div>
+        </div>
 
-      <div class="bar-flex" style="margin-top:12px;">
-        <h3 style="margin:0;">Outstanding by tenant (this month)</h3>
-        <span class="chip" id="outstandingMonthLabel">—</span>
-        <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
-      </div>
+        <div class="bar-flex" style="margin-top:12px;">
+          <h3 style="margin:0;">Outstanding by tenant (this month)</h3>
+          <span class="chip" id="outstandingMonthLabel">—</span>
+          <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
+        </div>
 
-      <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
+        <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
 
-      <div class="table-wrap">
-  <table>
-    <thead>
-      <tr>
-        <th>Tenant</th>
-        <th style="text-align:right">Outstanding</th>
-        <th style="text-align:right">Collection rate</th>
-      </tr>
-    </thead>
-    <tbody id="outstandingBody"></tbody>
-  </table>
-      </div>
-      <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
-  
-      <!-- ===== Dunning (NEW) ===== -->
-      <!-- NOTE: This is added without changing any existing IDs/sections. -->
+        <div class="table-wrap" style="margin-top:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th style="text-align:right">Outstanding</th>
+                <th style="text-align:right">Collection rate</th>
+              </tr>
+            </thead>
+            <tbody id="outstandingBody"></tbody>
+          </table>
+        </div>
+        <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
+      </div><!-- ✅ IMPORTANT: close tab-balances here -->
+
+      <!-- ===== Dunning ===== -->
       <div class="panel hidden" id="tab-dunning">
         <div class="bar-flex">
           <h2>Dunning</h2>
@@ -450,7 +457,7 @@
         <div id="dunningEmpty" class="empty hidden">No dunning items this month 🎉</div>
 
         <p class="muted" style="margin:10px 0 0 0;">
-          Tip: We will wire this tab to the same balances/outstanding data in <b>app.js</b> (no changes needed to your existing Balances tab).
+          This tab uses the same month + balances data (auto-loads when you open it).
         </p>
       </div>
 
@@ -490,6 +497,7 @@
   </main>
 </div>
 
+<!-- Keep your admin token helper exactly as you had it -->
 <script>
 (function(){
   window.getAdminToken = window.getAdminToken || function(){
@@ -515,6 +523,23 @@
 })();
 </script>
 
-<script src="app.js?v=20251228-2"></script>
+<script src="app.js?v=20251230-1"></script>
+
+<!-- Non-breaking helpers: wire buttons that app.js may not bind -->
+<script>
+(function(){
+  const bind = (id, handler) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.bound2 === "1") return;
+    el.dataset.bound2 = "1";
+    el.addEventListener("click", handler);
+  };
+
+  // These reload buttons exist in your HTML; this ensures they work even if app.js doesn't bind them.
+  bind("reloadOutstandingByTenant", () => { if (typeof loadBalances === "function") loadBalances(); });
+  bind("reloadDunning", () => { if (typeof loadBalances === "function") loadBalances(); });
+})();
+</script>
+
 </body>
 </html>
