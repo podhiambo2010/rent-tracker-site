@@ -1,5 +1,9 @@
 /* Rent Tracker Dashboard — app.js
+<<<<<<< Updated upstream
  * Updated: 2025-12-31
+=======
+ * Updated: 2026-01-01
+>>>>>>> Stashed changes
  * Goals:
  * - Overview is summary only
  * - Leases has Apply/Clear and correct columns + ended status color
@@ -84,7 +88,11 @@ function unwrapRows(data) {
   if (!data) return [];
   if (Array.isArray(data)) return data;
 
+<<<<<<< Updated upstream
   // Some endpoints return { ok:true, source:..., data:[...] }
+=======
+  // Some endpoints return { ok:true, source:..., data:[...] } or { ok:true, rows:[...] }
+>>>>>>> Stashed changes
   const maybe = data.rows ?? data.data ?? data.items ?? data.results ?? data.records;
   if (Array.isArray(maybe)) return maybe;
 
@@ -318,7 +326,10 @@ async function loadOverview() {
       data = await apiGet(`/balances/overview?month=${encodeURIComponent(m)}`);
     }
 
+<<<<<<< Updated upstream
     // Some backends wrap in {ok:true, ...}
+=======
+>>>>>>> Stashed changes
     const d = (data && typeof data === "object") ? data : {};
 
     const totalLeases = d.total_leases ?? d.leases ?? d.total ?? d.kpi_total_leases;
@@ -576,14 +587,21 @@ function renderRentRoll() {
   const qP = String($("#rentrollProperty")?.value || "").trim().toLowerCase();
 
   const rows = (state.rentroll || []).filter((r) => {
+<<<<<<< Updated upstream
     const tenant = (r.tenant || r.full_name || r.tenant_name || r.unit_code || "").toLowerCase();
+=======
+    const tenantLike = (r.tenant || r.full_name || r.tenant_name || r.unit_code || "").toLowerCase();
+>>>>>>> Stashed changes
     const prop = (r.property || r.property_name || "").toLowerCase();
-    return (!qT || tenant.includes(qT)) && (!qP || prop.includes(qP));
+    return (!qT || tenantLike.includes(qT)) && (!qP || prop.includes(qP));
   });
 
   setText("#rentrollCount", rows.length);
 
+<<<<<<< Updated upstream
   // Map totals robustly to the rentroll view you showed (subtotal_rent, total_due, paid_total, invoice_balance, lease_running_balance, credits)
+=======
+>>>>>>> Stashed changes
   const dueTotal = sum(rows, (r) => pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0));
   const paidTotal = sum(rows, (r) => pickNum(r.paid_total, r.paid, r.collected_amt, r.paid_amt, 0));
   const balTotal = sum(rows, (r) => pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, r.month_delta, 0));
@@ -605,6 +623,7 @@ function renderRentRoll() {
     .map((r) => {
       const property = r.property || r.property_name || "—";
       const unit = r.unit || r.unit_code || "—";
+<<<<<<< Updated upstream
       const tenant = r.tenant || r.full_name || r.tenant_name || "—";
 
       // Prefer explicit period label if provided
@@ -621,11 +640,30 @@ function renderRentRoll() {
       const status =
         r.status ||
         (bal > 0 ? "due" : "ok");
+=======
+
+      // ✅ IMPORTANT: rentroll often has no tenant name; fall back to unit_code so UI isn't blank
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+
+      const period =
+        r.period ||
+        r.period_label ||
+        (r.period_start && r.period_end ? `${String(r.period_start).slice(0, 10)} → ${String(r.period_end).slice(0, 10)}` : m);
+
+      const rent = pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0);
+      const late = pickNum(r.late_fees, r.late_fee, 0);
+      const bal = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
+
+      const status = r.status || (bal > 0 ? "due" : "ok");
+>>>>>>> Stashed changes
 
       const leaseId = r.lease_id || r.leaseId || "";
       const invoiceId = r.invoice_id || r.invoiceId || "";
 
+<<<<<<< Updated upstream
       // WA redirect: keep your existing backend redirect behavior
+=======
+>>>>>>> Stashed changes
       const waUrl =
         r.wa_url ||
         (leaseId ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(m)}` : "") ||
@@ -711,7 +749,10 @@ function renderBalances() {
   }
   hide(empty);
 
+<<<<<<< Updated upstream
   // balances/by_unit typically returns: unit_code, total_due, paid_total, balance (+ maybe subtotal_rent/late_fees/credits)
+=======
+>>>>>>> Stashed changes
   const dueTotal = sum(rows, (r) => pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0));
   const paidTotal = sum(rows, (r) => pickNum(r.paid_total, r.paid, r.collected_amt, 0));
   const balTotal = sum(rows, (r) => pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0));
@@ -724,7 +765,10 @@ function renderBalances() {
 
   body.innerHTML = rows
     .map((r) => {
+<<<<<<< Updated upstream
       // If tenant name not available (by_unit), show unit code (prevents "—" everywhere)
+=======
+>>>>>>> Stashed changes
       const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
       const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
       const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
@@ -838,9 +882,16 @@ function renderDunning() {
 
   const rows = (state.rentroll || [])
     .map((r) => {
+<<<<<<< Updated upstream
       const tenant = pickStr(r.tenant, r.full_name, r.tenant_name) || "—";
       const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
 
+=======
+      // ✅ IMPORTANT: rentroll often has no tenant name; fall back to unit_code
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+
+      const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
+>>>>>>> Stashed changes
       const due = pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0);
       const paid = pickNum(r.paid_total, r.paid, r.collected_amt, r.paid_amt, 0);
       const cr = due ? (paid / due) * 100 : 0;
@@ -898,7 +949,11 @@ function getSelectedDunningRows() {
 
   const all = (state.rentroll || [])
     .map((r) => {
+<<<<<<< Updated upstream
       const tenant = pickStr(r.tenant, r.full_name, r.tenant_name) || "—";
+=======
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+>>>>>>> Stashed changes
       const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
       const invoiceId = r.invoice_id || r.invoiceId || "";
       const leaseId = r.lease_id || r.leaseId || "";
@@ -923,7 +978,12 @@ function buildDunningLinks() {
     return;
   }
 
+<<<<<<< Updated upstream
   const period = monthLabel(dunningMonth());
+=======
+  const dm = dunningMonth();
+  const period = monthLabel(dm);
+>>>>>>> Stashed changes
 
   const items = selected.map((x) => {
     const txt =
@@ -933,7 +993,11 @@ function buildDunningLinks() {
 
     const waRedirect =
       x.leaseId
+<<<<<<< Updated upstream
         ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dunningMonth())}`
+=======
+        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
+>>>>>>> Stashed changes
         : x.invoiceId
         ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
         : "";
