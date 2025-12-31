@@ -1,10 +1,10 @@
 /* Rent Tracker Dashboard — app.js
- * Updated: 2025-12-30
+ * Updated: 2025-12-31
  * Goals:
  * - Overview is summary only
  * - Leases has Apply/Clear and correct columns + ended status color
- * - Balances is analytics only
- * - Dunning is action center (build WA links + mark invoices sent)
+ * - Balances is analytics only (supports balances/by_unit shape)
+ * - Dunning is action center (uses rentroll rows so invoice_id/lease_id exist)
  * - Invoice Actions moved to Settings tab (admin tools)
  */
 
@@ -78,6 +78,40 @@ function normalizePhoneKE(p) {
   return s;
 }
 
+/* ------------------------- Response shape helpers ------------------------- */
+function unwrapRows(data) {
+  // Accept: array, {rows:[]}, {data:[]}, {items:[]}, {ok:true, rows/data/items}
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+
+  // Some endpoints return { ok:true, source:..., data:[...] }
+  const maybe = data.rows ?? data.data ?? data.items ?? data.results ?? data.records;
+  if (Array.isArray(maybe)) return maybe;
+
+  return [];
+}
+
+function pickNum(...vals) {
+  for (const v of vals) {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function pickStr(...vals) {
+  for (const v of vals) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
+}
+
+function currentMonthFor(sel) {
+  // prefer select, else global state.month
+  return $(sel)?.value || state.month;
+}
+
 /* ------------------------- State ------------------------- */
 const state = {
   apiBase: "",
@@ -99,6 +133,7 @@ async function apiGet(path) {
   if (!base) throw new Error("API base is empty");
   const url = base + path;
   const res = await fetch(url);
+
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`GET ${path} -> HTTP ${res.status} ${body}`);
@@ -276,7 +311,6 @@ function setSelectValue(sel, value) {
 async function loadOverview() {
   try {
     const m = state.month;
-    // Prefer /dashboard/overview but fallback to /balances/overview
     let data;
     try {
       data = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
@@ -284,22 +318,23 @@ async function loadOverview() {
       data = await apiGet(`/balances/overview?month=${encodeURIComponent(m)}`);
     }
 
-    // Robust mapping (supports different backend shapes)
-    const totalLeases = data.total_leases ?? data.leases ?? data.total ?? data.kpi_total_leases;
-    const openInvoices = data.open_invoices ?? data.open ?? data.kpi_open_invoices;
-    const paymentsMonth = data.payments ?? data.collected_amt ?? data.kpi_payments;
-    const balanceDue = data.balance_due ?? data.net_balance ?? data.closing_balance ?? data.kpi_balance_due;
+    // Some backends wrap in {ok:true, ...}
+    const d = (data && typeof data === "object") ? data : {};
+
+    const totalLeases = d.total_leases ?? d.leases ?? d.total ?? d.kpi_total_leases;
+    const openInvoices = d.open_invoices ?? d.open ?? d.kpi_open_invoices;
+    const paymentsMonth = d.payments ?? d.collected_amt ?? d.kpi_payments;
+    const balanceDue = d.balance_due ?? d.net_balance ?? d.closing_balance ?? d.kpi_balance_due;
 
     setText("#kpiLeases", totalLeases ?? "—");
     setText("#kpiOpen", openInvoices ?? "—");
     setText("#kpiPayments", paymentsMonth != null ? fmtKes(paymentsMonth) : "—");
     setText("#kpiBalance", balanceDue != null ? fmtKes(balanceDue) : "—");
 
-    // Monthly summary (use same fields if available)
-    const due = data.invoiced_amt ?? data.due ?? data.month_due ?? data.total_due;
-    const collected = data.collected_amt ?? data.collected ?? data.month_collected ?? data.total_collected;
-    const closing = data.closing_balance ?? data.balance_due ?? data.balance ?? data.total_balance;
-    const rate = data.collection_rate ?? (due ? (Number(collected || 0) / Number(due || 1)) * 100 : 0);
+    const due = d.invoiced_amt ?? d.due ?? d.month_due ?? d.total_due;
+    const collected = d.collected_amt ?? d.collected ?? d.month_collected ?? d.total_collected;
+    const closing = d.closing_balance ?? d.balance_due ?? d.balance ?? d.total_balance;
+    const rate = d.collection_rate ?? (due ? (Number(collected || 0) / Number(due || 1)) * 100 : 0);
 
     setText("#summaryMonthLabel", monthLabel(state.month));
     setText("#summaryMonthDue", `Invoiced (month) ${fmtKes(due)}`);
@@ -338,7 +373,7 @@ async function loadLeases(force = false) {
   try {
     if (!force && state.leases.length) return;
     const data = await apiGet("/leases");
-    state.leases = Array.isArray(data) ? data : (data.rows || data.items || []);
+    state.leases = unwrapRows(data);
     renderLeases();
   } catch (e) {
     console.warn("loadLeases failed:", e);
@@ -351,7 +386,8 @@ function leaseStatusClass(status) {
   const s = String(status || "").toLowerCase();
   if (!s) return "status";
   if (s.includes("active")) return "status ok";
-  if (s.includes("ended") || s.includes("terminated") || s.includes("inactive") || s.includes("closed")) return "status ended";
+  if (s.includes("ended") || s.includes("terminated") || s.includes("inactive") || s.includes("closed"))
+    return "status ended";
   return "status";
 }
 
@@ -377,18 +413,19 @@ function renderLeases() {
   }
   hide(empty);
 
-  body.innerHTML = rows.map((r) => {
-    const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-    const unit = r.unit || r.unit_code || r.unit_name || "—";
-    const rent = r.rent ?? r.rent_amount ?? r.monthly_rent ?? null;
-    const cycle = r.cycle || r.billing_cycle || r.rent_cycle || "—";
-    const dueDay = r.due_day ?? r.dueDay ?? r.due_date ?? "—";
-    const status = r.status || r.lease_status || "—";
-    const phone = r.phone || r.msisdn || r.whatsapp_phone || "";
+  body.innerHTML = rows
+    .map((r) => {
+      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
+      const unit = r.unit || r.unit_code || r.unit_name || "—";
+      const rent = r.rent ?? r.rent_amount ?? r.monthly_rent ?? null;
+      const cycle = r.cycle || r.billing_cycle || r.rent_cycle || "—";
+      const dueDay = r.due_day ?? r.dueDay ?? r.due_date ?? "—";
+      const status = r.status || r.lease_status || "—";
+      const phone = r.phone || r.msisdn || r.whatsapp_phone || "";
 
-    const waLink = phone ? buildWhatsAppLink(normalizePhoneKE(phone), `Hello ${tenant},`) : "";
+      const waLink = phone ? buildWhatsAppLink(normalizePhoneKE(phone), `Hello ${tenant},`) : "";
 
-    return `
+      return `
       <tr>
         <td>${escapeHtml(tenant)}</td>
         <td>${escapeHtml(unit)}</td>
@@ -400,7 +437,8 @@ function renderLeases() {
           ${waLink ? `<a href="${waLink}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}
         </td>
       </tr>`;
-  }).join("");
+    })
+    .join("");
 }
 
 /* ------------------------- Payments ------------------------- */
@@ -408,17 +446,18 @@ function initPayments() {
   $("#applyPayments")?.addEventListener("click", () => loadPayments(true));
   $("#clearPayments")?.addEventListener("click", () => {
     setSelectValue("#paymentsMonth", state.month);
-    const t = $("#paymentsTenant"); if (t) t.value = "";
-    const s = $("#paymentsStatus"); if (s) s.value = "";
+    const t = $("#paymentsTenant");
+    if (t) t.value = "";
+    const s = $("#paymentsStatus");
+    if (s) s.value = "";
     loadPayments(true);
   });
 }
 
 async function loadPayments(force = false) {
   try {
-    const m = $("#paymentsMonth")?.value || state.month;
+    const m = currentMonthFor("#paymentsMonth");
 
-    // Try multiple known endpoints to avoid breakage across backend iterations.
     let data;
     try {
       data = await apiGet(`/payments?month=${encodeURIComponent(m)}`);
@@ -426,8 +465,7 @@ async function loadPayments(force = false) {
       data = await apiGet(`/dashboard/payments?month=${encodeURIComponent(m)}`);
     }
 
-    const rows = Array.isArray(data) ? data : (data.rows || data.items || []);
-    state.payments = rows;
+    state.payments = unwrapRows(data);
     renderPayments();
   } catch (e) {
     console.warn("loadPayments failed:", e);
@@ -452,14 +490,13 @@ function renderPayments() {
 
     const st = String(r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated") || "").toLowerCase();
     const okStatus = !statusF || st.includes(statusF);
-
     const okQ = !q || combined.includes(q);
     return okStatus && okQ;
   });
 
   setText("#paymentsCount", rows.length);
   setText("#paymentsCountChip", rows.length);
-  setText("#paymentsTotalChip", fmtKes(sum(rows, (r) => r.amount ?? r.paid_amount ?? 0)));
+  setText("#paymentsTotalChip", fmtKes(sum(rows, (r) => pickNum(r.amount, r.paid_amount, r.paid, 0))));
 
   if (!rows.length) {
     body.innerHTML = "";
@@ -468,18 +505,22 @@ function renderPayments() {
   }
   hide(empty);
 
-  body.innerHTML = rows.map((r) => {
-    const date = r.paid_at || r.date || r.created_at || "—";
-    const tenant =
-      r.tenant || r.full_name || r.tenant_name ||
-      r.payer_name || r.payer ||
-      (r.unit_code ? `Unit ${r.unit_code}` : "—");
+  body.innerHTML = rows
+    .map((r) => {
+      const date = r.paid_at || r.date || r.created_at || "—";
+      const tenant =
+        r.tenant ||
+        r.full_name ||
+        r.tenant_name ||
+        r.payer_name ||
+        r.payer ||
+        (r.unit_code ? `Unit ${r.unit_code}` : "—");
 
-    const method = r.method || r.channel || "—";
-    const st = r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated");
-    const amt = r.amount ?? r.paid_amount ?? 0;
+      const method = r.method || r.channel || "—";
+      const st = r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated");
+      const amt = pickNum(r.amount, r.paid_amount, r.paid, 0);
 
-    return `
+      return `
       <tr>
         <td>${escapeHtml(String(date).slice(0, 10))}</td>
         <td>${escapeHtml(tenant)}</td>
@@ -487,7 +528,8 @@ function renderPayments() {
         <td class="muted">${escapeHtml(st)}</td>
         <td class="num">${fmtKes(amt)}</td>
       </tr>`;
-  }).join("");
+    })
+    .join("");
 }
 
 /* ------------------------- Rent Roll ------------------------- */
@@ -495,15 +537,17 @@ function initRentRoll() {
   $("#applyRentroll")?.addEventListener("click", () => loadRentRoll(true));
   $("#clearRentroll")?.addEventListener("click", () => {
     setSelectValue("#rentrollMonth", state.month);
-    const t = $("#rentrollTenant"); if (t) t.value = "";
-    const p = $("#rentrollProperty"); if (p) p.value = "";
+    const t = $("#rentrollTenant");
+    if (t) t.value = "";
+    const p = $("#rentrollProperty");
+    if (p) p.value = "";
     loadRentRoll(true);
   });
 }
 
 async function loadRentRoll(force = false) {
   try {
-    const m = $("#rentrollMonth")?.value || state.month;
+    const m = currentMonthFor("#rentrollMonth");
 
     let data;
     try {
@@ -512,8 +556,7 @@ async function loadRentRoll(force = false) {
       data = await apiGet(`/dashboard/rentroll?month=${encodeURIComponent(m)}`);
     }
 
-    const rows = Array.isArray(data) ? data : (data.rows || data.items || []);
-    state.rentroll = rows;
+    state.rentroll = unwrapRows(data);
     renderRentRoll();
   } catch (e) {
     console.warn("loadRentRoll failed:", e);
@@ -527,21 +570,24 @@ function renderRentRoll() {
   const empty = $("#rentrollEmpty");
   if (!body) return;
 
+  const m = currentMonthFor("#rentrollMonth");
+
   const qT = String($("#rentrollTenant")?.value || "").trim().toLowerCase();
   const qP = String($("#rentrollProperty")?.value || "").trim().toLowerCase();
 
   const rows = (state.rentroll || []).filter((r) => {
-    const tenant = (r.tenant || r.full_name || r.tenant_name || "").toLowerCase();
+    const tenant = (r.tenant || r.full_name || r.tenant_name || r.unit_code || "").toLowerCase();
     const prop = (r.property || r.property_name || "").toLowerCase();
     return (!qT || tenant.includes(qT)) && (!qP || prop.includes(qP));
   });
 
   setText("#rentrollCount", rows.length);
 
-  const dueTotal = sum(rows, (r) => r.rent_due ?? r.rent ?? r.invoiced_amt ?? 0);
-  const paidTotal = sum(rows, (r) => r.paid ?? r.collected_amt ?? r.paid_amt ?? 0);
-  const balTotal = sum(rows, (r) => r.balance ?? r.closing_balance ?? r.month_delta ?? 0);
-  const creditTotal = sum(rows, (r) => r.credit ?? r.credit_amt ?? 0);
+  // Map totals robustly to the rentroll view you showed (subtotal_rent, total_due, paid_total, invoice_balance, lease_running_balance, credits)
+  const dueTotal = sum(rows, (r) => pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0));
+  const paidTotal = sum(rows, (r) => pickNum(r.paid_total, r.paid, r.collected_amt, r.paid_amt, 0));
+  const balTotal = sum(rows, (r) => pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, r.month_delta, 0));
+  const creditTotal = sum(rows, (r) => pickNum(r.credits, r.credit, r.credit_amt, 0));
 
   setText("#rentrollDueChip", `${fmtKes(dueTotal)} due`);
   setText("#rentrollPaidChip", `${fmtKes(paidTotal)} paid`);
@@ -555,26 +601,37 @@ function renderRentRoll() {
   }
   hide(empty);
 
-  body.innerHTML = rows.map((r) => {
-    const property = r.property || r.property_name || "—";
-    const unit = r.unit || r.unit_code || "—";
-    const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-    const period = r.period || r.month || state.month;
-    const rent = r.rent ?? r.rent_due ?? r.invoiced_amt ?? 0;
-    const late = r.late_fees ?? r.late_fee ?? 0;
-    const status = r.status || (Number(r.balance ?? 0) > 0 ? "due" : "ok");
-    const bal = r.balance ?? r.closing_balance ?? 0;
+  body.innerHTML = rows
+    .map((r) => {
+      const property = r.property || r.property_name || "—";
+      const unit = r.unit || r.unit_code || "—";
+      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
 
-    const leaseId = r.lease_id || r.leaseId || "";
-    const invoiceId = r.invoice_id || r.invoiceId || "";
+      // Prefer explicit period label if provided
+      const period =
+        r.period ||
+        r.period_label ||
+        (r.period_start && r.period_end ? `${String(r.period_start).slice(0, 10)} → ${String(r.period_end).slice(0, 10)}` : m);
 
-    // Best-effort WA redirect (do not break existing)
-    const waUrl =
-      r.wa_url ||
-      (leaseId ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(state.month)}` : "") ||
-      (invoiceId ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(invoiceId)}` : "");
+      const rent = pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0);
+      const late = pickNum(r.late_fees, r.late_fee, 0);
 
-    return `
+      const bal = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
+
+      const status =
+        r.status ||
+        (bal > 0 ? "due" : "ok");
+
+      const leaseId = r.lease_id || r.leaseId || "";
+      const invoiceId = r.invoice_id || r.invoiceId || "";
+
+      // WA redirect: keep your existing backend redirect behavior
+      const waUrl =
+        r.wa_url ||
+        (leaseId ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(m)}` : "") ||
+        (invoiceId ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(invoiceId)}` : "");
+
+      return `
       <tr>
         <td>${escapeHtml(property)}</td>
         <td>${escapeHtml(unit)}</td>
@@ -588,7 +645,8 @@ function renderRentRoll() {
           ${waUrl ? `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}
         </td>
       </tr>`;
-  }).join("");
+    })
+    .join("");
 }
 
 /* ------------------------- Balances + Outstanding ------------------------- */
@@ -597,13 +655,12 @@ function initBalances() {
   $("#balancesMonth")?.addEventListener("change", () => loadBalances(true));
 
   $("#reloadOutstandingByTenant")?.addEventListener("click", () => {
-    // outstanding is derived from balances; re-render is enough
     renderOutstandingFromBalances();
   });
 
   $("#btnExportBalances")?.addEventListener("click", async () => {
     try {
-      const m = $("#balancesMonth")?.value || state.month;
+      const m = currentMonthFor("#balancesMonth");
       const base = apiBase();
       if (!base) return alert("Set API base first.");
 
@@ -617,11 +674,10 @@ function initBalances() {
 
 async function loadBalances(force = false) {
   try {
-    const m = $("#balancesMonth")?.value || state.month;
+    const m = currentMonthFor("#balancesMonth");
 
     const data = await apiGet(`/balances/by_unit?month=${encodeURIComponent(m)}`);
-    const rows = Array.isArray(data) ? data : (data.rows || data.items || []);
-    state.balances = rows;
+    state.balances = unwrapRows(data);
 
     renderBalances();
     renderOutstandingFromBalances();
@@ -647,7 +703,6 @@ function renderBalances() {
   if (!rows.length) {
     body.innerHTML = "";
     show(empty);
-    // reset totals
     setText("#balMonthDue", "KES 0 due");
     setText("#balMonthCollected", "KES 0 collected");
     setText("#balMonthBalance", "KES 0 closing balance");
@@ -656,9 +711,10 @@ function renderBalances() {
   }
   hide(empty);
 
-  const dueTotal = sum(rows, (r) => r.rent_due ?? r.invoiced_amt ?? 0);
-  const paidTotal = sum(rows, (r) => r.paid ?? r.collected_amt ?? 0);
-  const balTotal = sum(rows, (r) => r.balance ?? r.closing_balance ?? 0);
+  // balances/by_unit typically returns: unit_code, total_due, paid_total, balance (+ maybe subtotal_rent/late_fees/credits)
+  const dueTotal = sum(rows, (r) => pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0));
+  const paidTotal = sum(rows, (r) => pickNum(r.paid_total, r.paid, r.collected_amt, 0));
+  const balTotal = sum(rows, (r) => pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0));
   const rate = dueTotal ? (paidTotal / dueTotal) * 100 : 0;
 
   setText("#balMonthDue", `${fmtKes(dueTotal)} due`);
@@ -666,14 +722,16 @@ function renderBalances() {
   setText("#balMonthBalance", `${fmtKes(balTotal)} closing balance`);
   setText("#balMonthRate", `${fmtPct(rate)} collection rate`);
 
-  body.innerHTML = rows.map((r) => {
-    const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-    const due = r.rent_due ?? r.invoiced_amt ?? 0;
-    const paid = r.paid ?? r.collected_amt ?? 0;
-    const bal = r.balance ?? r.closing_balance ?? 0;
-    const cr = r.collection_rate ?? (due ? (Number(paid) / Number(due)) * 100 : 0);
+  body.innerHTML = rows
+    .map((r) => {
+      // If tenant name not available (by_unit), show unit code (prevents "—" everywhere)
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
+      const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
+      const bal = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
+      const cr = r.collection_rate ?? (due ? (paid / due) * 100 : 0);
 
-    return `
+      return `
       <tr>
         <td>${escapeHtml(tenant)}</td>
         <td class="num">${fmtKes(due)}</td>
@@ -681,7 +739,8 @@ function renderBalances() {
         <td class="num">${fmtKes(bal)}</td>
         <td class="num">${fmtPct(cr)}</td>
       </tr>`;
-  }).join("");
+    })
+    .join("");
 }
 
 function renderOutstandingFromBalances() {
@@ -691,10 +750,10 @@ function renderOutstandingFromBalances() {
 
   const rows = (state.balances || [])
     .map((r) => {
-      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-      const outstanding = Number(r.balance ?? r.closing_balance ?? 0) || 0;
-      const due = Number(r.rent_due ?? r.invoiced_amt ?? 0) || 0;
-      const paid = Number(r.paid ?? r.collected_amt ?? 0) || 0;
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const outstanding = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
+      const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
+      const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
       const cr = r.collection_rate ?? (due ? (paid / due) * 100 : 0);
       return { tenant, outstanding, cr, raw: r };
     })
@@ -708,13 +767,17 @@ function renderOutstandingFromBalances() {
   }
   hide(empty);
 
-  body.innerHTML = rows.map((x) => `
+  body.innerHTML = rows
+    .map(
+      (x) => `
     <tr>
       <td>${escapeHtml(x.tenant)}</td>
       <td class="num">${fmtKes(x.outstanding)}</td>
       <td class="num">${fmtPct(x.cr)}</td>
     </tr>
-  `).join("");
+  `
+    )
+    .join("");
 }
 
 /* ------------------------- Dunning (Action Center) ------------------------- */
@@ -723,7 +786,7 @@ function initDunning() {
 
   $("#dunningSelectAll")?.addEventListener("change", (e) => {
     const checked = !!e.target.checked;
-    document.querySelectorAll('input.dunning-check').forEach((cb) => {
+    document.querySelectorAll("input.dunning-check").forEach((cb) => {
       cb.checked = checked;
     });
   });
@@ -732,18 +795,26 @@ function initDunning() {
   $("#btnDunningMarkSent")?.addEventListener("click", () => markDunningSelectedAsSent());
 }
 
+function dunningMonth() {
+  // No dedicated selector, so follow balances month if present, else global state
+  return currentMonthFor("#balancesMonth") || state.month;
+}
+
 async function loadDunning(force = false) {
-  // Dunning is derived from balances to keep it consistent with the Balances tab.
+  // Dunning must have invoice_id/lease_id => derive from rentroll (not balances/by_unit)
   try {
-    // Ensure balances exist for current month
-    if (force || !state.balances.length) {
-      await loadBalances(true);
+    const m = dunningMonth();
+
+    // Ensure rentroll month matches dunning month
+    setSelectValue("#rentrollMonth", m);
+
+    if (force || !state.rentroll.length) {
+      await loadRentRoll(true);
     }
     renderDunning();
   } catch (e) {
     console.warn("loadDunning failed:", e);
-    state.balances = [];
-    renderDunning();
+    renderDunning(); // will show empty
   }
 }
 
@@ -758,27 +829,27 @@ function renderDunning() {
   if (links) hide(links);
   if (msg) msg.textContent = "";
 
-  setText("#dunningMonthLabel", monthLabel(state.month));
+  const m = dunningMonth();
+
+  setText("#dunningMonthLabel", monthLabel(m));
   setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
 
   if (!body) return;
 
-  const rows = (state.balances || [])
+  const rows = (state.rentroll || [])
     .map((r) => {
-      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-      const outstanding = Number(r.balance ?? r.closing_balance ?? 0) || 0;
-      const due = Number(r.rent_due ?? r.invoiced_amt ?? 0) || 0;
-      const paid = Number(r.paid ?? r.collected_amt ?? 0) || 0;
-      const cr = r.collection_rate ?? (due ? (paid / due) * 100 : 0);
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name) || "—";
+      const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
 
-      // best-effort IDs for actions
+      const due = pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0);
+      const paid = pickNum(r.paid_total, r.paid, r.collected_amt, r.paid_amt, 0);
+      const cr = due ? (paid / due) * 100 : 0;
+
       const invoiceId = r.invoice_id || r.invoiceId || "";
       const leaseId = r.lease_id || r.leaseId || "";
-
-      // best-effort phone
       const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
 
-      return { tenant, outstanding, cr, invoiceId, leaseId, phone };
+      return { tenant, outstanding, cr, invoiceId, leaseId, phone, raw: r };
     })
     .filter((x) => x.outstanding > 0.0001)
     .sort((a, b) => b.outstanding - a.outstanding);
@@ -790,25 +861,25 @@ function renderDunning() {
   }
   hide(empty);
 
-  body.innerHTML = rows.map((x, i) => {
-    // WhatsApp direct message (ad-hoc) if no backend redirect info exists
-    const period = monthLabel(state.month);
-    const txt =
-      `Hello ${x.tenant},\n` +
-      `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
-      `Kindly pay at your earliest convenience. Thank you.`;
+  body.innerHTML = rows
+    .map((x, i) => {
+      const period = monthLabel(m);
+      const txt =
+        `Hello ${x.tenant},\n` +
+        `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
+        `Kindly pay at your earliest convenience. Thank you.`;
 
-    // Prefer backend WA redirect if we have lease_id or invoice_id (so late fees etc remain consistent)
-    const waRedirect =
-      x.leaseId ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(state.month)}` :
-      x.invoiceId ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}` :
-      "";
+      const waRedirect =
+        x.leaseId
+          ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(m)}`
+          : x.invoiceId
+          ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
+          : "";
 
-    const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
+      const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
+      const waHref = waRedirect || waDirect;
 
-    const waHref = waRedirect || waDirect;
-
-    return `
+      return `
       <tr>
         <td><input class="dunning-check" type="checkbox" data-idx="${i}" /></td>
         <td>${escapeHtml(x.tenant)}</td>
@@ -817,19 +888,22 @@ function renderDunning() {
         <td>${waHref ? `<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}</td>
         <td class="muted">${x.invoiceId ? escapeHtml(x.invoiceId) : "—"}</td>
       </tr>`;
-  }).join("");
+    })
+    .join("");
 }
 
 function getSelectedDunningRows() {
   const checks = Array.from(document.querySelectorAll("input.dunning-check:checked"));
-  const all = (state.balances || [])
+  const m = dunningMonth();
+
+  const all = (state.rentroll || [])
     .map((r) => {
-      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-      const outstanding = Number(r.balance ?? r.closing_balance ?? 0) || 0;
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name) || "—";
+      const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
       const invoiceId = r.invoice_id || r.invoiceId || "";
       const leaseId = r.lease_id || r.leaseId || "";
       const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
-      return { tenant, outstanding, invoiceId, leaseId, phone, raw: r };
+      return { tenant, outstanding, invoiceId, leaseId, phone, raw: r, month: m };
     })
     .filter((x) => x.outstanding > 0.0001)
     .sort((a, b) => b.outstanding - a.outstanding);
@@ -841,7 +915,6 @@ function buildDunningLinks() {
   const msg = $("#dunningMsg");
   const links = $("#dunningLinks");
   const linksBody = $("#dunningLinksBody");
-
   if (!linksBody || !links || !msg) return;
 
   const selected = getSelectedDunningRows();
@@ -850,7 +923,7 @@ function buildDunningLinks() {
     return;
   }
 
-  const period = monthLabel(state.month);
+  const period = monthLabel(dunningMonth());
 
   const items = selected.map((x) => {
     const txt =
@@ -859,12 +932,13 @@ function buildDunningLinks() {
       `Kindly pay at your earliest convenience. Thank you.`;
 
     const waRedirect =
-      x.leaseId ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(state.month)}` :
-      x.invoiceId ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}` :
-      "";
+      x.leaseId
+        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dunningMonth())}`
+        : x.invoiceId
+        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
+        : "";
 
     const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
-
     const href = waRedirect || waDirect;
 
     return href
@@ -896,11 +970,9 @@ async function markDunningSelectedAsSent() {
   msg.textContent = "Marking selected invoices as sent…";
 
   try {
-    // Primary endpoint
     try {
       await apiPost("/invoices/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
     } catch (_) {
-      // Fallback endpoint
       await apiPost("/admin/invoices/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
     }
     msg.textContent = `Marked ${invoiceIds.length} invoice(s) as sent ✅`;
@@ -954,7 +1026,7 @@ function initSettings() {
     if (v) {
       localStorage.setItem("api_base", v);
       state.apiBase = v;
-      $("#apiBase").value = v;
+      if ($("#apiBase")) $("#apiBase").value = v;
     }
     const t = (admin?.value || "").trim();
     localStorage.setItem("admin_token", t);
@@ -978,7 +1050,9 @@ function initInvoiceActions() {
   const input = $("#invoiceIdInput");
   const msg = $("#actionMsg");
 
-  const setMsg = (t) => { if (msg) msg.textContent = t; };
+  const setMsg = (t) => {
+    if (msg) msg.textContent = t;
+  };
 
   if (healthBtn) {
     healthBtn.addEventListener("click", async () => {
@@ -1009,11 +1083,9 @@ function initInvoiceActions() {
       if (!invoice_id) return setMsg("Enter invoice_id first.");
       setMsg("Marking invoice as sent…");
       try {
-        // Primary endpoint
         try {
           await apiPost("/invoices/mark_sent", { invoice_ids: [invoice_id] }, { admin: true });
         } catch (_) {
-          // Fallback endpoint
           await apiPost("/admin/invoices/mark_sent", { invoice_ids: [invoice_id] }, { admin: true });
         }
         setMsg("Marked as sent ✅");
@@ -1045,4 +1117,5 @@ document.addEventListener("DOMContentLoaded", () => {
   loadPayments(true);
   loadRentRoll(true);
   loadBalances(true);
+  loadDunning(true);
 });
