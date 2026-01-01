@@ -318,101 +318,157 @@ function setSelectValue(sel, value) {
   if (el) el.value = value || "";
 }
 
+function prevMonth(ym) {
+  // ym: YYYY-MM -> previous month YYYY-MM
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return "";
+  let [y, m] = ym.split("-").map(Number);
+  m -= 1;
+  if (m <= 0) { m = 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
+function hideCollectionsMovedNotice() {
+  // If this notice exists in HTML, hide it so it doesn't confuse users.
+  const root = document.querySelector("#tab-overview") || document;
+  const nodes = root.querySelectorAll("div, p, span, small, em, strong");
+  for (const el of nodes) {
+    const t = (el.textContent || "").trim();
+    if (t.includes("Collections actions moved to") && t.includes("Dunning")) {
+      el.classList.add("hidden");
+      // also hide parent if it's clearly a standalone notice row
+      if (el.parentElement && (el.parentElement.textContent || "").trim() === t) {
+        el.parentElement.classList.add("hidden");
+      }
+    }
+  }
+}
+
 /* ------------------------- Overview ------------------------- */
 async function loadOverview() {
   const m = state.month;
   setText("#summaryMonthLabel", monthLabel(m));
 
-  // Defaults
+  // Hide the confusing notice (if present)
+  hideCollectionsMovedNotice();
+
+  // Default placeholders
   setText("#kpiLeases", "—");
   setText("#kpiOpen", "—");
   setText("#kpiPayments", "—");
   setText("#kpiBalance", "—");
 
-  // Prefer invoices summary (month BF/CF + month-only collection rate)
+  // ---------- 1) OPEN INVOICES (month): compute from rentroll (source of truth) ----------
   try {
-    const inv = await apiGet(`/invoices/summary?month=${encodeURIComponent(m)}`);
-    const d = inv && typeof inv === "object" ? inv : {};
+    const rr = await apiGet(`/rentroll?month=${encodeURIComponent(m)}`);
+    const rrRows = unwrapRows(rr);
 
-    const opening = pickNum(d.opening_balance_bf, d.opening_balance, 0);
+    // Count invoices not fully paid for this month
+    // Prefer invoice_balance (month invoice), fallback to lease_running_balance if invoice_balance missing
+    const openCount = rrRows.filter((r) => {
+      const invBal = pickNum(r.invoice_balance, NaN);
+      if (Number.isFinite(invBal)) return invBal > 0.0001;
+
+      const lr = pickNum(r.lease_running_balance, 0);
+      const due = pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.invoiced_amt, 0);
+      return due > 0.0001 && lr > 0.0001;
+    }).length;
+
+    setText("#kpiOpen", openCount);
+  } catch (e) {
+    console.warn("Open invoices rentroll compute failed:", e);
+  }
+
+  // ---------- 2) TOTAL LEASES: best effort ----------
+  try {
+    // if leases already loaded, use them
+    if (state.leases?.length) {
+      setText("#kpiLeases", state.leases.length);
+    } else {
+      // try dashboard overview quick KPI
+      const ov = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
+      const o = ov && typeof ov === "object" ? ov : {};
+      const totalLeases = o.total_leases ?? o.leases ?? o.total ?? o.kpi_total_leases;
+      if (totalLeases != null) setText("#kpiLeases", totalLeases);
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  // ---------- 3) FINANCIAL SUMMARY: use invoices/summary (best) ----------
+  try {
+    const cur = await apiGet(`/invoices/summary?month=${encodeURIComponent(m)}`);
+    const d = cur && typeof cur === "object" ? cur : {};
+
+    // Opening balance (C/F)
+    let opening = pickNum(d.opening_balance_bf, d.opening_balance, NaN);
+
+    // If API doesn't provide opening (or it's wrong/empty), derive from previous month closing
+    if (!Number.isFinite(opening)) {
+      try {
+        const pm = prevMonth(m);
+        if (pm) {
+          const prev = await apiGet(`/invoices/summary?month=${encodeURIComponent(pm)}`);
+          const pd = prev && typeof prev === "object" ? prev : {};
+          opening = pickNum(pd.closing_balance_cf, pd.closing_balance, pd.balance_due, 0);
+        } else {
+          opening = 0;
+        }
+      } catch (_) {
+        opening = 0;
+      }
+    }
+
     const invoicedMonth = pickNum(d.invoiced_month, d.invoiced_amt, d.due, 0);
 
-    // IMPORTANT: "Collected (month)" should mean collected FOR THIS MONTH'S invoices
+    // Collected for invoices issued in THIS month (what you want under "Collected (month)")
     const collectedMonthInvoices = pickNum(
       d.collected_for_month_invoices,
       d.collected_month_invoices,
       0
     );
 
-    // Total payments received in the month (may include arrears)
-    const collectedInMonthTotal = pickNum(
+    // Collected for arrears (reduces opening balance)
+    const collectedArrears = pickNum(d.collected_for_arrears, d.collected_arrears, 0);
+
+    // Total collected during the month (month invoices + arrears)
+    const totalCollectedInMonth = pickNum(
       d.total_collected_in_month,
       d.total_collected,
-      d.total_collected_in_month_invoices,
-      collectedMonthInvoices + pickNum(d.collected_for_arrears, 0)
+      collectedMonthInvoices + collectedArrears
     );
 
-    const closing = pickNum(
-      d.closing_balance_cf,
-      d.closing_balance,
-      d.balance_due,
-      0
-    );
+    // Closing balance (C/F) — prefer API, else compute
+    let closing = pickNum(d.closing_balance_cf, d.closing_balance, d.balance_due, NaN);
+    if (!Number.isFinite(closing)) {
+      closing = opening + invoicedMonth - totalCollectedInMonth;
+    }
 
+    // Collection rate should be FOR THIS MONTH's invoices
     const ratePct = pickNum(
       d.collection_rate_month_pct,
       d.collection_rate_pct,
-      0
+      invoicedMonth ? (collectedMonthInvoices / invoicedMonth) * 100 : 0
     );
 
-    // Summary chips
+    // Update summary chips (green area)
     setText("#summaryMonthDue", `Invoiced (month) ${fmtKes(invoicedMonth)}`);
+    setText("#summaryMonthCollected", `Collected (month) ${fmtKes(collectedMonthInvoices)}`);
     setText(
-      "#summaryMonthCollected",
-      `Collected (month) ${fmtKes(collectedMonthInvoices)}`
+      "#summaryMonthBalance",
+      `Opening balance ${fmtKes(opening)} • Closing balance ${fmtKes(closing)}`
     );
-    setText("#summaryMonthBalance", `Closing balance ${fmtKes(closing)}`);
     setText("#summaryMonthRate", `${fmtPct(ratePct)} collection rate`);
 
-    // KPI cards
-    // Payments KPI = money received in the month (including arrears), matches your earlier screenshots
-    setText("#kpiPayments", fmtKes(collectedInMonthTotal));
-    // Balance KPI = closing balance CF (can be negative for net credit)
-    setText("#kpiBalance", fmtKes(closing));
+    // Update KPI cards (top row)
+    setText("#kpiPayments", fmtKes(totalCollectedInMonth)); // money received in the month
+    setText("#kpiBalance", fmtKes(closing));                // closing balance CF (credit/debit)
 
-    // Try to enrich Total Leases + Open Invoices from dashboard overview (if available)
-    try {
-      const ov = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
-      const o = ov && typeof ov === "object" ? ov : {};
-      const totalLeases = o.total_leases ?? o.leases ?? o.total ?? o.kpi_total_leases;
-      const openInvoices = o.open_invoices ?? o.open ?? o.kpi_open_invoices;
-
-      if (totalLeases != null) setText("#kpiLeases", totalLeases);
-      if (openInvoices != null) setText("#kpiOpen", openInvoices);
-    } catch (_) {
-      // If dashboard overview is unavailable, fall back to what we already have locally
-      if (state.leases?.length) setText("#kpiLeases", state.leases.length);
-
-      // Optional lightweight open-invoices estimate using rentroll for the same month
-      try {
-        const rr = await apiGet(`/rentroll?month=${encodeURIComponent(m)}`);
-        const rows = unwrapRows(rr);
-        const openCount = rows.filter((r) => pickNum(r.invoice_balance, r.lease_running_balance, 0) > 0.0001).length;
-        setText("#kpiOpen", openCount);
-      } catch (_) {
-        // ignore
-      }
-    }
-
-    // (Optional) opening balance is not displayed in UI chips by default, but kept here for future use
-    void opening;
-    return;
+    return; // done
   } catch (e) {
-    // If invoices summary not available, fall through to old overview logic
     console.warn("loadOverview invoices/summary failed:", e);
   }
 
-  // Legacy fallback: /dashboard/overview or /balances/overview
+  // ---------- 4) LAST RESORT fallback (older endpoints) ----------
   try {
     let data;
     try {
@@ -423,44 +479,23 @@ async function loadOverview() {
 
     const d = data && typeof data === "object" ? data : {};
 
-    const totalLeases = d.total_leases ?? d.leases ?? d.total ?? d.kpi_total_leases;
-    const openInvoices = d.open_invoices ?? d.open ?? d.kpi_open_invoices;
+    const paymentsMonth = d.payments ?? d.total_collected_in_month ?? d.collected_amt ?? 0;
+    const balanceDue = d.balance_due ?? d.closing_balance ?? 0;
+    const due = d.invoiced_amt ?? d.due ?? 0;
+    const collected = d.collected_amt ?? d.collected ?? 0;
 
-    // Prefer "payments" KPI if explicitly provided; else fall back to collected
-    const paymentsMonth =
-      d.payments ??
-      d.total_collected_in_month ??
-      d.collected_amt ??
-      d.kpi_payments;
+    setText("#kpiPayments", fmtKes(paymentsMonth));
+    setText("#kpiBalance", fmtKes(balanceDue));
 
-    const balanceDue =
-      d.balance_due ??
-      d.net_balance ??
-      d.closing_balance ??
-      d.kpi_balance_due;
-
-    setText("#kpiLeases", totalLeases ?? "—");
-    setText("#kpiOpen", openInvoices ?? "—");
-    setText("#kpiPayments", paymentsMonth != null ? fmtKes(paymentsMonth) : "—");
-    setText("#kpiBalance", balanceDue != null ? fmtKes(balanceDue) : "—");
-
-    const due = d.invoiced_amt ?? d.due ?? d.month_due ?? d.total_due ?? 0;
-    const collected = d.collected_amt ?? d.collected ?? d.month_collected ?? d.total_collected ?? 0;
-    const closing = d.closing_balance ?? d.balance_due ?? d.balance ?? d.total_balance ?? 0;
-
-    // Avoid >100% if collected includes arrears but due is month-only: prefer provided rate if exists
-    const rate =
-      d.collection_rate_month_pct ??
-      d.collection_rate ??
-      (due ? (Number(collected || 0) / Number(due || 1)) * 100 : 0);
-
-    setText("#summaryMonthLabel", monthLabel(m));
     setText("#summaryMonthDue", `Invoiced (month) ${fmtKes(due)}`);
     setText("#summaryMonthCollected", `Collected (month) ${fmtKes(collected)}`);
-    setText("#summaryMonthBalance", `Closing balance ${fmtKes(closing)}`);
-    setText("#summaryMonthRate", `${fmtPct(rate)} collection rate`);
-  } catch (e) {
-    console.warn("loadOverview fallback failed:", e);
+    setText("#summaryMonthBalance", `Closing balance ${fmtKes(balanceDue)}`);
+    setText(
+      "#summaryMonthRate",
+      `${fmtPct(d.collection_rate_month_pct ?? (due ? (collected / due) * 100 : 0))} collection rate`
+    );
+  } catch (e2) {
+    console.warn("loadOverview fallback failed:", e2);
   }
 }
 
@@ -1276,6 +1311,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initWhatsAppBuilder();
   initSettings();
   initInvoiceActions();
+
+  hideCollectionsMovedNotice();
 
   // initial data load
   loadOverview();
