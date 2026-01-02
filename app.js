@@ -381,21 +381,22 @@ async function loadOverview() {
     setText("#kpiBalance", fmtKes(closingBal));
 
     // Monthly collection summary (IDs must match your index.html)
-    setText("#summaryMonthLabel", monthLabel(m));
-    setText("#summaryMonthDue", `Invoiced (month) ${fmtKes(invoicedMonth)}`);
-    setText("#summaryMonthCollected", `Collected (month) ${fmtKes(collectedMonth)}`);
-
+    setText("#summaryMonthLabel", monthLabel(m));    
+   
     if (openingBal != null) {
-      setText("#summaryMonthBalance", `Opening balance ${fmtKes(openingBal)} • Closing balance ${fmtKes(closingBal)}`);
-    } else {
-      setText("#summaryMonthBalance", `Closing balance ${fmtKes(closingBal)}`);
-    }
+     setText("#summaryMonthBalance", `Arrears at start (BF) ${fmtKes(openingBal)} • Arrears at end (CF) ${fmtKes(closingBal)}`);
+   } else {
+     setText("#summaryMonthBalance", `Arrears at end (CF) ${fmtKes(closingBal)}`);
+   }
 
-    setText("#summaryMonthRate", `${fmtPct(rate)} collection rate`);
+    const rateLabel = (d.collection_rate_month_pct != null) ? "Rent collection rate" : "Cash collection rate";
+    setText("#summaryMonthRate", `${fmtPct(rate)} ${rateLabel}`);
+
 
     // Optional: arrears cleared chip if present in HTML
     if ($("#summaryArrearsCleared")) {
-      setText("#summaryArrearsCleared", `Arrears cleared ${fmtKes(arrearsCleared)}`);
+      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsCleared)}`);
+
     }
 
     // Optional: overpayments (credits) chip if present in HTML
@@ -436,10 +437,12 @@ async function loadOverview() {
       if (creditTotal > 0.0001) {
         setText(
           "#summaryOverpayments",
-          `Overpayments (credits) ${fmtKes(creditTotal)} • Top: ${topTenant} ${fmtKes(topCredit)}`
+          `Tenant credit (prepaid) ${fmtKes(creditTotal)} • Largest credit: ${topTenant} ${fmtKes(topCredit)}`
+
         );
       } else {
-        setText("#summaryOverpayments", `Overpayments (credits) ${fmtKes(0)}`);
+        setText("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
+
       }
     }
   } catch (e) {
@@ -698,10 +701,11 @@ function renderRentRoll() {
   );
   const creditTotal = sum(rows, (r) => pickNum(r.credits, r.credit, r.credit_amt, 0));
 
-  setText("#rentrollDueChip", `${fmtKes(dueTotal)} due`);
-  setText("#rentrollPaidChip", `${fmtKes(paidTotal)} paid`);
-  setText("#rentrollBalChip", `${fmtKes(balTotal)} balance`);
-  setText("#rentrollCreditChip", `${fmtKes(creditTotal)} credit`);
+  setText("#rentrollDueChip", `${fmtKes(dueTotal)} billed`);
+  setText("#rentrollPaidChip", `${fmtKes(paidTotal)} received`);
+  setText("#rentrollBalChip", `${fmtKes(balTotal)} overdue`);
+  setText("#rentrollCreditChip", `${fmtKes(creditTotal)} prepaid credit`);
+
 
   if (!rows.length) {
     body.innerHTML = "";
@@ -813,11 +817,11 @@ function renderBalances() {
   if (!rows.length) {
     body.innerHTML = "";
     show(empty);
-    setText("#balMonthDue", "KES 0 due");
-    setText("#balMonthCollected", "KES 0 collected");
-    setText("#balMonthBalance", "KES 0 closing balance");
-    setText("#balMonthRate", "0.0% collection rate");
-    return;
+    setText("#balMonthDue", "KES 0 billed");
+    setText("#balMonthCollected", "KES 0 received");
+    setText("#balMonthBalance", "KES 0 arrears (end)");
+    setText("#balMonthRate", "0.0% rent collection rate");
+
   }
   hide(empty);
 
@@ -826,10 +830,11 @@ function renderBalances() {
   const balTotal = sum(rows, (r) => pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0));
   const rate = dueTotal ? (paidTotal / dueTotal) * 100 : 0;
 
-  setText("#balMonthDue", `${fmtKes(dueTotal)} due`);
-  setText("#balMonthCollected", `${fmtKes(paidTotal)} collected`);
-  setText("#balMonthBalance", `${fmtKes(balTotal)} closing balance`);
-  setText("#balMonthRate", `${fmtPct(rate)} collection rate`);
+  setText("#balMonthDue", `${fmtKes(dueTotal)} billed`);
+  setText("#balMonthCollected", `${fmtKes(paidTotal)} received`);
+  setText("#balMonthBalance", `${fmtKes(balTotal)} arrears (end)`);
+  setText("#balMonthRate", `${fmtPct(rate)} rent collection rate`);
+
 
   body.innerHTML = rows
     .map((r) => {

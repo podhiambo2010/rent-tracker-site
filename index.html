@@ -230,10 +230,10 @@
         <h2>Overview</h2>
 
         <div class="grid" id="kpis">
-          <div class="kpi"><h3>Total Leases</h3><div class="v" id="kpiLeases">—</div></div>
-          <div class="kpi"><h3>Open Invoices (month)</h3><div class="v" id="kpiOpen">—</div></div>
-          <div class="kpi"><h3>Payments (month)</h3><div class="v" id="kpiPayments">—</div></div>
-          <div class="kpi"><h3>Balance Due (month)</h3><div class="v" id="kpiBalance">—</div></div>
+          <div class="kpi"><h3>Active leases</h3><div class="v" id="kpiLeases">—</div></div>
+          <div class="kpi"><h3>Unpaid invoices (month)</h3><div class="v" id="kpiOpen">—</div></div>
+          <div class="kpi"><h3>Rent received (month)</h3><div class="v" id="kpiPayments">—</div></div>
+          <div class="kpi"><h3>Rent overdue (month)</h3><div class="v" id="kpiBalance">—</div></div>
         </div>
 
         <div class="filters">
@@ -246,12 +246,12 @@
         <p class="muted" style="margin-top:6px;margin-bottom:2px;">Monthly collection summary</p>
         <div id="collection-summary-month">
           <div><strong id="summaryMonthLabel">—</strong></div>
-          <div id="summaryMonthDue">due</div>
-          <div id="summaryMonthCollected">collected</div>
-          <div id="summaryMonthBalance">balance</div>
-          <div id="summaryMonthRate">collection rate</div>
-          <div id="summaryArrearsCleared">Arrears cleared KES 0</div>
-          <div id="summaryOverpayments">Overpayments (credits) KES 0</div>
+          <div id="summaryMonthDue">Rent billed (month)</div>
+          <div id="summaryMonthCollected">Rent received (month)</div>
+          <div id="summaryMonthBalance">Arrears (start/end)</div>
+          <div id="summaryMonthRate">Rent collection rate</div>
+          <div id="summaryArrearsCleared">Arrears paid (month) KES 0</div>
+          <div id="summaryOverpayments">Tenant credit (prepaid) KES 0</div>
         </div>
       </div>
 
@@ -335,10 +335,10 @@
           <button class="btn ghost" id="clearRentroll">Clear</button>
 
           <div class="rentroll-totals">
-            <span class="chip" id="rentrollDueChip">KES 0 due</span>
-            <span class="chip" id="rentrollPaidChip">KES 0 paid</span>
-            <span class="chip" id="rentrollBalChip">KES 0 balance</span>
-            <span class="chip" id="rentrollCreditChip">KES 0 credit</span>
+            <span class="chip" id="rentrollDueChip">KES 0 billed</span>
+            <span class="chip" id="rentrollPaidChip">KES 0 received</span>
+            <span class="chip" id="rentrollBalChip">KES 0 overdue</span>
+            <span class="chip" id="rentrollCreditChip">KES 0 prepaid credit</span>
           </div>
         </div>
 
@@ -353,7 +353,7 @@
                 <th class="num">Rent</th>
                 <th class="num">Late fees</th>
                 <th>Status</th>
-                <th class="num">Closing balance</th>
+                <th class="num">Balance (end)</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -380,10 +380,10 @@
             <thead>
               <tr>
                 <th>Tenant</th>
-                <th class="num">Rent due (month)</th>
-                <th class="num">Paid (month)</th>
-                <th class="num">Closing balance (incl. arrears)</th>
-                <th class="num">Collection rate (month)</th>
+                <th class="num">Rent billed (month)</th>
+                <th class="num">Rent received (month)</th>
+                <th class="num">Arrears (end)</th>
+                <th class="num">Rent collection rate</th>
               </tr>
             </thead>
             <tbody id="balancesBody"></tbody>
@@ -395,10 +395,10 @@
           <h3 style="margin:0 0 8px 0;">This month totals (all tenants)</h3>
           <div id="balances-summary">
             <div class="chip"><strong id="balMonthLabel">—</strong></div>
-            <div class="chip" id="balMonthDue">KES 0 due</div>
-            <div class="chip" id="balMonthCollected">KES 0 collected</div>
-            <div class="chip" id="balMonthBalance">KES 0 closing balance</div>
-            <div class="chip" id="balMonthRate">0.0% collection rate</div>
+            <div class="chip" id="balMonthDue">KES 0 billed</div>
+            <div class="chip" id="balMonthCollected">KES 0 received</div>
+            <div class="chip" id="balMonthBalance">KES 0 arrears (end)</div>
+            <div class="chip" id="balMonthRate">0.0% rent collection rate</div>
           </div>
           <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
         </div>
@@ -411,7 +411,7 @@
         </div>
 
         <div class="bar-flex" style="margin-top:12px;">
-          <h3 style="margin:0;">Outstanding by tenant (this month)</h3>
+          <h3 style="margin:0;">Rent overdue by tenant (month)</h3>
           <span class="chip" id="outstandingMonthLabel">—</span>
           <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
           <span class="muted">Actions moved to <b>Dunning</b>.</span>
@@ -424,8 +424,8 @@
             <thead>
               <tr>
                 <th>Tenant</th>
-                <th class="num">Outstanding</th>
-                <th class="num">Collection rate</th>
+                <th class="num">Overdue</th>
+                <th class="num">Rent collection rate</th>
               </tr>
             </thead>
             <tbody id="outstandingBody"></tbody>
@@ -462,8 +462,8 @@
               <tr>
                 <th></th>
                 <th>Tenant</th>
-                <th class="num">Outstanding</th>
-                <th class="num">Collection rate</th>
+                <th class="num">Overdue</th>
+                <th class="num">Rent collection rate</th>
                 <th>WhatsApp</th>
                 <th>Invoice</th>
               </tr>
