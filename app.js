@@ -424,7 +424,27 @@ async function loadOverview() {
 
     // ---- Monthly collection summary ----
     setText("#summaryMonthLabel", monthLabel(m));
+    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(d.rent_billed_month ?? d.invoiced_amt ?? 0)}`);
+    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(d.rent_received_month ?? 0)}`);
+    if ($("#summaryCashReceived")) {
+      setText("#summaryCashReceived", `Cash received (month) ${fmtKes(d.cash_received_month ?? d.payments ?? 0)}`);
+    }
 
+    const rentBilled = d.rent_billed_month ?? d.invoiced_amt ?? 0;
+    const rentReceived = d.rent_received_month ?? 0;
+    const cashReceived = d.cash_received_month ?? d.payments ?? d.collected_amt ?? 0;
+    const overdueTotal = d.overdue_total ?? d.balance_due ?? d.closing_balance ?? 0;
+
+    // Fill the missing summary boxes
+    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(rentBilled)}`);
+    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
+    if ($("#summaryCashReceived")) {
+      setText("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
+    }
+
+    // KPIs should match your new labels
+    setText("#kpiPayments", fmtKes(rentReceived));    // Rent received (month)
+    setText("#kpiBalance", fmtKes(overdueTotal));     // Rent overdue (month)
     // ✅ These were missing in your current function (that’s why amounts disappeared)
     setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(invoicedMonth)}`);
     setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(collectedMonth)}`);
@@ -847,7 +867,7 @@ async function loadBalances(force = false) {
     renderBalances();
     renderOutstandingFromBalances();
 
-    setText("#balMonthLabel", monthLabel(m));
+    setText("#balMonthLabel", monthLabel(m));    
     setText("#outstandingMonthLabel", monthLabel(m));
     setText("#balancesLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
     setText("#outstandingLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
