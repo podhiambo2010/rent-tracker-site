@@ -300,33 +300,39 @@ function setSelectValue(sel, value) {
   if (el) el.value = value || "";
 }
 
-/* ------------------------- Overview (canonical-only) ------------------------- */
+/* ------------------------- Overview ------------------------- */
 async function loadOverview() {
   try {
     const m = state.month;
 
-    // canonical source only
     const d = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
 
-    // KPIs (match your UI labels)
-    const leasesCount = d.active_leases;
-    const openInvoicesCount = d.open_invoices;
+    // Canonical keys ONLY
+    const leasesCount = d.active_leases ?? null;
+    const openInvoicesCount = d.open_invoices_month ?? null;
 
-    // KPI “Rent received (month)” should show ALLOCATED to that month’s invoices
-    const rentReceived = Number(d.rent_received_month || 0);
+    const billedMonth = Number(d.total_due_month || 0);
+    const rentReceived = Number(d.rent_received_month || 0);     // applied to month invoices (as-of month end)
+    const cashReceived = Number(d.cash_received_month || 0);     // cashflow inside month
+    const overdueMonth = Number(d.overdue_month_total || 0);     // month arrears at month end
 
-    // KPI “Rent overdue (month)” = unpaid portion of that month’s invoices
-    const overdueMonth = Number(d.overdue_month_total || 0);
+    const openingNet = (d.opening_balance_bf ?? null);
+    const closingNet = (d.closing_balance_cf ?? null);
 
-    setText("#kpiLeases", (leasesCount != null) ? String(leasesCount) : "—");
-    setText("#kpiOpen", (openInvoicesCount != null) ? String(openInvoicesCount) : "—");
-    setText("#kpiPayments", fmtKes(rentReceived));
-    setText("#kpiBalance", fmtKes(overdueMonth));
+    const arrearsPaid = Number(d.arrears_paid_month || 0);
+
+    const creditsTotal = Number(d.credit_total || 0);
+    const top = d.top_credit || {};
+
+    const rentRate = Number(d.rent_collection_rate_pct || 0);
+
+    // KPIs (top cards)
+    setText("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
+    setText("#kpiOpen", openInvoicesCount != null ? String(openInvoicesCount) : "—");
+    setText("#kpiPayments", fmtKes(rentReceived));    // Rent received (month)
+    setText("#kpiBalance", fmtKes(overdueMonth));     // Rent overdue (month)
 
     // Monthly collection summary
-    const billedMonth = Number(d.total_due_month || 0);      // includes rent+late-fees-credits in one figure
-    const cashReceived = Number(d.cash_received_month || 0);
-
     setText("#summaryMonthLabel", monthLabel(m));
     setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
     setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
@@ -334,10 +340,6 @@ async function loadOverview() {
     if ($("#summaryCashReceived")) {
       setText("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
     }
-
-    // BF/CF net balances (can be negative)
-    const openingNet = (d.opening_balance_bf != null) ? Number(d.opening_balance_bf) : null;
-    const closingNet = (d.closing_balance_cf != null) ? Number(d.closing_balance_cf) : null;
 
     if (openingNet != null && closingNet != null) {
       setText(
@@ -347,22 +349,16 @@ async function loadOverview() {
     } else if (closingNet != null) {
       setText("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
     } else {
-      setText("#summaryMonthBalance", `Overdue (month) ${fmtKes(overdueMonth)}`);
+      setText("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(overdueMonth)}`);
     }
 
-    // Rates
-    const rentRate = Number(d.rent_collection_rate_pct || 0);
     setText("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
 
-    // Arrears cleared (optional chip)
     if ($("#summaryArrearsCleared")) {
-      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(Number(d.collected_for_arrears || 0))}`);
+      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
     }
 
-    // Credits (optional chip)
     if ($("#summaryOverpayments")) {
-      const creditsTotal = Number(d.credit_total || 0);
-      const top = d.top_overpayer || {};
       if (creditsTotal > 0.0001) {
         const who = (top.unit && top.unit !== "-") ? top.unit : (top.tenant || "—");
         const amt = Number(top.amount || 0);
@@ -377,104 +373,6 @@ async function loadOverview() {
   } catch (e) {
     console.warn("loadOverview failed:", e);
   }
-}
-
-/* ------------------------- Leases ------------------------- */
-function initLeases() {
-  const applyBtn = $("#applyLeases");
-  const clearBtn = $("#clearLeases");
-  const reloadBtn = $("#reloadLeases");
-
-  if (applyBtn) applyBtn.addEventListener("click", () => renderLeases());
-  if (clearBtn) clearBtn.addEventListener("click", () => {
-    const s = $("#leaseSearch");
-    if (s) s.value = "";
-    renderLeases();
-  });
-
-  if (reloadBtn) reloadBtn.addEventListener("click", () => loadLeases(true));
-
-  const s = $("#leaseSearch");
-  if (s) {
-    s.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") renderLeases();
-    });
-  }
-}
-
-async function loadLeases(force = false) {
-  try {
-    if (!force && state.leases.length) return;
-    const data = await apiGet("/leases");
-    state.leases = unwrapRows(data);
-    renderLeases();
-    // Keep overview KPI correct even if leases load after overview
-    loadOverview();
-  } catch (e) {
-    console.warn("loadLeases failed:", e);
-    state.leases = [];
-    renderLeases();
-    loadOverview();
-  }
-}
-
-function leaseStatusClass(status) {
-  const s = String(status || "").toLowerCase();
-  if (!s) return "status";
-  if (s.includes("active")) return "status ok";
-  if (s.includes("ended") || s.includes("terminated") || s.includes("inactive") || s.includes("closed"))
-    return "status ended";
-  return "status";
-}
-
-function renderLeases() {
-  const body = $("#leasesBody");
-  const empty = $("#leasesEmpty");
-  const count = $("#leasesCount");
-  if (!body) return;
-
-  const q = String($("#leaseSearch")?.value || "").trim().toLowerCase();
-  const rows = (state.leases || []).filter((r) => {
-    const tenant = (r.tenant || r.full_name || r.tenant_name || "").toLowerCase();
-    const unit = (r.unit || r.unit_code || r.unit_name || "").toLowerCase();
-    return !q || tenant.includes(q) || unit.includes(q);
-  });
-
-  setText(count, rows.length);
-
-  if (!rows.length) {
-    body.innerHTML = "";
-    show(empty);
-    return;
-  }
-  hide(empty);
-
-  body.innerHTML = rows
-    .map((r) => {
-      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
-      const unit = r.unit || r.unit_code || r.unit_name || "—";
-      const rent = r.rent ?? r.rent_amount ?? r.monthly_rent ?? null;
-      const cycle = r.cycle || r.billing_cycle || r.rent_cycle || "—";
-      const dueDay = r.due_day ?? r.dueDay ?? r.due_date ?? "—";
-      const status = r.status || r.lease_status || "—";
-      const phone = r.phone || r.msisdn || r.whatsapp_phone || "";
-
-      const waLink = phone ? buildWhatsAppLink(normalizePhoneKE(phone), `Hello ${tenant},`) : "";
-
-      return `
-      <tr>
-        <td>${escapeHtml(tenant)}</td>
-        <td>${escapeHtml(unit)}</td>
-        <td class="num">${rent != null ? fmtKes(rent) : "—"}</td>
-        <td>${escapeHtml(cycle)}</td>
-        <td>${escapeHtml(dueDay)}</td>
-        <td><span class="${leaseStatusClass(status)}">${escapeHtml(status)}</span></td>
-        <td>
-          ${waLink ? `<a href="${waLink}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}
-        </td>
-      </tr>`;
-    })
-    .join("");
 }
 
 /* ------------------------- Payments ------------------------- */
