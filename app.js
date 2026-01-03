@@ -300,55 +300,33 @@ function setSelectValue(sel, value) {
   if (el) el.value = value || "";
 }
 
-/* ------------------------- Overview ------------------------- */
+/* ------------------------- Overview (canonical-only) ------------------------- */
 async function loadOverview() {
   try {
     const m = state.month;
 
-    // Canonical source (single truth)
+    // canonical source only
     const d = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
 
-    if (!d || d.ok !== true) {
-      console.warn("dashboard/overview returned non-ok:", d);
-      return;
-    }
+    // KPIs (match your UI labels)
+    const leasesCount = d.active_leases;
+    const openInvoicesCount = d.open_invoices;
 
-    // Canonical keys ONLY
-    const leasesCount = Number(d.active_leases ?? 0);
-    const openInvoicesCount = Number(d.unpaid_invoices_month ?? 0);
+    // KPI “Rent received (month)” should show ALLOCATED to that month’s invoices
+    const rentReceived = Number(d.rent_received_month || 0);
 
-    const billedMonth = Number(d.total_due_month ?? 0);
-    const rentReceived = Number(d.rent_received_month ?? 0);
-    const cashReceived = Number(d.cash_received_month ?? 0);
+    // KPI “Rent overdue (month)” = unpaid portion of that month’s invoices
+    const overdueMonth = Number(d.overdue_month_total || 0);
 
-    const overdueMonth = Number(d.overdue_month_total ?? 0);
-
-    const openingNet = (d.opening_balance_bf != null) ? Number(d.opening_balance_bf) : null;
-    const closingNet = (d.closing_balance_cf != null) ? Number(d.closing_balance_cf) : null;
-
-    const arrearsPaid = Number(d.arrears_paid_month ?? 0);
-
-    const creditsTotal = Number(d.credit_total ?? 0);
-    const rentRate = Number(d.rent_collection_rate_pct ?? 0);
-
-    const top = d.top_credit || {};
-    const topWho =
-      (top.unit && top.unit !== "-") ? top.unit :
-      (top.tenant && top.tenant !== "-") ? top.tenant :
-      "—";
-    const topAmt = Number(top.amount ?? 0);
-
-    // KPIs (top row)
-    setText("#kpiLeases", String(leasesCount));
-    setText("#kpiOpen", String(openInvoicesCount));
-
-    // KPI meaning: “Rent received (month)” = applied to this month’s invoices
+    setText("#kpiLeases", (leasesCount != null) ? String(leasesCount) : "—");
+    setText("#kpiOpen", (openInvoicesCount != null) ? String(openInvoicesCount) : "—");
     setText("#kpiPayments", fmtKes(rentReceived));
-
-    // KPI meaning: “Rent overdue (month)” = unpaid portion of this month’s invoices
     setText("#kpiBalance", fmtKes(overdueMonth));
 
     // Monthly collection summary
+    const billedMonth = Number(d.total_due_month || 0);      // includes rent+late-fees-credits in one figure
+    const cashReceived = Number(d.cash_received_month || 0);
+
     setText("#summaryMonthLabel", monthLabel(m));
     setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
     setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
@@ -356,6 +334,10 @@ async function loadOverview() {
     if ($("#summaryCashReceived")) {
       setText("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
     }
+
+    // BF/CF net balances (can be negative)
+    const openingNet = (d.opening_balance_bf != null) ? Number(d.opening_balance_bf) : null;
+    const closingNet = (d.closing_balance_cf != null) ? Number(d.closing_balance_cf) : null;
 
     if (openingNet != null && closingNet != null) {
       setText(
@@ -365,20 +347,28 @@ async function loadOverview() {
     } else if (closingNet != null) {
       setText("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
     } else {
-      setText("#summaryMonthBalance", `Balance (end) ${fmtKes(overdueMonth)}`);
+      setText("#summaryMonthBalance", `Overdue (month) ${fmtKes(overdueMonth)}`);
     }
 
+    // Rates
+    const rentRate = Number(d.rent_collection_rate_pct || 0);
     setText("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
 
+    // Arrears cleared (optional chip)
     if ($("#summaryArrearsCleared")) {
-      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
+      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(Number(d.collected_for_arrears || 0))}`);
     }
 
+    // Credits (optional chip)
     if ($("#summaryOverpayments")) {
+      const creditsTotal = Number(d.credit_total || 0);
+      const top = d.top_overpayer || {};
       if (creditsTotal > 0.0001) {
+        const who = (top.unit && top.unit !== "-") ? top.unit : (top.tenant || "—");
+        const amt = Number(top.amount || 0);
         setText(
           "#summaryOverpayments",
-          `Tenant credit (prepaid) ${fmtKes(creditsTotal)} • Largest credit: ${topWho} ${fmtKes(topAmt)}`
+          `Tenant credit (prepaid) ${fmtKes(creditsTotal)} • Largest credit: ${who} ${fmtKes(amt)}`
         );
       } else {
         setText("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
