@@ -354,13 +354,12 @@ async function loadOverview() {
 
     // “Overdue” should be positive-only arrears (what you must chase)
     const overdue = pickNum(
-      d.overdue_total,
+      d.overdue_month_total,   // ✅ correct “month overdue”
       d.balance_due,
       d.total_balance,
       d.closing_balance,
       0
-    );
-
+    );    
     const openingNet = (d.opening_balance_bf ?? null);
     const closingNet = (d.closing_balance_cf ?? null);
 
@@ -376,14 +375,38 @@ async function loadOverview() {
     // KPIs
     setText("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
     setText("#kpiOpen", openInvoicesCount != null ? String(openInvoicesCount) : "—");
-    setText("#kpiPayments", fmtKes(cashReceived));
-    setText("#kpiBalance", fmtKes(overdue));
 
-    // Monthly collection summary
-    setText("#summaryMonthLabel", monthLabel(m));
-    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
-    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(cashReceived)}`);
+    // Rent received (month): prefer invoice-linked allocation for the selected month
+    const rentReceived = pickNum(
+      d.rent_received_month,                 // best: payments applied to invoices for this month
+      d.paid_to_month_invoices,              // alias (if you expose this key instead)
+      d.collected_for_month_invoices,        // older alias you used earlier
+      d.cash_received_month,                 // fallback to cashflow
+      d.payments,
+      d.collected_amt,
+      d.total_collected,
+      0
+    );
 
+    // Cash received (month): cashflow by payment date (not necessarily allocated)
+   const cashReceivedMonth = pickNum(
+     d.cash_received_month,
+     d.cash_collected_month,                // optional alias
+     d.payments,
+     d.collected_amt,
+     d.total_collected,
+     0
+   );
+
+   setText("#kpiPayments", fmtKes(rentReceived));
+   setText("#kpiBalance", fmtKes(overdue));
+
+   // Monthly collection summary
+   setText("#summaryMonthLabel", monthLabel(m));
+   setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
+   setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
+
+   // Optional cash chip (only if your index.html includes this element)
     if ($("#summaryCashReceived")) {
       setText("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
     }
