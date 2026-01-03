@@ -305,216 +305,115 @@ async function loadOverview() {
   try {
     const m = state.month;
 
-    // 1) Prefer invoices summary if it exists, else dashboard overview, else balances overview
-    let inv = null;
+    // Always prefer /dashboard/overview (it now returns both new+legacy keys)
+    let d = {};
     try {
-      inv = await apiGet(`/invoices/summary?month=${encodeURIComponent(m)}`);
+      d = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
     } catch (_) {
-      inv = null;
+      d = {};
     }
 
-    let ov = null;
-    if (!inv) {
-      try {
-        ov = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
-      } catch (_) {
-        ov = null;
-      }
-      if (!ov) {
-        try {
-          ov = await apiGet(`/balances/overview?month=${encodeURIComponent(m)}`);
-        } catch (_) {
-          ov = null;
-        }
-      }
-    }
-
-    const d =
-      (inv && typeof inv === "object") ? inv :
-      (ov && typeof ov === "object") ? ov : {};
-
-    // Total leases KPI: prefer already-loaded leases array
+    // Active leases
     const leasesCount =
       (Array.isArray(state.leases) && state.leases.length)
         ? state.leases.length
-        : (d.total_leases ?? d.leases ?? d.total ?? d.kpi_total_leases ?? null);
+        : (d.total_leases ?? d.leases ?? d.total ?? null);
 
-    // Open invoices KPI: compute from rentroll (outstanding > 0)
+    // Open invoices KPI: compute from rentroll when possible
     let openInvoicesCount = null;
     try {
       const rrData = await apiGet(`/rentroll?month=${encodeURIComponent(m)}`);
       const rr = unwrapRows(rrData);
-      openInvoicesCount = rr.filter((r) =>
-        pickNum(
-          r.invoice_balance,
-          r.lease_running_balance,
-          r.balance,
-          r.closing_balance,
-          0
-        ) > 0.0001
-      ).length;
+      openInvoicesCount = rr.filter((r) => pickNum(
+        r.invoice_balance,
+        r.lease_running_balance,
+        r.balance,
+        r.closing_balance,
+        0
+      ) > 0.0001).length;
     } catch (_) {
-      openInvoicesCount = d.open_invoices ?? d.open ?? d.kpi_open_invoices ?? null;
+      openInvoicesCount = d.open_invoices ?? d.open ?? null;
     }
 
-    // ---- Month totals (use the new definitive keys when available) ----
-    const invoicedMonth = pickNum(
-      d.rent_billed_month,
-      d.invoiced_month,
+    // Month totals (billed / received / cash)
+    const billedMonth = pickNum(
+      d.total_due_month,
+      d.rent_billed_month,      // subtotal_rent only
       d.invoiced_amt,
-      d.due,
-      d.month_due,
       d.total_due,
       0
     );
 
-    const collectedMonth = pickNum(
-      d.rent_received_month,
-      d.collected_for_month_invoices,
-      d.collected_amt,
+    const cashReceived = pickNum(
+      d.cash_received_month,
       d.payments,
-      d.collected,
-      d.month_collected,
+      d.collected_amt,
+      d.total_collected,
       0
     );
 
-    const arrearsCleared = pickNum(
-      d.collected_for_arrears,
-      d.collected_arrears,
-      0
-    );
-
-    // ---- Balances: prefer GROSS arrears/credit if provided by /dashboard/overview (MV-backed) ----
-    const openingArrears = pickNum(d.opening_arrears_bf, 0);
-    const closingArrears = pickNum(d.closing_arrears_cf, 0);
-
-    const openingCredit = pickNum(d.opening_credit_bf, 0);
-    const closingCredit = pickNum(d.closing_credit_cf, d.overpayments_total, 0);
-
-    // Fallback NET balances if gross not available
-    const openingNet = pickNum(d.opening_balance_bf, d.opening_balance, 0);
-    const closingNet = pickNum(
-      d.closing_balance_cf,
-      d.closing_balance,
+    // “Overdue” should be positive-only arrears (what you must chase)
+    const overdue = pickNum(
+      d.overdue_total,
       d.balance_due,
-      d.net_balance,
-      d.balance,
       d.total_balance,
+      d.closing_balance,
       0
     );
 
-    // What we show as "Balance Due / Rent overdue":
-    // use closing arrears if available; else if net is positive use net; else 0.
-    const balanceDueForUI =
-      (closingArrears > 0.0001) ? closingArrears :
-      (closingNet > 0.0001) ? closingNet : 0;
+    const openingNet = (d.opening_balance_bf ?? null);
+    const closingNet = (d.closing_balance_cf ?? null);
 
-    // Collection rate
-    const rate = pickNum(
-      d.collection_rate_month_pct,
+    const arrearsPaid = pickNum(d.collected_for_arrears, 0);
+    const creditsTotal = pickNum(d.credit_total, d.overpayments_total, 0);
+
+    const rentRate = pickNum(
+      d.rent_collection_rate_pct,
       d.collection_rate,
-      (invoicedMonth ? (Number(collectedMonth || 0) / Number(invoicedMonth || 1)) * 100 : 0)
+      (billedMonth ? (cashReceived / billedMonth) * 100 : 0)
     );
 
-    // ---- KPIs ----
+    // KPIs
     setText("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
     setText("#kpiOpen", openInvoicesCount != null ? String(openInvoicesCount) : "—");
-    setText("#kpiPayments", fmtKes(collectedMonth));
-    setText("#kpiBalance", fmtKes(balanceDueForUI));
+    setText("#kpiPayments", fmtKes(cashReceived));
+    setText("#kpiBalance", fmtKes(overdue));
 
-    // ---- Monthly collection summary ----
+    // Monthly collection summary
     setText("#summaryMonthLabel", monthLabel(m));
-    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(d.rent_billed_month ?? d.invoiced_amt ?? 0)}`);
-    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(d.rent_received_month ?? 0)}`);
-    if ($("#summaryCashReceived")) {
-      setText("#summaryCashReceived", `Cash received (month) ${fmtKes(d.cash_received_month ?? d.payments ?? 0)}`);
-    }
+    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
+    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(cashReceived)}`);
 
-    const rentBilled = d.rent_billed_month ?? d.invoiced_amt ?? 0;
-    const rentReceived = d.rent_received_month ?? 0;
-    const cashReceived = d.cash_received_month ?? d.payments ?? d.collected_amt ?? 0;
-    const overdueTotal = d.overdue_total ?? d.balance_due ?? d.closing_balance ?? 0;
-
-    // Fill the missing summary boxes
-    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(rentBilled)}`);
-    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
     if ($("#summaryCashReceived")) {
       setText("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
     }
 
-    // KPIs should match your new labels
-    setText("#kpiPayments", fmtKes(rentReceived));    // Rent received (month)
-    setText("#kpiBalance", fmtKes(overdueTotal));     // Rent overdue (month)
-    // ✅ These were missing in your current function (that’s why amounts disappeared)
-    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(invoicedMonth)}`);
-    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(collectedMonth)}`);
-
-    // Arrears BF/CF (gross if available; else net-based fallback)
-    const hasGross = (d.opening_arrears_bf != null || d.closing_arrears_cf != null);
-
-    if (hasGross) {
+    if (openingNet != null && closingNet != null) {
       setText(
         "#summaryMonthBalance",
-        `Arrears at start (BF) ${fmtKes(openingArrears)} • Arrears at end (CF) ${fmtKes(closingArrears)}`
+        `Balance at start (BF) ${fmtKes(openingNet)} • Balance at end (CF) ${fmtKes(closingNet)}`
       );
+    } else if (closingNet != null) {
+      setText("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
     } else {
-      // If net is negative, that's credit, not arrears
-      const bfArrears = openingNet > 0 ? openingNet : 0;
-      const cfArrears = closingNet > 0 ? closingNet : 0;
-      setText(
-        "#summaryMonthBalance",
-        `Arrears at start (BF) ${fmtKes(bfArrears)} • Arrears at end (CF) ${fmtKes(cfArrears)}`
-      );
+      setText("#summaryMonthBalance", `Arrears (end) ${fmtKes(overdue)}`);
     }
 
-    const rateLabel = (d.rent_billed_month != null || d.collection_rate_month_pct != null)
-      ? "Rent collection rate"
-      : "Cash collection rate";
-    setText("#summaryMonthRate", `${fmtPct(rate)} ${rateLabel}`);
+    setText("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
 
-    // Arrears paid / cleared chip
     if ($("#summaryArrearsCleared")) {
-      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsCleared)}`);
+      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
     }
 
-    // Credits (prepaid) chip — prefer backend-provided totals; fallback to balances/by_unit
     if ($("#summaryOverpayments")) {
-      let creditTotal = closingCredit;
-      let topTenant = pickStr(d.top_overpayer?.unit, d.top_overpayer?.tenant) || "";
-      let topCredit = pickNum(d.top_overpayer?.amount, 0);
-
-      // Fallback only if backend didn't give credit totals
-      if (!(creditTotal > 0.0001)) {
-        let bRows = [];
-        try {
-          const bData = await apiGet(`/balances/by_unit?month=${encodeURIComponent(m)}`);
-          bRows = unwrapRows(bData);
-        } catch (_) {
-          bRows = [];
-        }
-
-        creditTotal = 0;
-        topTenant = "";
-        topCredit = 0;
-
-        for (const r of bRows) {
-          const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
-          const bal = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
-          if (bal < -0.0001) {
-            const credit = -bal;
-            creditTotal += credit;
-            if (credit > topCredit) {
-              topCredit = credit;
-              topTenant = tenant;
-            }
-          }
-        }
-      }
-
-      if (creditTotal > 0.0001) {
+      // If backend returned top overpayer, use it (better than recomputing)
+      const top = d.top_overpayer || {};
+      if (creditsTotal > 0.0001) {
+        const who = (top.unit && top.unit !== "-") ? top.unit : (top.tenant || "—");
+        const amt = pickNum(top.amount, 0);
         setText(
           "#summaryOverpayments",
-          `Tenant credit (prepaid) ${fmtKes(creditTotal)} • Largest credit: ${topTenant} ${fmtKes(topCredit)}`
+          `Tenant credit (prepaid) ${fmtKes(creditsTotal)} • Largest credit: ${who} ${fmtKes(amt)}`
         );
       } else {
         setText("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
