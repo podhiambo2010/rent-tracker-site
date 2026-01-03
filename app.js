@@ -304,70 +304,73 @@ function setSelectValue(sel, value) {
 async function loadOverview() {
   try {
     const m = state.month;
-
     const d = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
 
-    // Canonical keys ONLY
-    const leasesCount = d.active_leases ?? null;
-    const openInvoicesCount = d.open_invoices_month ?? null;
+    // ---- helpers ----
+    const num = (v, def = 0) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : def;
+    };
+    const hasEl = (sel) => !!$(sel);
+    const put = (sel, text) => { if (hasEl(sel)) setText(sel, text); };
 
-    const billedMonth = Number(d.total_due_month || 0);
-    const rentReceived = Number(d.rent_received_month || 0);     // applied to month invoices (as-of month end)
-    const cashReceived = Number(d.cash_received_month || 0);     // cashflow inside month
-    const overdueMonth = Number(d.overdue_month_total || 0);     // month arrears at month end
+    // ---- canonical keys ONLY ----
+    const leasesCount      = (d.active_leases ?? null);
+    const openInvoicesCnt  = (d.open_invoices_month ?? null);
 
-    const openingNet = (d.opening_balance_bf ?? null);
-    const closingNet = (d.closing_balance_cf ?? null);
+    const billedMonth      = num(d.total_due_month, 0);
+    const rentReceived     = num(d.rent_received_month, 0);   // applied to month invoices (as-of month end)
+    const cashReceived     = num(d.cash_received_month, 0);   // cashflow inside month
+    const overdueMonth     = num(d.overdue_month_total, 0);   // month arrears at month end
 
-    const arrearsPaid = Number(d.arrears_paid_month || 0);
+    const openingNet       = (d.opening_balance_bf ?? null);
+    const closingNet       = (d.closing_balance_cf ?? null);
 
-    const creditsTotal = Number(d.credit_total || 0);
-    const top = d.top_credit || {};
+    const arrearsPaid      = num(d.arrears_paid_month, 0);
 
-    const rentRate = Number(d.rent_collection_rate_pct || 0);
+    // IMPORTANT: credit_total + top_credit are AS-OF CF (month end snapshot).
+    // That means credits created by payments in later months MUST NOT appear here
+    // if the backend uses paid_at < m1 (month end cutoff).
+    const creditsTotalCF   = num(d.credit_total, 0);
+    const top              = (d.top_credit || {});
+    const rentRate         = num(d.rent_collection_rate_pct, 0);
 
-    // KPIs (top cards)
-    setText("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
-    setText("#kpiOpen", openInvoicesCount != null ? String(openInvoicesCount) : "—");
-    setText("#kpiPayments", fmtKes(rentReceived));    // Rent received (month)
-    setText("#kpiBalance", fmtKes(overdueMonth));     // Rent overdue (month)
+    // ---- KPIs (top cards) ----
+    put("#kpiLeases",   leasesCount != null ? String(leasesCount) : "—");
+    put("#kpiOpen",     openInvoicesCnt != null ? String(openInvoicesCnt) : "—");
+    put("#kpiPayments", fmtKes(rentReceived));   // Rent received (month)
+    put("#kpiBalance",  fmtKes(overdueMonth));   // Rent overdue (month)
 
-    // Monthly collection summary
-    setText("#summaryMonthLabel", monthLabel(m));
-    setText("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
-    setText("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
+    // ---- Monthly collection summary ----
+    put("#summaryMonthLabel", monthLabel(m));
+    put("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
+    put("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
+    put("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
 
-    if ($("#summaryCashReceived")) {
-      setText("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
-    }
-
+    // BF/CF line
     if (openingNet != null && closingNet != null) {
-      setText(
-        "#summaryMonthBalance",
-        `Balance at start (BF) ${fmtKes(openingNet)} • Balance at end (CF) ${fmtKes(closingNet)}`
-      );
+      put("#summaryMonthBalance", `Balance at start (BF) ${fmtKes(openingNet)} • Balance at end (CF) ${fmtKes(closingNet)}`);
     } else if (closingNet != null) {
-      setText("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
+      put("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
     } else {
-      setText("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(overdueMonth)}`);
+      put("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(overdueMonth)}`);
     }
 
-    setText("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
+    put("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
+    put("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
 
-    if ($("#summaryArrearsCleared")) {
-      setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
-    }
-
-    if ($("#summaryOverpayments")) {
-      if (creditsTotal > 0.0001) {
+    // ---- Tenant credit (prepaid) ----
+    // Truth rule:
+    // - This is "credit as-of month end" (CF snapshot), NOT "credit created in the month".
+    // - If you later want "month-only prepayment credit", we should add canonical keys for that
+    //   (e.g. credit_created_month, top_credit_created_month) from backend.
+    if (hasEl("#summaryOverpayments")) {
+      if (creditsTotalCF > 0.0001) {
         const who = (top.unit && top.unit !== "-") ? top.unit : (top.tenant || "—");
-        const amt = Number(top.amount || 0);
-        setText(
-          "#summaryOverpayments",
-          `Tenant credit (prepaid) ${fmtKes(creditsTotal)} • Largest credit: ${who} ${fmtKes(amt)}`
-        );
+        const amt = num(top.amount, 0);
+        put("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(creditsTotalCF)} • Largest credit: ${who} ${fmtKes(amt)}`);
       } else {
-        setText("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
+        put("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
       }
     }
   } catch (e) {
