@@ -1,11 +1,16 @@
 /* Rent Tracker Dashboard — app.js
- * Updated: 2026-01-09
+ * Updated: 2026-01-09 (patched)
  * Goals:
  * - Overview is summary only
  * - Leases has Apply/Clear and correct columns + ended status color
  * - Balances is analytics only (supports balances/by_unit shape)
  * - Dunning is action center (uses rentroll rows so invoice_id/lease_id exist)
  * - Invoice Actions moved to Settings tab (admin tools)
+ *
+ * Patch focus:
+ * - Fix syntax error in Rent Roll section (unclosed braces)
+ * - Fix Rent Roll month “sticking”
+ * - Fix tenant name display in Balances/Outstanding/Dunning
  */
 
 "use strict";
@@ -110,6 +115,57 @@ function currentMonthFor(sel) {
   return $(sel)?.value || state.month;
 }
 
+/* ------------------------- Month safe picker ------------------------- */
+function safeMonthValue(...selectors) {
+  for (const sel of selectors) {
+    const el = typeof sel === "string" ? document.querySelector(sel) : sel;
+    if (el && typeof el.value === "string" && el.value.trim()) return el.value.trim();
+  }
+  // fallback to global month picker if it exists
+  const global = document.querySelector("#monthPicker, #month, [data-role='month']");
+  if (global && global.value) return global.value.trim();
+  return "";
+}
+
+/* ------------------------- Unit → Tenant mapping helpers ------------------------- */
+function normUnit(u) {
+  // normalize "Unit-  1" == "Unit-1" and collapse whitespace
+  return String(u || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/-\s+/g, "-");
+}
+
+function buildUnitTenantMap(leaseRows) {
+  const map = new Map();
+  for (const r of leaseRows || []) {
+    const unit = normUnit(r.unit || r.unit_code || r.unitCode || "");
+    const tenant = pickStr(r.tenant, r.full_name, r.tenant_name);
+    if (unit && tenant) map.set(unit, tenant);
+  }
+  return map;
+}
+
+function tenantNameFromRow(r) {
+  // Prefer real tenant fields
+  const direct = pickStr(r.tenant_name, r.full_name, r.tenant);
+
+  // If direct looks like a unit code and we have a map, map it
+  const directNorm = normUnit(direct);
+  if (state.unitTenantMap && directNorm && state.unitTenantMap.has(directNorm)) {
+    return state.unitTenantMap.get(directNorm) || direct || "—";
+  }
+
+  // Otherwise use unit mapping
+  const unitNorm = normUnit(r.unit || r.unit_code || r.unitCode || "");
+  if (state.unitTenantMap && unitNorm && state.unitTenantMap.has(unitNorm)) {
+    return state.unitTenantMap.get(unitNorm) || direct || unitNorm || "—";
+  }
+
+  // fallback
+  return direct || unitNorm || "—";
+}
+
 /* ------------------------- State ------------------------- */
 const state = {
   apiBase: "",
@@ -118,6 +174,7 @@ const state = {
   payments: [],
   rentroll: [],
   balances: [],
+  unitTenantMap: new Map(),
 };
 
 /* ------------------------- API ------------------------- */
@@ -352,7 +409,6 @@ async function loadOverview() {
     const m = state.month;
     const d = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
 
-    // ---- helpers ----
     const num = (v, def = 0) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : def;
@@ -362,38 +418,33 @@ async function loadOverview() {
       if (hasEl(sel)) setText(sel, text);
     };
 
-    // ---- canonical keys ONLY ----
     const leasesCount = d.active_leases ?? null;
     const openInvoicesCnt = d.open_invoices_month ?? null;
 
     const billedMonth = num(d.total_due_month, 0);
-    const rentReceived = num(d.rent_received_month, 0); // applied to month invoices (as-of month end)
-    const cashReceived = num(d.cash_received_month, 0); // cashflow inside month
-    const overdueMonth = num(d.overdue_month_total, 0); // month arrears at month end
+    const rentReceived = num(d.rent_received_month, 0);
+    const cashReceived = num(d.cash_received_month, 0);
+    const overdueMonth = num(d.overdue_month_total, 0);
 
     const openingNet = d.opening_balance_bf ?? null;
     const closingNet = d.closing_balance_cf ?? null;
 
     const arrearsPaid = num(d.arrears_paid_month, 0);
 
-    // IMPORTANT: credit_total + top_credit are AS-OF CF (month end snapshot).
     const creditsTotalCF = num(d.credit_total, 0);
     const top = d.top_credit || {};
     const rentRate = num(d.rent_collection_rate_pct, 0);
 
-    // ---- KPIs (top cards) ----
     put("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
     put("#kpiOpen", openInvoicesCnt != null ? String(openInvoicesCnt) : "—");
-    put("#kpiPayments", fmtKes(rentReceived)); // Rent received (month)
-    put("#kpiBalance", fmtKes(overdueMonth)); // Rent overdue (month)
+    put("#kpiPayments", fmtKes(rentReceived));
+    put("#kpiBalance", fmtKes(overdueMonth));
 
-    // ---- Monthly collection summary ----
     put("#summaryMonthLabel", monthLabel(m));
     put("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
     put("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
     put("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
 
-    // BF/CF line
     if (openingNet != null && closingNet != null) {
       put(
         "#summaryMonthBalance",
@@ -408,7 +459,6 @@ async function loadOverview() {
     put("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
     put("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
 
-    // ---- Tenant credit (prepaid) ----
     if (hasEl("#summaryOverpayments")) {
       if (creditsTotalCF > 0.0001) {
         const who = top.unit && top.unit !== "-" ? top.unit : top.tenant || "—";
@@ -426,10 +476,8 @@ async function loadOverview() {
   }
 }
 
-
 /* ------------------------- Leases ------------------------- */
 function initLeases() {
-  // Optional controls (only bind if they exist in your HTML)
   $("#applyLeases")?.addEventListener("click", () => loadLeases(true));
 
   $("#clearLeases")?.addEventListener("click", () => {
@@ -445,22 +493,25 @@ function initLeases() {
 
 async function loadLeases(force = false) {
   try {
-    // leases usually not month-bound, but if backend supports month, we pass it
     const m = state.month;
 
     let data;
     try {
       data = await apiGet(`/leases?month=${encodeURIComponent(m)}`);
     } catch (_) {
-      // fallback if your backend uses a dashboard namespace
       data = await apiGet(`/dashboard/leases?month=${encodeURIComponent(m)}`);
     }
 
     state.leases = unwrapRows(data);
+
+    // Build Unit→Tenant map for fixing tenant display elsewhere
+    state.unitTenantMap = buildUnitTenantMap(state.leases);
+
     renderLeases();
   } catch (e) {
     console.warn("loadLeases failed:", e);
     state.leases = [];
+    state.unitTenantMap = new Map();
     renderLeases();
   }
 }
@@ -468,7 +519,7 @@ async function loadLeases(force = false) {
 function renderLeases() {
   const body = $("#leasesBody");
   const empty = $("#leasesEmpty");
-  if (!body) return; // if tab not present, do nothing (but no crash)
+  if (!body) return;
 
   const q = String($("#leasesTenant")?.value || "").trim().toLowerCase();
   const statusF = String($("#leasesStatus")?.value || "").trim().toLowerCase();
@@ -482,7 +533,6 @@ function renderLeases() {
     const prop = (r.property || r.property_name || "").toLowerCase();
     const combined = `${tenant} ${unit} ${prop}`.trim();
 
-    // Try a few common “ended/active” indicators
     const endRaw = r.end_date || r.lease_end || r.end || r.move_out || null;
     const isEnded =
       (r.status && String(r.status).toLowerCase().includes("end")) ||
@@ -511,7 +561,7 @@ function renderLeases() {
     .map((r) => {
       const property = r.property || r.property_name || "—";
       const unit = r.unit || r.unit_code || "—";
-      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name) || "—";
 
       const start = (r.start_date || r.lease_start || r.start || "").slice(0, 10) || "—";
       const end = (r.end_date || r.lease_end || r.end || r.move_out || "").slice(0, 10) || "—";
@@ -526,8 +576,6 @@ function renderLeases() {
         (endRaw ? new Date(String(endRaw).slice(0, 10)) < today : false);
 
       const status = ended ? "ended" : "active";
-
-      // if your CSS already has .status .ok/.due, this won't break anything
       const statusClass = ended ? "ended" : "ok";
 
       return `
@@ -543,7 +591,6 @@ function renderLeases() {
     })
     .join("");
 }
-
 
 /* ------------------------- Payments ------------------------- */
 function initPayments() {
@@ -592,7 +639,9 @@ function renderPayments() {
     const unit = (r.unit || r.unit_code || "").toLowerCase();
     const combined = `${tenant} ${payer} ${unit}`.trim();
 
-    const st = String(r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated") || "").toLowerCase();
+    const st = String(
+      r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated") || ""
+    ).toLowerCase();
     const okStatus = !statusF || st.includes(statusF);
     const okQ = !q || combined.includes(q);
     return okStatus && okQ;
@@ -637,8 +686,14 @@ function renderPayments() {
 }
 
 /* ------------------------- Rent Roll ------------------------- */
+function rentrollMonthValue() {
+  // This prevents “sticking” and ensures the dropdown month is always respected
+  return safeMonthValue("#rentrollMonth") || state.month;
+}
+
 function initRentRoll() {
   $("#applyRentroll")?.addEventListener("click", () => loadRentRoll(true));
+
   $("#clearRentroll")?.addEventListener("click", () => {
     setSelectValue("#rentrollMonth", state.month);
     const t = $("#rentrollTenant");
@@ -647,11 +702,14 @@ function initRentRoll() {
     if (p) p.value = "";
     loadRentRoll(true);
   });
+
+  // Optional: when dropdown changes, auto reload
+  $("#rentrollMonth")?.addEventListener("change", () => loadRentRoll(true));
 }
 
 async function loadRentRoll(force = false) {
   try {
-    const m = currentMonthFor("#rentrollMonth");
+    const m = rentrollMonthValue();
 
     let data;
     try {
@@ -663,7 +721,7 @@ async function loadRentRoll(force = false) {
     state.rentroll = unwrapRows(data);
     renderRentRoll();
 
-    // Keep overview "open invoices" correct even if rentroll loads after overview
+    // Keep overview correct
     loadOverview();
   } catch (e) {
     console.warn("loadRentRoll failed:", e);
@@ -678,13 +736,13 @@ function renderRentRoll() {
   const empty = $("#rentrollEmpty");
   if (!body) return;
 
-  const m = currentMonthFor("#rentrollMonth");
+  const m = rentrollMonthValue();
 
   const qT = String($("#rentrollTenant")?.value || "").trim().toLowerCase();
   const qP = String($("#rentrollProperty")?.value || "").trim().toLowerCase();
 
   const rows = (state.rentroll || []).filter((r) => {
-    const tenantLike = (r.tenant || r.full_name || r.tenant_name || r.unit_code || "").toLowerCase();
+    const tenantLike = (tenantNameFromRow(r) || r.unit_code || "").toLowerCase();
     const prop = (r.property || r.property_name || "").toLowerCase();
     return (!qT || tenantLike.includes(qT)) && (!qP || prop.includes(qP));
   });
@@ -693,9 +751,7 @@ function renderRentRoll() {
 
   const dueTotal = sum(rows, (r) => pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0));
   const paidTotal = sum(rows, (r) => pickNum(r.paid_total, r.paid, r.collected_amt, r.paid_amt, 0));
-  const balTotal = sum(rows, (r) =>
-    pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, r.month_delta, 0)
-  );
+  const balTotal = sum(rows, (r) => pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, r.month_delta, 0));
   const creditTotal = sum(rows, (r) => pickNum(r.credits, r.credit, r.credit_amt, 0));
 
   setText("#rentrollDueChip", `${fmtKes(dueTotal)} billed`);
@@ -714,7 +770,7 @@ function renderRentRoll() {
     .map((r) => {
       const property = r.property || r.property_name || "—";
       const unit = r.unit || r.unit_code || "—";
-      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const tenant = tenantNameFromRow(r);
 
       const period =
         r.period ||
@@ -747,9 +803,7 @@ function renderRentRoll() {
         <td class="num">${fmtKes(late)}</td>
         <td><span class="status ${String(status).toLowerCase().includes("ok") ? "ok" : "due"}">${escapeHtml(status)}</span></td>
         <td class="num">${fmtKes(bal)}</td>
-        <td>
-          ${waUrl ? `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}
-        </td>
+        <td>${waUrl ? `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}</td>
       </tr>`;
     })
     .join("");
@@ -816,7 +870,7 @@ function renderBalances() {
     setText("#balMonthCollected", "KES 0 received");
     setText("#balMonthBalance", "KES 0 arrears (end)");
     setText("#balMonthRate", "0.0% rent collection rate");
-    return; // ✅ IMPORTANT: do not continue and hide the empty state
+    return;
   }
   hide(empty);
 
@@ -832,7 +886,7 @@ function renderBalances() {
 
   body.innerHTML = rows
     .map((r) => {
-      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const tenant = tenantNameFromRow(r);
       const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
       const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
       const bal = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
@@ -857,7 +911,7 @@ function renderOutstandingFromBalances() {
 
   const rows = (state.balances || [])
     .map((r) => {
-      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const tenant = tenantNameFromRow(r);
       const outstanding = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
       const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
       const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
@@ -908,8 +962,8 @@ function dunningMonth() {
 async function loadDunning(force = false) {
   try {
     const m = dunningMonth();
-    setSelectValue("#rentrollMonth", m);
 
+    // IMPORTANT: Do NOT change rentrollMonth dropdown from Dunning (this caused “sticking” confusion)
     if (force || !state.rentroll.length) {
       await loadRentRoll(true);
     }
@@ -940,7 +994,7 @@ function renderDunning() {
 
   const rows = (state.rentroll || [])
     .map((r) => {
-      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const tenant = tenantNameFromRow(r);
       const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
       const due = pickNum(r.total_due, r.rent_due, r.subtotal_rent, r.rent, r.invoiced_amt, 0);
       const paid = pickNum(r.paid_total, r.paid, r.collected_amt, r.paid_amt, 0);
@@ -999,7 +1053,7 @@ function getSelectedDunningRows() {
 
   const all = (state.rentroll || [])
     .map((r) => {
-      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const tenant = tenantNameFromRow(r);
       const outstanding = pickNum(r.invoice_balance, r.lease_running_balance, r.balance, r.closing_balance, 0);
       const invoiceId = r.invoice_id || r.invoiceId || "";
       const leaseId = r.lease_id || r.leaseId || "";
@@ -1033,25 +1087,23 @@ function dunningHrefForRow(x, dm, period) {
   return waRedirect || waDirect;
 }
 
-// Tries to open links one-by-one without triggering popup blockers too hard.
-// Tip: user should allow popups for your site for best results.
 async function openLinksSequentially(urls, { delayMs = 900, reuseOneTab = true } = {}) {
   const clean = (urls || []).filter(Boolean);
   if (!clean.length) return;
 
-  // Option A: reuse one popup/tab and just change URL (least popup-blocking)
   let w = null;
   if (reuseOneTab) {
     w = window.open(clean[0], "_blank");
-    if (!w) return; // blocked
+    if (!w) return;
     for (let i = 1; i < clean.length; i++) {
       await new Promise((r) => setTimeout(r, delayMs));
-      try { w.location.href = clean[i]; } catch (_) {}
+      try {
+        w.location.href = clean[i];
+      } catch (_) {}
     }
     return;
   }
 
-  // Option B: open each in its own tab (more likely to be blocked)
   for (const u of clean) {
     window.open(u, "_blank", "noopener");
     await new Promise((r) => setTimeout(r, delayMs));
@@ -1075,27 +1127,7 @@ function buildDunningLinks({ autoOpen = false } = {}) {
 
   const urls = [];
   const items = selected.map((x) => {
-    // Use helper if you pasted it; otherwise keep direct logic
-    const href =
-      (typeof dunningHrefForRow === "function"
-        ? dunningHrefForRow(x, dm, period)
-        : (() => {
-            const txt =
-              `Hello ${x.tenant},\n` +
-              `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
-              `Kindly pay at your earliest convenience. Thank you.`;
-
-            const waRedirect =
-              x.leaseId
-                ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
-                : x.invoiceId
-                ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
-                : "";
-
-            const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
-            return waRedirect || waDirect;
-          })());
-
+    const href = dunningHrefForRow(x, dm, period);
     if (href) urls.push(href);
 
     return href
@@ -1111,23 +1143,7 @@ function buildDunningLinks({ autoOpen = false } = {}) {
     : `Built ${selected.length} link(s). Click them below to send (avoids pop-up blockers). Tip: Shift+Click to auto-open.`;
 
   if (autoOpen) {
-    if (typeof openLinksSequentially === "function") {
-      openLinksSequentially(urls, { delayMs: 1200, reuseOneTab: true });
-    } else {
-      // fallback if you didn't paste openLinksSequentially yet
-      const first = urls[0];
-      const w = first ? window.open(first, "_blank") : null;
-      if (!w) {
-        msg.textContent = "Popup blocked. Please allow popups for this site, then try again.";
-        return;
-      }
-      (async () => {
-        for (let i = 1; i < urls.length; i++) {
-          await new Promise((r) => setTimeout(r, 1200));
-          try { w.location.href = urls[i]; } catch (_) {}
-        }
-      })();
-    }
+    openLinksSequentially(urls, { delayMs: 1200, reuseOneTab: true });
   }
 }
 
@@ -1238,7 +1254,6 @@ function initInvoiceActions() {
     healthBtn.addEventListener("click", async () => {
       setMsg("Checking admin token…");
       try {
-        // ✅ Use the same fetch helper so it cannot hang forever
         await apiGet("/admin/ping", { admin: true, timeoutMs: 15000 });
         setMsg("Admin token OK ✅");
       } catch (e) {
@@ -1268,12 +1283,10 @@ function initInvoiceActions() {
 
 /* ------------------------- Init ------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  // Core
   if (typeof initTabs === "function") initTabs();
   if (typeof initApiBaseControls === "function") initApiBaseControls();
   if (typeof initMonthPicker === "function") initMonthPicker();
 
-  // Section initializers (guarded so missing sections don't crash the app)
   if (typeof initLeases === "function") initLeases();
   if (typeof initPayments === "function") initPayments();
   if (typeof initRentRoll === "function") initRentRoll();
@@ -1283,7 +1296,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (typeof initSettings === "function") initSettings();
   if (typeof initInvoiceActions === "function") initInvoiceActions();
 
-  // Initial loads (also guarded)
   if (typeof loadOverview === "function") loadOverview();
   if (typeof loadLeases === "function") loadLeases(true);
   if (typeof loadPayments === "function") loadPayments(true);
