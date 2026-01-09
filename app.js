@@ -1272,8 +1272,20 @@ document.addEventListener("DOMContentLoaded", () => {
   initApiBaseControls();
   initMonthPicker();
 
-    // Leases is optional (prevents crash if Leases section is missing)
+  // Leases is optional (prevents crash if Leases section is missing)
   if (typeof initLeases === "function") initLeases();
+  if (typeof initPayments === "function") initPayments();
+  if (typeof initRentRoll === "function") initRentRoll();
+  if (typeof initBalances === "function") initBalances();
+  if (typeof initDunning === "function") initDunning();
+  if (typeof initWhatsAppBuilder === "function") initWhatsAppBuilder();
+  if (typeof initSettings === "function") initSettings();
+  if (typeof initInvoiceActions === "function") initInvoiceActions();
 
-    if (typeof loadLeases === "function") loadLeases(true);
+  if (typeof loadOverview === "function") loadOverview();
+  if (typeof loadLeases === "function") loadLeases(true);
+  if (typeof loadPayments === "function") loadPayments(true);
+  if (typeof loadRentRoll === "function") loadRentRoll(true);
+  if (typeof loadBalances === "function") loadBalances(true);
+  if (typeof loadDunning === "function") loadDunning(true);
 });
