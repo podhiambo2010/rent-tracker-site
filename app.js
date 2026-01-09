@@ -1,5 +1,5 @@
 /* Rent Tracker Dashboard — app.js
- * Updated: 2026-01-01
+ * Updated: 2026-01-09
  * Goals:
  * - Overview is summary only
  * - Leases has Apply/Clear and correct columns + ended status color
@@ -126,49 +126,95 @@ function apiBase() {
   return b;
 }
 
-async function apiGet(path) {
-  const base = apiBase();
-  if (!base) throw new Error("API base is empty");
-  const url = base + path;
-  const res = await fetch(url);
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`GET ${path} -> HTTP ${res.status} ${body}`);
-  }
-  const ct = (res.headers.get("content-type") || "").toLowerCase();
-  if (ct.includes("application/json")) return await res.json();
-  return await res.text();
+function getAdminTokenFromStorage() {
+  return localStorage.getItem("admin_token") || "";
 }
 
-async function apiPost(path, payload, { admin = false } = {}) {
+/**
+ * Unified fetch helper:
+ * - Timeout (prevents hanging UI when backend/DB is slow)
+ * - Safer JSON/text parsing
+ * - Clearer error messages
+ */
+async function apiFetch(path, opts = {}) {
   const base = apiBase();
   if (!base) throw new Error("API base is empty");
 
-  const headers = { "Content-Type": "application/json" };
+  const {
+    method = "GET",
+    payload = null,
+    admin = false,
+    headers: extraHeaders = {},
+    timeoutMs = 25000,
+  } = opts;
+
+  const url = base + path;
+
+  const headers = {
+    Accept: "application/json",
+    ...extraHeaders,
+  };
+
+  if (payload != null && method !== "GET") {
+    headers["Content-Type"] = "application/json";
+  }
+
   if (admin) {
     const t = getAdminTokenFromStorage() || window.getAdminToken?.() || "";
     if (t) headers["X-Admin-Token"] = t;
   }
 
-  const res = await fetch(base + path, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload || {}),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`POST ${path} -> HTTP ${res.status} ${body}`);
+  let res;
+  let raw = "";
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: payload != null && method !== "GET" ? JSON.stringify(payload) : undefined,
+      signal: controller.signal,
+    });
+
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    raw = await res.text().catch(() => "");
+
+    let parsed = raw;
+    if (ct.includes("application/json")) {
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        // keep raw
+      }
+    }
+
+    if (!res.ok) {
+      const msg =
+        typeof parsed === "object" && parsed
+          ? (parsed.error || parsed.detail || JSON.stringify(parsed)).slice(0, 400)
+          : String(raw || "").slice(0, 400);
+
+      throw new Error(`${method} ${path} -> HTTP ${res.status}${msg ? ` • ${msg}` : ""}`);
+    }
+
+    return parsed;
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error(`${method} ${path} -> timed out after ${timeoutMs / 1000}s`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-
-  const ct = (res.headers.get("content-type") || "").toLowerCase();
-  if (ct.includes("application/json")) return await res.json();
-  return await res.text();
 }
 
-function getAdminTokenFromStorage() {
-  return localStorage.getItem("admin_token") || "";
+async function apiGet(path, { admin = false, timeoutMs } = {}) {
+  return await apiFetch(path, { method: "GET", admin, timeoutMs });
+}
+
+async function apiPost(path, payload, { admin = false, timeoutMs } = {}) {
+  return await apiFetch(path, { method: "POST", payload, admin, timeoutMs });
 }
 
 /* ------------------------- Tabs ------------------------- */
@@ -312,34 +358,34 @@ async function loadOverview() {
       return Number.isFinite(n) ? n : def;
     };
     const hasEl = (sel) => !!$(sel);
-    const put = (sel, text) => { if (hasEl(sel)) setText(sel, text); };
+    const put = (sel, text) => {
+      if (hasEl(sel)) setText(sel, text);
+    };
 
     // ---- canonical keys ONLY ----
-    const leasesCount      = (d.active_leases ?? null);
-    const openInvoicesCnt  = (d.open_invoices_month ?? null);
+    const leasesCount = d.active_leases ?? null;
+    const openInvoicesCnt = d.open_invoices_month ?? null;
 
-    const billedMonth      = num(d.total_due_month, 0);
-    const rentReceived     = num(d.rent_received_month, 0);   // applied to month invoices (as-of month end)
-    const cashReceived     = num(d.cash_received_month, 0);   // cashflow inside month
-    const overdueMonth     = num(d.overdue_month_total, 0);   // month arrears at month end
+    const billedMonth = num(d.total_due_month, 0);
+    const rentReceived = num(d.rent_received_month, 0); // applied to month invoices (as-of month end)
+    const cashReceived = num(d.cash_received_month, 0); // cashflow inside month
+    const overdueMonth = num(d.overdue_month_total, 0); // month arrears at month end
 
-    const openingNet       = (d.opening_balance_bf ?? null);
-    const closingNet       = (d.closing_balance_cf ?? null);
+    const openingNet = d.opening_balance_bf ?? null;
+    const closingNet = d.closing_balance_cf ?? null;
 
-    const arrearsPaid      = num(d.arrears_paid_month, 0);
+    const arrearsPaid = num(d.arrears_paid_month, 0);
 
     // IMPORTANT: credit_total + top_credit are AS-OF CF (month end snapshot).
-    // That means credits created by payments in later months MUST NOT appear here
-    // if the backend uses paid_at < m1 (month end cutoff).
-    const creditsTotalCF   = num(d.credit_total, 0);
-    const top              = (d.top_credit || {});
-    const rentRate         = num(d.rent_collection_rate_pct, 0);
+    const creditsTotalCF = num(d.credit_total, 0);
+    const top = d.top_credit || {};
+    const rentRate = num(d.rent_collection_rate_pct, 0);
 
     // ---- KPIs (top cards) ----
-    put("#kpiLeases",   leasesCount != null ? String(leasesCount) : "—");
-    put("#kpiOpen",     openInvoicesCnt != null ? String(openInvoicesCnt) : "—");
-    put("#kpiPayments", fmtKes(rentReceived));   // Rent received (month)
-    put("#kpiBalance",  fmtKes(overdueMonth));   // Rent overdue (month)
+    put("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
+    put("#kpiOpen", openInvoicesCnt != null ? String(openInvoicesCnt) : "—");
+    put("#kpiPayments", fmtKes(rentReceived)); // Rent received (month)
+    put("#kpiBalance", fmtKes(overdueMonth)); // Rent overdue (month)
 
     // ---- Monthly collection summary ----
     put("#summaryMonthLabel", monthLabel(m));
@@ -349,7 +395,10 @@ async function loadOverview() {
 
     // BF/CF line
     if (openingNet != null && closingNet != null) {
-      put("#summaryMonthBalance", `Balance at start (BF) ${fmtKes(openingNet)} • Balance at end (CF) ${fmtKes(closingNet)}`);
+      put(
+        "#summaryMonthBalance",
+        `Balance at start (BF) ${fmtKes(openingNet)} • Balance at end (CF) ${fmtKes(closingNet)}`
+      );
     } else if (closingNet != null) {
       put("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
     } else {
@@ -360,15 +409,14 @@ async function loadOverview() {
     put("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
 
     // ---- Tenant credit (prepaid) ----
-    // Truth rule:
-    // - This is "credit as-of month end" (CF snapshot), NOT "credit created in the month".
-    // - If you later want "month-only prepayment credit", we should add canonical keys for that
-    //   (e.g. credit_created_month, top_credit_created_month) from backend.
     if (hasEl("#summaryOverpayments")) {
       if (creditsTotalCF > 0.0001) {
-        const who = (top.unit && top.unit !== "-") ? top.unit : (top.tenant || "—");
+        const who = top.unit && top.unit !== "-" ? top.unit : top.tenant || "—";
         const amt = num(top.amount, 0);
-        put("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(creditsTotalCF)} • Largest credit: ${who} ${fmtKes(amt)}`);
+        put(
+          "#summaryOverpayments",
+          `Tenant credit (prepaid) ${fmtKes(creditsTotalCF)} • Largest credit: ${who} ${fmtKes(amt)}`
+        );
       } else {
         put("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
       }
@@ -377,6 +425,125 @@ async function loadOverview() {
     console.warn("loadOverview failed:", e);
   }
 }
+
+
+/* ------------------------- Leases ------------------------- */
+function initLeases() {
+  // Optional controls (only bind if they exist in your HTML)
+  $("#applyLeases")?.addEventListener("click", () => loadLeases(true));
+
+  $("#clearLeases")?.addEventListener("click", () => {
+    const q = $("#leasesTenant");
+    if (q) q.value = "";
+    const s = $("#leasesStatus");
+    if (s) s.value = "";
+    loadLeases(true);
+  });
+
+  $("#leasesStatus")?.addEventListener("change", () => loadLeases(true));
+}
+
+async function loadLeases(force = false) {
+  try {
+    // leases usually not month-bound, but if backend supports month, we pass it
+    const m = state.month;
+
+    let data;
+    try {
+      data = await apiGet(`/leases?month=${encodeURIComponent(m)}`);
+    } catch (_) {
+      // fallback if your backend uses a dashboard namespace
+      data = await apiGet(`/dashboard/leases?month=${encodeURIComponent(m)}`);
+    }
+
+    state.leases = unwrapRows(data);
+    renderLeases();
+  } catch (e) {
+    console.warn("loadLeases failed:", e);
+    state.leases = [];
+    renderLeases();
+  }
+}
+
+function renderLeases() {
+  const body = $("#leasesBody");
+  const empty = $("#leasesEmpty");
+  if (!body) return; // if tab not present, do nothing (but no crash)
+
+  const q = String($("#leasesTenant")?.value || "").trim().toLowerCase();
+  const statusF = String($("#leasesStatus")?.value || "").trim().toLowerCase();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const rows = (state.leases || []).filter((r) => {
+    const tenant = (r.tenant || r.full_name || r.tenant_name || "").toLowerCase();
+    const unit = (r.unit || r.unit_code || "").toLowerCase();
+    const prop = (r.property || r.property_name || "").toLowerCase();
+    const combined = `${tenant} ${unit} ${prop}`.trim();
+
+    // Try a few common “ended/active” indicators
+    const endRaw = r.end_date || r.lease_end || r.end || r.move_out || null;
+    const isEnded =
+      (r.status && String(r.status).toLowerCase().includes("end")) ||
+      (r.is_active === false) ||
+      (r.active === false) ||
+      (endRaw ? new Date(String(endRaw).slice(0, 10)) < today : false);
+
+    const st = isEnded ? "ended" : "active";
+
+    const okQ = !q || combined.includes(q);
+    const okStatus = !statusF || st.includes(statusF);
+    return okQ && okStatus;
+  });
+
+  setText("#leasesCount", rows.length);
+  setText("#leasesCountChip", rows.length);
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    return;
+  }
+  hide(empty);
+
+  body.innerHTML = rows
+    .map((r) => {
+      const property = r.property || r.property_name || "—";
+      const unit = r.unit || r.unit_code || "—";
+      const tenant = r.tenant || r.full_name || r.tenant_name || "—";
+
+      const start = (r.start_date || r.lease_start || r.start || "").slice(0, 10) || "—";
+      const end = (r.end_date || r.lease_end || r.end || r.move_out || "").slice(0, 10) || "—";
+
+      const rent = pickNum(r.monthly_rent, r.rent, r.rent_amount, r.amount, 0);
+
+      const endRaw = r.end_date || r.lease_end || r.end || r.move_out || null;
+      const ended =
+        (r.status && String(r.status).toLowerCase().includes("end")) ||
+        (r.is_active === false) ||
+        (r.active === false) ||
+        (endRaw ? new Date(String(endRaw).slice(0, 10)) < today : false);
+
+      const status = ended ? "ended" : "active";
+
+      // if your CSS already has .status .ok/.due, this won't break anything
+      const statusClass = ended ? "ended" : "ok";
+
+      return `
+      <tr class="${ended ? "row-ended" : ""}">
+        <td>${escapeHtml(property)}</td>
+        <td>${escapeHtml(unit)}</td>
+        <td>${escapeHtml(tenant)}</td>
+        <td>${escapeHtml(start)}</td>
+        <td>${escapeHtml(end)}</td>
+        <td class="num">${fmtKes(rent)}</td>
+        <td><span class="status ${statusClass}">${escapeHtml(status)}</span></td>
+      </tr>`;
+    })
+    .join("");
+}
+
 
 /* ------------------------- Payments ------------------------- */
 function initPayments() {
@@ -536,7 +703,6 @@ function renderRentRoll() {
   setText("#rentrollBalChip", `${fmtKes(balTotal)} overdue`);
   setText("#rentrollCreditChip", `${fmtKes(creditTotal)} prepaid credit`);
 
-
   if (!rows.length) {
     body.innerHTML = "";
     show(empty);
@@ -622,12 +788,11 @@ async function loadBalances(force = false) {
     renderBalances();
     renderOutstandingFromBalances();
 
-    setText("#balMonthLabel", monthLabel(m));    
+    setText("#balMonthLabel", monthLabel(m));
     setText("#outstandingMonthLabel", monthLabel(m));
     setText("#balancesLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
     setText("#outstandingLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
 
-    // Keep overview credits/overpayments correct if user is on overview
     loadOverview();
   } catch (e) {
     console.warn("loadBalances failed:", e);
@@ -651,7 +816,7 @@ function renderBalances() {
     setText("#balMonthCollected", "KES 0 received");
     setText("#balMonthBalance", "KES 0 arrears (end)");
     setText("#balMonthRate", "0.0% rent collection rate");
-
+    return; // ✅ IMPORTANT: do not continue and hide the empty state
   }
   hide(empty);
 
@@ -664,7 +829,6 @@ function renderBalances() {
   setText("#balMonthCollected", `${fmtKes(paidTotal)} received`);
   setText("#balMonthBalance", `${fmtKes(balTotal)} arrears (end)`);
   setText("#balMonthRate", `${fmtPct(rate)} rent collection rate`);
-
 
   body.innerHTML = rows
     .map((r) => {
@@ -996,18 +1160,8 @@ function initInvoiceActions() {
     healthBtn.addEventListener("click", async () => {
       setMsg("Checking admin token…");
       try {
-        const headers = {};
-        const t = getAdminTokenFromStorage() || window.getAdminToken?.() || "";
-        if (t) headers["X-Admin-Token"] = t;
-
-        const base = apiBase();
-        if (!base) throw new Error("Set API base first.");
-
-        const res = await fetch(base + "/admin/ping", { headers });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status} ${body}`);
-        }
+        // ✅ Use the same fetch helper so it cannot hang forever
+        await apiGet("/admin/ping", { admin: true, timeoutMs: 15000 });
         setMsg("Admin token OK ✅");
       } catch (e) {
         setMsg(`Ping failed: ${e.message}`);
