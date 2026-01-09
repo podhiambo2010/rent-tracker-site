@@ -1268,11 +1268,12 @@ function initInvoiceActions() {
 
 /* ------------------------- Init ------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
-  initApiBaseControls();
-  initMonthPicker();
+  // Core
+  if (typeof initTabs === "function") initTabs();
+  if (typeof initApiBaseControls === "function") initApiBaseControls();
+  if (typeof initMonthPicker === "function") initMonthPicker();
 
-  // Leases is optional (prevents crash if Leases section is missing)
+  // Section initializers (guarded so missing sections don't crash the app)
   if (typeof initLeases === "function") initLeases();
   if (typeof initPayments === "function") initPayments();
   if (typeof initRentRoll === "function") initRentRoll();
@@ -1282,6 +1283,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (typeof initSettings === "function") initSettings();
   if (typeof initInvoiceActions === "function") initInvoiceActions();
 
+  // Initial loads (also guarded)
   if (typeof loadOverview === "function") loadOverview();
   if (typeof loadLeases === "function") loadLeases(true);
   if (typeof loadPayments === "function") loadPayments(true);
