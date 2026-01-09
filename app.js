@@ -897,7 +897,7 @@ function initDunning() {
     });
   });
 
-  $("#btnDunningBuildLinks")?.addEventListener("click", () => buildDunningLinks());
+  $("#btnDunningBuildLinks")?.addEventListener("click", (e) => buildDunningLinks({ autoOpen: e.shiftKey }));
   $("#btnDunningMarkSent")?.addEventListener("click", () => markDunningSelectedAsSent());
 }
 
@@ -1012,7 +1012,53 @@ function getSelectedDunningRows() {
   return checks.map((cb) => all[Number(cb.dataset.idx)]).filter(Boolean);
 }
 
-function buildDunningLinks() {
+function dunningMessageText(tenant, period, amountKes) {
+  return (
+    `Hello ${tenant},\n` +
+    `This is a gentle reminder that your rent balance for ${period} is ${amountKes}.\n` +
+    `Kindly pay at your earliest convenience. Thank you.`
+  );
+}
+
+function dunningHrefForRow(x, dm, period) {
+  const waRedirect =
+    x.leaseId
+      ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
+      : x.invoiceId
+      ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
+      : "";
+
+  const txt = dunningMessageText(x.tenant, period, fmtKes(x.outstanding));
+  const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
+  return waRedirect || waDirect;
+}
+
+// Tries to open links one-by-one without triggering popup blockers too hard.
+// Tip: user should allow popups for your site for best results.
+async function openLinksSequentially(urls, { delayMs = 900, reuseOneTab = true } = {}) {
+  const clean = (urls || []).filter(Boolean);
+  if (!clean.length) return;
+
+  // Option A: reuse one popup/tab and just change URL (least popup-blocking)
+  let w = null;
+  if (reuseOneTab) {
+    w = window.open(clean[0], "_blank");
+    if (!w) return; // blocked
+    for (let i = 1; i < clean.length; i++) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      try { w.location.href = clean[i]; } catch (_) {}
+    }
+    return;
+  }
+
+  // Option B: open each in its own tab (more likely to be blocked)
+  for (const u of clean) {
+    window.open(u, "_blank", "noopener");
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+}
+
+function buildDunningLinks({ autoOpen = false } = {}) {
   const msg = $("#dunningMsg");
   const links = $("#dunningLinks");
   const linksBody = $("#dunningLinksBody");
@@ -1027,21 +1073,30 @@ function buildDunningLinks() {
   const dm = dunningMonth();
   const period = monthLabel(dm);
 
+  const urls = [];
   const items = selected.map((x) => {
-    const txt =
-      `Hello ${x.tenant},\n` +
-      `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
-      `Kindly pay at your earliest convenience. Thank you.`;
+    // Use helper if you pasted it; otherwise keep direct logic
+    const href =
+      (typeof dunningHrefForRow === "function"
+        ? dunningHrefForRow(x, dm, period)
+        : (() => {
+            const txt =
+              `Hello ${x.tenant},\n` +
+              `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
+              `Kindly pay at your earliest convenience. Thank you.`;
 
-    const waRedirect =
-      x.leaseId
-        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
-        : x.invoiceId
-        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
-        : "";
+            const waRedirect =
+              x.leaseId
+                ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
+                : x.invoiceId
+                ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
+                : "";
 
-    const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
-    const href = waRedirect || waDirect;
+            const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
+            return waRedirect || waDirect;
+          })());
+
+    if (href) urls.push(href);
 
     return href
       ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(x.tenant)} — ${fmtKes(x.outstanding)}</a>`
@@ -1050,7 +1105,30 @@ function buildDunningLinks() {
 
   linksBody.innerHTML = items.join("");
   show(links);
-  msg.textContent = `Built ${selected.length} link(s). Click them below to send (avoids pop-up blockers).`;
+
+  msg.textContent = autoOpen
+    ? `Opening ${urls.length} WhatsApp link(s) sequentially… (Tip: allow popups for this site).`
+    : `Built ${selected.length} link(s). Click them below to send (avoids pop-up blockers). Tip: Shift+Click to auto-open.`;
+
+  if (autoOpen) {
+    if (typeof openLinksSequentially === "function") {
+      openLinksSequentially(urls, { delayMs: 1200, reuseOneTab: true });
+    } else {
+      // fallback if you didn't paste openLinksSequentially yet
+      const first = urls[0];
+      const w = first ? window.open(first, "_blank") : null;
+      if (!w) {
+        msg.textContent = "Popup blocked. Please allow popups for this site, then try again.";
+        return;
+      }
+      (async () => {
+        for (let i = 1; i < urls.length; i++) {
+          await new Promise((r) => setTimeout(r, 1200));
+          try { w.location.href = urls[i]; } catch (_) {}
+        }
+      })();
+    }
+  }
 }
 
 async function markDunningSelectedAsSent() {
@@ -1194,19 +1272,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initApiBaseControls();
   initMonthPicker();
 
-  initLeases();
-  initPayments();
-  initRentRoll();
-  initBalances();
-  initDunning();
-  initWhatsAppBuilder();
-  initSettings();
-  initInvoiceActions();
+    // Leases is optional (prevents crash if Leases section is missing)
+  if (typeof initLeases === "function") initLeases();
 
-  loadOverview();
-  loadLeases(true);
-  loadPayments(true);
-  loadRentRoll(true);
-  loadBalances(true);
-  loadDunning(true);
+    if (typeof loadLeases === "function") loadLeases(true);
 });
