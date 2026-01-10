@@ -24,6 +24,7 @@
     a{color:#7aa7ff}
     th.num, td.num { text-align: right; }
 
+    /* Shell */
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
     header{position:sticky;top:0;z-index:5;background:rgba(15,23,48,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
     .bar{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px 20px;max-width:1200px;margin-inline:auto}
@@ -51,6 +52,7 @@
     .kpi h3{font-size:12px;color:var(--muted);margin:0}
     .kpi .v{font-size:22px;margin:6px 0 0}
 
+    /* Monthly collection summary layout */
     #collection-summary-month{
       margin-top:10px;
       display:flex;
@@ -67,6 +69,7 @@
     }
     #collection-summary-month strong{ font-size:13px; }
 
+    /* Balances totals strip */
     #balances-summary {
       margin-top: 10px;
       display: flex;
@@ -87,6 +90,7 @@
     .muted{color:var(--muted)}
     .hidden{display:none!important}
 
+    /* Tables */
     .table-wrap{max-height:60vh;overflow:auto;border-radius:12px}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
     thead th{
@@ -139,6 +143,7 @@
     }
     #monthPicker::-webkit-calendar-picker-indicator{filter:invert(1);}
 
+    /* Section divider */
     .section-split{
       display:flex;
       align-items:center;
@@ -157,6 +162,7 @@
       background: rgba(255,255,255,.03);
     }
 
+    /* Dunning action strip */
     .dunning-actions{
       display:flex;
       gap:10px;
@@ -204,6 +210,7 @@
   </header>
 
   <main>
+    <!-- LEFT NAV -->
     <nav aria-label="Sections">
       <a class="tab" data-tab="overview" aria-selected="true">🏠 Overview</a>
       <a class="tab" data-tab="leases">🔑 Leases</a>
@@ -215,8 +222,10 @@
       <a class="tab" data-tab="settings">⚙️ Settings</a>
     </nav>
 
+    <!-- RIGHT CONTENT -->
     <section>
 
+      <!-- ===== Overview ===== -->
       <div class="panel" id="tab-overview">
         <h2>Overview</h2>
 
@@ -247,6 +256,7 @@
         </div>
       </div>
 
+      <!-- ===== Leases ===== -->
       <div class="panel hidden" id="tab-leases">
         <div class="bar-flex">
           <h2>Leases</h2><span class="chip" id="leasesCount">—</span>
@@ -254,11 +264,6 @@
 
         <div class="filters">
           <input id="leasesTenant" placeholder="Search tenant or unit…"/>
-          <select id="leasesStatus">
-            <option value="">Any status</option>
-            <option value="active">active</option>
-            <option value="ended">ended</option>
-          </select>
           <button class="btn" id="applyLeases">Apply</button>
           <button class="btn ghost" id="clearLeases">Clear</button>
           <button class="btn ghost" id="reloadLeases">Reload</button>
@@ -283,6 +288,7 @@
         <div id="leasesEmpty" class="empty hidden">No leases to show yet.</div>
       </div>
 
+      <!-- ===== Payments ===== -->
       <div class="panel hidden" id="tab-payments">
         <div class="bar-flex">
           <h2>Payments</h2><span class="chip" id="paymentsCount">—</span>
@@ -317,6 +323,7 @@
         <div id="paymentsEmpty" class="empty hidden">No payments match your filters.</div>
       </div>
 
+      <!-- ===== Rent Roll ===== -->
       <div class="panel hidden" id="tab-rentroll">
         <div class="bar-flex">
           <h2>Rent Roll</h2><span class="chip" id="rentrollCount">—</span>
@@ -344,12 +351,10 @@
                 <th>Unit</th>
                 <th>Tenant</th>
                 <th>Period</th>
-                <th class="num">Rent billed</th>
+                <th class="num">Rent</th>
                 <th class="num">Late fees</th>
-                <th class="num">Paid</th>
-                <th class="num">Credit</th>
-                <th class="num">Balance (end)</th>
                 <th>Status</th>
+                <th class="num">Balance (end)</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -359,6 +364,7 @@
         <div id="rentrollEmpty" class="empty hidden">No rent-roll rows match your filters.</div>
       </div>
 
+      <!-- ===== Balances ===== -->
       <div class="panel hidden" id="tab-balances">
         <div class="bar-flex">
           <h2>Balances</h2>
@@ -398,6 +404,7 @@
           <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
         </div>
 
+        <!-- Divider -->
         <div class="section-split" style="margin-top:24px;">
           <div class="split-line"></div>
           <div class="split-label">Outstanding</div>
@@ -428,6 +435,7 @@
         <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
       </div>
 
+      <!-- ===== Dunning (Action Center) ===== -->
       <div class="panel hidden" id="tab-dunning">
         <div class="bar-flex">
           <h2>Dunning</h2>
@@ -436,6 +444,12 @@
         </div>
 
         <p id="dunningLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
+
+        <div class="filters" style="margin-top:10px;">
+          <select id="dunningMonth"></select>
+          <input id="dunningMinDaysOverdue" type="number" min="0" value="0" placeholder="Min days overdue (e.g., 6)"/>
+          <span class="muted">Tip: set Min days to your grace days + 1 to target only past-grace.</span>
+        </div>
 
         <div class="dunning-actions">
           <label class="muted" style="display:flex;gap:8px;align-items:center;">
@@ -455,7 +469,9 @@
               <tr>
                 <th></th>
                 <th>Tenant</th>
-                <th class="num">Overdue</th>
+                <th class="num">Overdue (month)</th>
+                <th class="num">Total owed</th>
+                <th class="num">Days overdue</th>
                 <th class="num">Rent collection rate</th>
                 <th>WhatsApp</th>
                 <th>Invoice</th>
@@ -464,7 +480,7 @@
             <tbody id="dunningBody"></tbody>
           </table>
         </div>
-        <div id="dunningEmpty" class="empty hidden">No dunning items this month 🎉</div>
+        <div id="dunningEmpty" class="empty hidden">No dunning items match your filter 🎉</div>
 
         <div id="dunningLinks" class="dunning-links hidden">
           <div class="muted" style="margin-bottom:6px;">
@@ -474,6 +490,7 @@
         </div>
       </div>
 
+      <!-- ===== WhatsApp (ad-hoc builder) ===== -->
       <div class="panel hidden" id="tab-whatsapp">
         <h2>WhatsApp Message (ad-hoc)</h2>
         <div class="filters">
@@ -489,6 +506,7 @@
         <div id="waResult" class="muted"></div>
       </div>
 
+      <!-- ===== Settings ===== -->
       <div class="panel hidden" id="tab-settings">
         <h2>Settings</h2>
         <p class="muted">Saved only in this browser (localStorage).</p>
@@ -504,6 +522,7 @@
           <button class="btn ghost" id="resetSettings">Reset</button>
         </div>
 
+        <!-- Invoice Actions moved here -->
         <div class="panel" style="margin-top:14px;">
           <h3 style="margin:0 0 8px;">Admin Tools — Invoice Actions</h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -545,6 +564,6 @@
 })();
 </script>
 
-<script src="app.js?v=20260109-1"></script>
+<script src="app.js?v=20260110-1"></script>
 </body>
 </html>

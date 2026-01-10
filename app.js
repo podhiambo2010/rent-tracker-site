@@ -33,6 +33,24 @@ function fmtKes(n) {
   return `KES ${fmtNumber(n)}`;
 }
 
+// Date helpers (for Dunning)
+function parseDateOnly(s) {
+  if (!s) return null;
+  // Expect YYYY-MM-DD; force local midnight
+  const d = new Date(String(s).slice(0, 10) + "T00:00:00");
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function daysOverdueFromDueDate(dueDateStr) {
+  const due = parseDateOnly(dueDateStr);
+  if (!due) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+  const diff = Math.floor((today - due) / 86400000);
+  return diff > 0 ? diff : 0;
+}
+
+
 function fmtPct(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return "0.0%";
@@ -283,6 +301,7 @@ function initMonthPicker() {
   fillSelect("#paymentsMonth", months, saved);
   fillSelect("#rentrollMonth", months, saved);
   fillSelect("#balancesMonth", months, saved);
+  fillSelect("#dunningMonth", months, saved);
 
   if (mp) {
     mp.addEventListener("change", () => {
@@ -292,6 +311,7 @@ function initMonthPicker() {
       setSelectValue("#paymentsMonth", state.month);
       setSelectValue("#rentrollMonth", state.month);
       setSelectValue("#balancesMonth", state.month);
+      setSelectValue("#dunningMonth", state.month);
 
       loadOverview();
       loadPayments(true);
@@ -821,6 +841,8 @@ function renderOutstandingFromBalances() {
 function initDunning() {
   $("#reloadDunning")?.addEventListener("click", () => loadDunning(true));
 
+  $("#dunningMonth")?.addEventListener("change", () => loadDunning(true));
+
   $("#dunningSelectAll")?.addEventListener("change", (e) => {
     const checked = !!e.target.checked;
     document.querySelectorAll("input.dunning-check").forEach((cb) => cb.checked = checked);
@@ -828,10 +850,19 @@ function initDunning() {
 
   $("#btnDunningBuildLinks")?.addEventListener("click", (e) => buildDunningLinks({ autoOpen: e.shiftKey }));
   $("#btnDunningMarkSent")?.addEventListener("click", () => markDunningSelectedAsSent());
+
+  const minDays = $("#dunningMinDaysOverdue");
+  if (minDays) {
+    minDays.addEventListener("input", () => {
+      // Just re-render using already loaded rentroll
+      renderDunning();
+    });
+  }
+
 }
 
 function dunningMonth() {
-  return currentMonthFor("#balancesMonth") || state.month;
+  return currentMonthFor("#dunningMonth") || currentMonthFor("#balancesMonth") || state.month;
 }
 
 async function loadDunning(force = false) {
@@ -855,6 +886,7 @@ function renderDunning() {
   const msg = $("#dunningMsg");
   const links = $("#dunningLinks");
   const linksBody = $("#dunningLinksBody");
+  const minDays = Number($("#dunningMinDaysOverdue")?.value ?? 0) || 0;
 
   if (linksBody) linksBody.innerHTML = "";
   if (links) hide(links);
@@ -864,62 +896,83 @@ function renderDunning() {
   setText("#dunningMonthLabel", monthLabel(m));
   setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
 
-  if (!body) return;
-
-  const rows = (state.rentroll || [])
+  // Build rows (sorted by total owed)
+  const all = (state.rentroll || [])
     .map((r) => {
-      const tenant = pickStr(r.tenant, r.tenant_name, r.full_name) || pickStr(r.unit_code) || "—";
-      const invBal = pickNum(r.invoice_balance, 0);
-      const outstanding = Math.max(0, invBal);
-      const due = pickNum(r.total_due, r.subtotal_rent, 0);
-      const paid = pickNum(r.paid_total, 0);
-      const cr = due ? (paid / due) * 100 : 0;
+      const leaseId = pickStr(r.lease_id, r.leaseId, r.lease) || "";
+      const tenant = pickStr(r.tenant_name, r.tenant, r.tenantName, r.unit_code, r.unitCode, "Tenant");
+      const phone = normalizeKenyanPhone(pickStr(r.tenant_phone, r.phone, r.tenantPhone, ""));
+      const invoiceId = pickStr(r.invoice_id, r.invoiceId, r.invoice) || "";
 
-      const invoiceId = pickStr(r.invoice_id) || "";
-      const leaseId = pickStr(r.lease_id) || "";
-      const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
+      const monthOverdue = clamp0(toNumber(r.invoice_balance));
+      const totalOwed = clamp0(toNumber(r.lease_running_balance));
 
-      return { tenant, outstanding, cr, invoiceId, leaseId, phone };
+      const dueDate = pickStr(r.due_date, r.dueDate) || "";
+      const daysOverdue = daysOverdueFromDueDate(dueDate);
+
+      // Rent collection rate (month): paid / total_due (fallback: 0)
+      const due = toNumber(r.total_due);
+      const paid = toNumber(r.paid_total);
+      const cr = due > 0 ? (paid / due) * 100 : 0;
+
+      return {
+        leaseId,
+        tenant,
+        phone,
+        invoiceId,
+        monthOverdue,
+        totalOwed,
+        dueDate,
+        daysOverdue,
+        cr,
+      };
     })
-    .filter((x) => x.outstanding > 0.0001)
-    .sort((a, b) => b.outstanding - a.outstanding);
+    .filter((x) => x.totalOwed > 0)
+    .filter((x) => (x.daysOverdue ?? 0) >= minDays)
+    .sort((a, b) => (b.totalOwed || 0) - (a.totalOwed || 0));
 
-  if (!rows.length) {
-    body.innerHTML = "";
-    show(empty);
+  if (!all.length) {
+    if (body) body.innerHTML = "";
+    if (empty) show(empty);
     return;
   }
-  hide(empty);
+  if (empty) hide(empty);
 
-  body.innerHTML = rows.map((x, i) => {
-    const period = monthLabel(m);
-    const txt =
-      `Hello ${x.tenant},\n` +
-      `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
-      `Kindly pay at your earliest convenience. Thank you.`;
+  const period = monthLabel(m);
 
-    const waRedirect =
-      x.invoiceId
-        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
-        : x.leaseId
-        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(m)}`
-        : "";
+  if (body) {
+    body.innerHTML = all
+      .map((x, i) => {
+        const txt = dunningMessageText(
+          x.tenant,
+          period,
+          fmtKes(x.monthOverdue),
+          fmtKes(x.totalOwed),
+          x.daysOverdue
+        );
 
-    const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
-    const waHref = waRedirect || waDirect;
+        const wa = x.phone
+          ? `<a href="${waDirect(x.phone, txt)}" target="_blank" rel="noopener">WhatsApp</a>`
+          : `<div class="muted">missing phone</div>`;
 
-    return `
-      <tr>
-        <td><input class="dunning-check" type="checkbox" data-idx="${i}" /></td>
-        <td>${escapeHtml(x.tenant)}</td>
-        <td class="num">${fmtKes(x.outstanding)}</td>
-        <td class="num">${fmtPct(x.cr)}</td>
-        <td>${waHref ? `<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}</td>
-        <td class="muted">${x.invoiceId ? escapeHtml(x.invoiceId) : "—"}</td>
-      </tr>`;
-  }).join("");
+        return `<tr>
+      <td><input class="dunning-check" type="checkbox" data-idx="${i}" /></td>
+      <td>${escapeHtml(x.tenant)}</td>
+      <td class="num">${fmtKes(x.monthOverdue)}</td>
+      <td class="num">${fmtKes(x.totalOwed)}</td>
+      <td class="num">${x.daysOverdue == null ? "—" : x.daysOverdue}</td>
+      <td class="num">${(x.cr || 0).toFixed(1)}%</td>
+      <td>${wa}</td>
+      <td class="muted mono">${escapeHtml(x.invoiceId)}</td>
+    </tr>`;
+      })
+      .join("");
+  }
+
+  // reset "select all" when re-rendering
+  const sa = $("#dunningSelectAll");
+  if (sa) sa.checked = false;
 }
-
 function getSelectedDunningRows() {
   const checks = Array.from(document.querySelectorAll("input.dunning-check:checked"));
   const m = dunningMonth();
@@ -927,22 +980,33 @@ function getSelectedDunningRows() {
   const all = (state.rentroll || [])
     .map((r) => {
       const tenant = pickStr(r.tenant, r.tenant_name, r.full_name) || pickStr(r.unit_code) || "—";
-      const outstanding = Math.max(0, pickNum(r.invoice_balance, 0));
-      const invoiceId = pickStr(r.invoice_id) || "";
-      const leaseId = pickStr(r.lease_id) || "";
-      const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
-      return { tenant, outstanding, invoiceId, leaseId, phone, month: m };
-    })
-    .filter((x) => x.outstanding > 0.0001)
-    .sort((a, b) => b.outstanding - a.outstanding);
+      const monthOverdue = Math.max(0, pickNum(r.invoice_balance, 0));
+      const totalOwed = Math.max(0, pickNum(r.lease_running_balance, r.invoice_balance, 0));
+      const phone = normalizePhoneKE(r.tenant_phone || r.phone || r.msisdn || r.whatsapp_phone || "");
+      const invoiceId = pickStr(r.invoice_id, r.invoiceId, r.invoice) || "";
+      const leaseId = pickStr(r.lease_id, r.leaseId, r.lease) || "";
+      const dueDate = pickStr(r.due_date, r.dueDate) || "";
+      const daysOverdue = daysOverdueFromDueDate(dueDate);
+      return { tenant, monthOverdue, totalOwed, invoiceId, leaseId, dueDate, daysOverdue, phone, month: m };
 
+    })
+    .filter((x) => x.totalOwed > 0.0001)
+    .filter((x) => (x.daysOverdue ?? 0) >= minDays)
+    .sort((a, b) => b.totalOwed - a.totalOwed);
+    
   return checks.map((cb) => all[Number(cb.dataset.idx)]).filter(Boolean);
 }
 
-function dunningMessageText(tenant, period, amountKes) {
+function dunningMessageText(tenant, period, monthKes, totalKes, daysOverdue) {
+  const daysLine =
+    daysOverdue != null && Number(daysOverdue) > 0
+      ? `Days overdue (from due date): ${Number(daysOverdue)} day(s).\n`
+      : "";
   return (
     `Hello ${tenant},\n` +
-    `This is a gentle reminder that your rent balance for ${period} is ${amountKes}.\n` +
+    `Gentle reminder: your rent balance for ${period} is ${monthKes}.\n` +
+    `Total arrears owed to date: ${totalKes}.\n` +
+    daysLine +
     `Kindly pay at your earliest convenience. Thank you.`
   );
 }
@@ -964,8 +1028,14 @@ function buildDunningLinks({ autoOpen = false } = {}) {
 
   const urls = [];
   const items = selected.map((x) => {
-    const txt = dunningMessageText(x.tenant, period, fmtKes(x.outstanding));
-
+    const txt = dunningMessageText(
+      x.tenant,
+      period,
+      fmtKes(x.monthOverdue),
+      fmtKes(x.totalOwed),
+      x.daysOverdue
+    );
+    
     const waRedirect =
       x.invoiceId
         ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
@@ -979,7 +1049,7 @@ function buildDunningLinks({ autoOpen = false } = {}) {
     if (href) urls.push(href);
 
     return href
-      ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(x.tenant)} — ${fmtKes(x.outstanding)}</a>`
+      ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(x.tenant)} — ${fmtKes(x.totalOwed)} (month ${fmtKes(x.monthOverdue)}, ${x.daysOverdue == null ? "?" : x.daysOverdue}d overdue)</a>`
       : `<div class="muted">${escapeHtml(x.tenant)} — missing phone/ids</div>`;
   });
 
