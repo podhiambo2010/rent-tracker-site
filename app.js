@@ -901,10 +901,7 @@ function renderDunning() {
     .map((r) => {
       const leaseId = pickStr(r.lease_id, r.leaseId, r.lease) || "";
       const tenant = pickStr(r.tenant_name, r.tenant, r.tenantName, r.unit_code, r.unitCode, "Tenant");
-      const phone = normalizeKenyanPhone(pickStr(r.tenant_phone, r.phone, r.tenantPhone, ""));
-       function normalizeKenyanPhone(s) {
-        return normalizePhoneKE(s);
-      }
+      const phone = normalizePhoneKE(pickStr(r.tenant_phone, r.phone, r.tenantPhone, ""));
       const invoiceId = pickStr(r.invoice_id, r.invoiceId, r.invoice) || "";
 
       const monthOverdue = clamp0(toNumber(r.invoice_balance));
