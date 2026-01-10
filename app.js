@@ -1,757 +1,950 @@
-/* Rent Tracker Dashboard UI (no framework)
-   - Works with the HTML ids in index.html
-   - Designed to be tolerant to small backend schema changes by checking multiple possible field names.
-*/
+/* Rent Tracker Dashboard — app.js
+ * Updated: 2026-01-09
+ * Notes:
+ * - Matches current index.html IDs (leasesTenant + leasesStatus, rentroll has Paid + Credit columns)
+ * - Uses rentroll JSON fields: property_name, unit_code, subtotal_rent, late_fees, credits, total_due, paid_total, invoice_balance, lease_running_balance
+ * - Dunning has no month picker; it uses Balances month (if present) else global monthPicker
+ */
 
-/* ------------------------- Helpers ------------------------- */
+"use strict";
+
+/* ------------------------- DOM helpers ------------------------- */
 const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-const state = {
-  apiBase: localStorage.getItem("api_base") || "",
-  month: localStorage.getItem("month") || "", // "YYYY-MM"
-  activeTab: localStorage.getItem("active_tab") || "overview",
-};
-
-function clampStr(s, n = 120) {
-  const t = (s ?? "").toString();
-  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function fmtKES(x) {
-  const n = Number(x || 0);
-  try {
-    return "KES " + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  } catch {
-    return "KES " + Math.round(n).toString();
-  }
+function fmtNumber(n) {
+  if (n == null || Number.isNaN(Number(n))) return "0";
+  return Number(n).toLocaleString("en-KE", {
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  });
 }
 
-function fmtKES2(x) {
-  const n = Number(x || 0);
-  try {
-    return "KES " + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  } catch {
-    return "KES " + n.toFixed(2);
-  }
+function fmtKes(n) {
+  if (n == null || Number.isNaN(Number(n))) return "KES 0";
+  return `KES ${fmtNumber(n)}`;
 }
 
-function fmtPct(x) {
-  const n = Number(x || 0);
-  if (!isFinite(n)) return "0.0%";
-  return (n * 100).toFixed(1) + "%";
+function fmtPct(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "0.0%";
+  return `${x.toFixed(1)}%`;
+}
+
+function setText(sel, text) {
+  const el = typeof sel === "string" ? $(sel) : sel;
+  if (el) el.textContent = text;
+}
+
+function show(elOrSel) {
+  const el = typeof elOrSel === "string" ? $(elOrSel) : elOrSel;
+  if (el) el.classList.remove("hidden");
+}
+
+function hide(elOrSel) {
+  const el = typeof elOrSel === "string" ? $(elOrSel) : elOrSel;
+  if (el) el.classList.add("hidden");
+}
+
+function sum(rows, pick) {
+  return (rows || []).reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
 }
 
 function monthLabel(ym) {
-  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return ym || "—";
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return "—";
   const [y, m] = ym.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1, 1));
-  return d.toLocaleString(undefined, { month: "short", year: "numeric" });
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleString("en-GB", { month: "short", year: "numeric" });
 }
 
-function normalizePhone(raw) {
-  const s = (raw || "").toString().trim();
+function normalizePhoneKE(p) {
+  let s = String(p || "").trim();
   if (!s) return "";
-  let t = s.replace(/[^\d+]/g, "");
-  if (t.startsWith("+")) t = t.slice(1);
-  if (t.startsWith("0")) t = "254" + t.slice(1);
-  // if someone pasted 7xxxxxxxx, assume Kenya
-  if (t.length === 9 && t.startsWith("7")) t = "254" + t;
-  return t;
+  s = s.replace(/\s+/g, "");
+  if (s.startsWith("+")) s = s.slice(1);
+  if (s.startsWith("0")) s = "254" + s.slice(1);
+  return s;
 }
 
-function buildWhatsAppUrl({ phone, text }) {
-  const p = normalizePhone(phone);
-  const base = p ? `https://wa.me/${p}` : "https://wa.me/";
-  const q = text ? `?text=${encodeURIComponent(text)}` : "";
-  return base + q;
+/* ------------------------- Response shape helpers ------------------------- */
+function unwrapRows(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  const maybe = data.rows ?? data.data ?? data.items ?? data.results ?? data.records;
+  if (Array.isArray(maybe)) return maybe;
+  return [];
 }
 
-function setText(id, v) {
-  const el = typeof id === "string" ? $(id) : id;
-  if (el) el.textContent = v ?? "—";
+function pickNum(...vals) {
+  for (const v of vals) {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
 }
 
-function show(el, yes) {
-  if (!el) return;
-  el.classList.toggle("hidden", !yes);
+function pickStr(...vals) {
+  for (const v of vals) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return "";
 }
 
-function safeUrlJoin(base, path) {
-  const b = (base || "").replace(/\/+$/, "");
-  const p = (path || "").replace(/^\/+/, "");
-  return b && p ? `${b}/${p}` : (b || "") + (p ? "/" + p : "");
+function currentMonthFor(sel) {
+  return $(sel)?.value || state.month;
 }
+
+/* ------------------------- State ------------------------- */
+const state = {
+  apiBase: "",
+  month: "",
+  leases: [],
+  payments: [],
+  rentroll: [],
+  balances: [],
+};
 
 /* ------------------------- API ------------------------- */
-async function apiGet(path, params = {}) {
-  const base = (state.apiBase || "").replace(/\/+$/, "");
-  if (!base) throw new Error("API base is empty. Click “Use this API” after pasting the API URL.");
-  const url = new URL(base + path);
-  Object.entries(params).forEach(([k, v]) => {
-    if (v === undefined || v === null || v === "") return;
-    url.searchParams.set(k, v);
-  });
-  const res = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
-  const ct = res.headers.get("content-type") || "";
-  const payload = ct.includes("application/json") ? await res.json() : await res.text();
-  if (!res.ok) {
-    const msg = typeof payload === "string" ? payload : (payload?.error || JSON.stringify(payload));
-    throw new Error(`HTTP ${res.status}: ${msg}`);
-  }
-  return payload;
+function apiBase() {
+  const b = (state.apiBase || "").trim().replace(/\/+$/, "");
+  return b;
 }
 
-async function apiPost(path, body = {}, { admin = false } = {}) {
-  const base = (state.apiBase || "").replace(/\/+$/, "");
-  if (!base) throw new Error("API base is empty. Click “Use this API” after pasting the API URL.");
-  const headers = { "Content-Type": "application/json", "Accept": "application/json" };
+function getAdminTokenFromStorage() {
+  return localStorage.getItem("admin_token") || "";
+}
+
+async function apiFetch(path, opts = {}) {
+  const base = apiBase();
+  if (!base) throw new Error("API base is empty");
+
+  const {
+    method = "GET",
+    payload = null,
+    admin = false,
+    headers: extraHeaders = {},
+    timeoutMs = 25000,
+  } = opts;
+
+  const url = base + path;
+
+  const headers = {
+    Accept: "application/json",
+    ...extraHeaders,
+  };
+
+  if (payload != null && method !== "GET") {
+    headers["Content-Type"] = "application/json";
+  }
+
   if (admin) {
-    const t = (window.getAdminToken ? window.getAdminToken() : "") || localStorage.getItem("admin_token") || "";
+    const t = getAdminTokenFromStorage() || window.getAdminToken?.() || "";
     if (t) headers["X-Admin-Token"] = t;
   }
-  const res = await fetch(base + path, { method: "POST", headers, body: JSON.stringify(body) });
-  const ct = res.headers.get("content-type") || "";
-  const payload = ct.includes("application/json") ? await res.json() : await res.text();
-  if (!res.ok) {
-    const msg = typeof payload === "string" ? payload : (payload?.error || JSON.stringify(payload));
-    throw new Error(`HTTP ${res.status}: ${msg}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res;
+  let raw = "";
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: payload != null && method !== "GET" ? JSON.stringify(payload) : undefined,
+      signal: controller.signal,
+    });
+
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    raw = await res.text().catch(() => "");
+
+    let parsed = raw;
+    if (ct.includes("application/json")) {
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch (_) {}
+    }
+
+    if (!res.ok) {
+      const msg =
+        typeof parsed === "object" && parsed
+          ? (parsed.error || parsed.detail || JSON.stringify(parsed)).slice(0, 400)
+          : String(raw || "").slice(0, 400);
+
+      throw new Error(`${method} ${path} -> HTTP ${res.status}${msg ? ` • ${msg}` : ""}`);
+    }
+
+    return parsed;
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error(`${method} ${path} -> timed out after ${timeoutMs / 1000}s`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return payload;
 }
 
-/* ------------------------- Init ------------------------- */
-document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
-  initApiBaseControls();
-  initMonthPicker();
-  initLeases();              // safe: function defined in this file
-  initPayments();
-  initRentRoll();
-  initBalances();
-  initDunning();
-  initWhatsAppBuilder();
-  initSettings();
-  initInvoiceActions();
+async function apiGet(path, { admin = false, timeoutMs } = {}) {
+  return await apiFetch(path, { method: "GET", admin, timeoutMs });
+}
 
-  // First load
-  refreshAllLight();
-});
+async function apiPost(path, payload, { admin = false, timeoutMs } = {}) {
+  return await apiFetch(path, { method: "POST", payload, admin, timeoutMs });
+}
 
-/* ------------------------- Navigation / Tabs ------------------------- */
+/* ------------------------- Tabs ------------------------- */
 function initTabs() {
-  const tabs = $$(".tab[data-tab]");
-  tabs.forEach(t => {
-    t.addEventListener("click", () => setActiveTab(t.dataset.tab));
-  });
-  setActiveTab(state.activeTab, { silent: true });
-}
+  const tabs = Array.from(document.querySelectorAll("nav .tab"));
+  const panels = Array.from(document.querySelectorAll('section > .panel[id^="tab-"]'));
 
-function setActiveTab(tabName, { silent = false } = {}) {
-  state.activeTab = tabName;
-  localStorage.setItem("active_tab", tabName);
+  function activate(name) {
+    tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.tab === name)));
+    panels.forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${name}`));
+    localStorage.setItem("active_tab", name);
 
-  $$(".tab[data-tab]").forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === tabName)));
-  $$("section > .panel").forEach(p => p.classList.add("hidden"));
-  const panel = $(`#tab-${tabName}`);
-  if (panel) panel.classList.remove("hidden");
-
-  if (!silent) refreshActiveTab();
-}
-
-function refreshActiveTab() {
-  switch (state.activeTab) {
-    case "overview": return loadOverview();
-    case "leases": return loadLeases(true);
-    case "payments": return loadPayments(true);
-    case "rentroll": return loadRentRoll(true);
-    case "balances": return loadBalances(true);
-    case "dunning": return loadDunning(true);
-    default: return;
+    if (name === "leases") loadLeases(true);
+    if (name === "payments") loadPayments(true);
+    if (name === "rentroll") loadRentRoll(true);
+    if (name === "balances") loadBalances(true);
+    if (name === "dunning") loadDunning(true);
   }
+
+  tabs.forEach((t) => t.addEventListener("click", () => activate(t.dataset.tab)));
+
+  const saved = localStorage.getItem("active_tab") || "overview";
+  activate(saved);
 }
 
-function refreshAllLight() {
-  // Overview always drives month + top-level sanity
-  loadOverview().catch(console.error);
-
-  // Populate month dropdowns in the background then refresh the active tab
-  loadMonthsIntoSelects().then(() => {
-    syncMonthControlsToState();
-    refreshActiveTab();
-  }).catch(() => {
-    syncMonthControlsToState();
-    refreshActiveTab();
-  });
-}
-
-/* ------------------------- API Base Controls ------------------------- */
+/* ------------------------- API base controls ------------------------- */
 function initApiBaseControls() {
-  const input = $("#apiBase");
-  const input2 = $("#apiBase2");
+  const in1 = $("#apiBase");
+  const in2 = $("#apiBase2");
   const useBtn = $("#useApi");
   const docsBtn = $("#openDocs");
 
-  if (input) input.value = state.apiBase || "";
-  if (input2) input2.value = state.apiBase || "";
+  const saved = localStorage.getItem("api_base") || "";
+  state.apiBase = saved;
 
-  if (useBtn) {
-    useBtn.addEventListener("click", () => {
-      const v = (input?.value || "").trim().replace(/\/+$/, "");
-      if (!v) return alert("Paste your API base URL first (e.g. https://rent-tracker-api-xxxx.onrender.com)");
-      state.apiBase = v;
-      localStorage.setItem("api_base", v);
-      if (input2) input2.value = v;
-      refreshAllLight();
-    });
-  }
+  if (in1) in1.value = saved;
+  if (in2) in2.value = saved;
+
+  const apply = () => {
+    const v = (in1?.value || in2?.value || "").trim();
+    if (!v) return;
+    state.apiBase = v;
+    localStorage.setItem("api_base", v);
+    if (in1) in1.value = v;
+    if (in2) in2.value = v;
+
+    loadOverview();
+    loadLeases(true);
+    loadPayments(true);
+    loadRentRoll(true);
+    loadBalances(true);
+    loadDunning(true);
+  };
+
+  if (useBtn) useBtn.addEventListener("click", apply);
 
   if (docsBtn) {
     docsBtn.addEventListener("click", () => {
-      const base = (state.apiBase || input?.value || "").trim().replace(/\/+$/, "");
+      const base = apiBase();
       if (!base) return alert("Set API base first.");
-      window.open(base + "/docs", "_blank");
+      window.open(base + "/docs", "_blank", "noopener,noreferrer");
     });
   }
 }
 
-/* ------------------------- Month Picker ------------------------- */
+/* ------------------------- Month controls ------------------------- */
 function initMonthPicker() {
   const mp = $("#monthPicker");
-  if (!mp) return;
+  const now = new Date();
+  const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  if (!state.month) {
-    // Default to current month in user's locale
-    const d = new Date();
-    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    state.month = ym;
-    localStorage.setItem("month", ym);
+  const saved = localStorage.getItem("month") || current;
+  state.month = saved;
+
+  if (mp) {
+    mp.type = "month";
+    mp.value = saved;
   }
-  mp.value = state.month;
 
-  mp.addEventListener("change", () => {
-    const v = mp.value;
-    if (!v) return;
-    state.month = v;
-    localStorage.setItem("month", v);
-    syncMonthControlsToState();
-    refreshActiveTab();
-    // Dunning label should always follow the current month.
-    updateMonthLabelsEverywhere();
-  });
+  const months = buildRecentMonths(24);
+  fillSelect("#paymentsMonth", months, saved);
+  fillSelect("#rentrollMonth", months, saved);
+  fillSelect("#balancesMonth", months, saved);
+
+  if (mp) {
+    mp.addEventListener("change", () => {
+      state.month = mp.value || current;
+      localStorage.setItem("month", state.month);
+
+      setSelectValue("#paymentsMonth", state.month);
+      setSelectValue("#rentrollMonth", state.month);
+      setSelectValue("#balancesMonth", state.month);
+
+      loadOverview();
+      loadPayments(true);
+      loadRentRoll(true);
+      loadBalances(true);
+      loadDunning(true);
+    });
+  }
 }
 
-function syncMonthControlsToState() {
-  // Keep dropdown selects aligned with the global month picker when possible.
-  const maps = [
-    ["#rentrollMonth", state.month],
-    ["#balancesMonth", state.month],
-    ["#paymentsMonth", state.month],
-  ];
-  for (const [sel, m] of maps) {
-    const el = $(sel);
-    if (!el || !m) continue;
-    // only set if option exists
-    const opt = Array.from(el.options).find(o => o.value === m);
-    if (opt) el.value = m;
+function buildRecentMonths(n = 18) {
+  const out = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = 0; i < n; i++) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    out.push(`${y}-${m}`);
+    d.setMonth(d.getMonth() - 1);
   }
-  updateMonthLabelsEverywhere();
+  return out;
 }
 
-function updateMonthLabelsEverywhere() {
-  setText("#summaryMonthLabel", monthLabel(state.month));
-  setText("#balMonthLabel", monthLabel(state.month));
-  setText("#outstandingMonthLabel", monthLabel(state.month));
-  setText("#dunningMonthLabel", monthLabel(state.month));
+function fillSelect(sel, values, selected) {
+  const el = $(sel);
+  if (!el) return;
+  el.innerHTML = values.map((v) => `<option value="${v}">${monthLabel(v)}</option>`).join("");
+  el.value = selected || values[0] || "";
 }
 
-/* ------------------------- Months (dropdowns) ------------------------- */
-async function loadMonthsIntoSelects() {
-  const months = await apiGet("/months").catch(() => []);
-  const list = Array.isArray(months) ? months : (months?.months || []);
-  const unique = Array.from(new Set(list)).filter(x => /^\d{4}-\d{2}$/.test(x));
-  unique.sort().reverse();
-
-  const selects = ["#rentrollMonth", "#balancesMonth", "#paymentsMonth"];
-  for (const sel of selects) {
-    const el = $(sel);
-    if (!el) continue;
-    const prev = el.value;
-    el.innerHTML = "";
-    unique.forEach(m => {
-      const o = document.createElement("option");
-      o.value = m;
-      o.textContent = monthLabel(m);
-      el.appendChild(o);
-    });
-    if (prev && unique.includes(prev)) el.value = prev;
-  }
-
-  // If our state.month is not available, pick latest available
-  if (unique.length && (!state.month || !unique.includes(state.month))) {
-    state.month = unique[0];
-    localStorage.setItem("month", state.month);
-    const mp = $("#monthPicker");
-    if (mp) mp.value = state.month;
-  }
-
-  // Wire change handlers (after options exist)
-  const rr = $("#rentrollMonth");
-  if (rr && !rr.dataset.bound) {
-    rr.dataset.bound = "1";
-    rr.addEventListener("change", () => {
-      if (rr.value) {
-        state.month = rr.value;
-        localStorage.setItem("month", state.month);
-        const mp = $("#monthPicker");
-        if (mp) mp.value = state.month;
-        syncMonthControlsToState();
-        loadRentRoll(true);
-        loadOverview(); // keep summary aligned
-      }
-    });
-  }
-  const bm = $("#balancesMonth");
-  if (bm && !bm.dataset.bound) {
-    bm.dataset.bound = "1";
-    bm.addEventListener("change", () => {
-      if (bm.value) {
-        state.month = bm.value;
-        localStorage.setItem("month", state.month);
-        const mp = $("#monthPicker");
-        if (mp) mp.value = state.month;
-        syncMonthControlsToState();
-        loadBalances(true);
-        loadOverview();
-      }
-    });
-  }
-  const pm = $("#paymentsMonth");
-  if (pm && !pm.dataset.bound) {
-    pm.dataset.bound = "1";
-    pm.addEventListener("change", () => {
-      if (pm.value) {
-        state.month = pm.value;
-        localStorage.setItem("month", state.month);
-        const mp = $("#monthPicker");
-        if (mp) mp.value = state.month;
-        syncMonthControlsToState();
-        loadPayments(true);
-        loadOverview();
-      }
-    });
-  }
+function setSelectValue(sel, value) {
+  const el = $(sel);
+  if (el) el.value = value || "";
 }
 
 /* ------------------------- Overview ------------------------- */
 async function loadOverview() {
-  updateMonthLabelsEverywhere();
   try {
     const m = state.month;
-    const data = await apiGet("/dashboard/overview", { month: m });
+    const d = await apiGet(`/dashboard/overview?month=${encodeURIComponent(m)}`);
 
-    // These keys are based on your screenshots and earlier JSON.
-    setText("#kpiLeases", data.active_leases ?? data.leases_active ?? "—");
-    setText("#kpiOpen", data.open_invoices_month ?? data.unpaid_invoices_month ?? "—");
-    setText("#kpiPayments", fmtKES(data.rent_received_month ?? data.rent_paid_month ?? 0));
-    setText("#kpiBalance", fmtKES(data.total_due_month ?? data.rent_overdue_month ?? data.overdue_month ?? 0));
+    const num = (v, def = 0) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : def;
+    };
+    const hasEl = (sel) => !!$(sel);
+    const put = (sel, text) => { if (hasEl(sel)) setText(sel, text); };
 
-    const billed = Number(data.rent_billed_month ?? data.total_due_month ?? 0);
-    const received = Number(data.rent_received_month ?? 0);
-    const cash = Number(data.cash_received_month ?? received ?? 0);
+    const leasesCount = d.active_leases ?? null;
+    const openInvoicesCnt = d.open_invoices_month ?? null;
 
-    setText("#summaryMonthDue", `Rent billed (month) ${fmtKES(billed)}`);
-    setText("#summaryMonthCollected", `Rent received (month) ${fmtKES(received)}`);
-    setText("#summaryCashReceived", `Cash received (month) ${fmtKES(cash)}`);
+    const billedMonth = num(d.total_due_month, 0);
+    const rentReceived = num(d.rent_received_month, 0);
+    const cashReceived = num(d.cash_received_month, 0);
+    const overdueMonth = num(d.overdue_month_total, 0);
 
-    const arrearsStart = Number(data.arrears_start ?? data.arrears_open ?? 0);
-    const arrearsEnd = Number(data.arrears_end ?? data.arrears_close ?? data.arrears_end_month ?? 0);
-    setText("#summaryMonthBalance", `Arrears (start/end) ${fmtKES(arrearsStart)} / ${fmtKES(arrearsEnd)}`);
+    const openingNet = d.opening_balance_bf ?? null;
+    const closingNet = d.closing_balance_cf ?? null;
 
-    const rate = data.rent_collection_rate_month ?? data.collection_rate_month ?? (billed > 0 ? received / billed : 0);
-    setText("#summaryMonthRate", `Rent collection rate ${fmtPct(rate)}`);
+    const arrearsPaid = num(d.arrears_paid_month, 0);
 
-    const arrearsCleared = Number(data.arrears_cleared_month ?? 0);
-    setText("#summaryArrearsCleared", `Arrears paid (month) ${fmtKES(arrearsCleared)}`);
+    const creditsTotalCF = num(d.credit_total, 0);
+    const top = d.top_credit || {};
+    const rentRate = num(d.rent_collection_rate_pct, 0);
 
-    const overpay = Number(data.prepaid_credit_month ?? data.tenant_credit_month ?? 0);
-    setText("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKES(overpay)}`);
+    put("#kpiLeases", leasesCount != null ? String(leasesCount) : "—");
+    put("#kpiOpen", openInvoicesCnt != null ? String(openInvoicesCnt) : "—");
+    put("#kpiPayments", fmtKes(rentReceived));
+    put("#kpiBalance", fmtKes(overdueMonth));
+
+    put("#summaryMonthLabel", monthLabel(m));
+    put("#summaryMonthDue", `Rent billed (month) ${fmtKes(billedMonth)}`);
+    put("#summaryMonthCollected", `Rent received (month) ${fmtKes(rentReceived)}`);
+    put("#summaryCashReceived", `Cash received (month) ${fmtKes(cashReceived)}`);
+
+    if (openingNet != null && closingNet != null) {
+      put("#summaryMonthBalance", `Balance at start (BF) ${fmtKes(openingNet)} • Balance at end (CF) ${fmtKes(closingNet)}`);
+    } else if (closingNet != null) {
+      put("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(closingNet)}`);
+    } else {
+      put("#summaryMonthBalance", `Balance at end (CF) ${fmtKes(overdueMonth)}`);
+    }
+
+    put("#summaryMonthRate", `${fmtPct(rentRate)} Rent collection rate`);
+    put("#summaryArrearsCleared", `Arrears paid (month) ${fmtKes(arrearsPaid)}`);
+
+    if (hasEl("#summaryOverpayments")) {
+      if (creditsTotalCF > 0.0001) {
+        const who = top.unit && top.unit !== "-" ? top.unit : top.tenant || "—";
+        const amt = num(top.amount, 0);
+        put("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(creditsTotalCF)} • Largest credit: ${who} ${fmtKes(amt)}`);
+      } else {
+        put("#summaryOverpayments", `Tenant credit (prepaid) ${fmtKes(0)}`);
+      }
+    }
   } catch (e) {
-    console.error(e);
+    console.warn("loadOverview failed:", e);
   }
 }
 
 /* ------------------------- Leases ------------------------- */
 function initLeases() {
-  const apply = $("#applyLeases");
-  const clear = $("#clearLeases");
-  const reload = $("#reloadLeases");
+  $("#applyLeases")?.addEventListener("click", () => loadLeases(true));
+  $("#reloadLeases")?.addEventListener("click", () => loadLeases(true));
 
-  if (apply) apply.addEventListener("click", () => loadLeases(true));
-  if (clear) clear.addEventListener("click", () => { $("#leaseSearch").value = ""; loadLeases(true); });
-  if (reload) reload.addEventListener("click", () => loadLeases(true));
+  $("#clearLeases")?.addEventListener("click", () => {
+    const q = $("#leasesTenant"); if (q) q.value = "";
+    const s = $("#leasesStatus"); if (s) s.value = "";
+    loadLeases(true);
+  });
+
+  $("#leasesStatus")?.addEventListener("change", () => loadLeases(true));
 }
 
-async function loadLeases() {
-  const tbody = $("#leasesBody");
-  const empty = $("#leasesEmpty");
-  const count = $("#leasesCount");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  show(empty, false);
-
+async function loadLeases(force = false) {
   try {
-    const q = ($("#leaseSearch")?.value || "").trim();
-    const data = await apiGet("/dashboard/leases", { q });
-    const rows = data.rows || data || [];
+    const m = state.month;
+    let data;
+    try { data = await apiGet(`/leases?month=${encodeURIComponent(m)}`); }
+    catch (_) { data = await apiGet(`/dashboard/leases?month=${encodeURIComponent(m)}`); }
 
-    setText(count, rows.length);
-
-    if (!rows.length) { show(empty, true); return; }
-
-    const frag = document.createDocumentFragment();
-    rows.forEach(r => {
-      const tr = document.createElement("tr");
-      const tenant = r.tenant_name || r.tenant || r.full_name || "—";
-      const unit = r.unit_code || r.unit || "—";
-      const rent = r.rent_amount ?? r.rent ?? 0;
-      const cycle = r.billing_cycle || r.cycle || "—";
-      const due = r.due_day ?? r.due_date ?? "—";
-      const status = r.status || (r.end_date ? "ended" : "active");
-      const phone = r.phone || r.tenant_phone || "";
-
-      tr.innerHTML = `
-        <td>${clampStr(tenant, 50)}</td>
-        <td>${clampStr(unit, 20)}</td>
-        <td class="num">${fmtKES(rent)}</td>
-        <td>${clampStr(cycle, 12)}</td>
-        <td>${clampStr(due, 12)}</td>
-        <td>${renderStatus(status)}</td>
-        <td>${renderWhatsAppLink({ tenant, phone, period: monthLabel(state.month), balance: 0 })}</td>
-      `;
-      frag.appendChild(tr);
-    });
-    tbody.appendChild(frag);
+    state.leases = unwrapRows(data);
+    renderLeases();
   } catch (e) {
-    console.error(e);
-    show(empty, true);
-    setText(empty, `Failed to load leases: ${e.message}`);
+    console.warn("loadLeases failed:", e);
+    state.leases = [];
+    renderLeases();
   }
+}
+
+function renderLeases() {
+  const body = $("#leasesBody");
+  const empty = $("#leasesEmpty");
+  if (!body) return;
+
+  const q = String($("#leasesTenant")?.value || "").trim().toLowerCase();
+  const statusF = String($("#leasesStatus")?.value || "").trim().toLowerCase();
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const rows = (state.leases || []).filter((r) => {
+    const tenant = (r.tenant || r.full_name || r.tenant_name || "").toLowerCase();
+    const unit = (r.unit || r.unit_code || r.unit || "").toLowerCase();
+    const combined = `${tenant} ${unit}`.trim();
+
+    const endRaw = r.end_date || r.lease_end || r.end || r.move_out || null;
+    const isEnded =
+      (r.status && String(r.status).toLowerCase().includes("end")) ||
+      (r.is_active === false) ||
+      (r.active === false) ||
+      (endRaw ? new Date(String(endRaw).slice(0, 10)) < today : false);
+
+    const st = isEnded ? "ended" : "active";
+
+    const okQ = !q || combined.includes(q);
+    const okStatus = !statusF || st.includes(statusF);
+    return okQ && okStatus;
+  });
+
+  setText("#leasesCount", rows.length);
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    return;
+  }
+  hide(empty);
+
+  body.innerHTML = rows.map((r) => {
+    const tenant = pickStr(r.tenant, r.full_name, r.tenant_name) || "—";
+    const unit = pickStr(r.unit_code, r.unit, r.unit_name) || "—";
+    const rent = pickNum(r.monthly_rent, r.rent, r.rent_amount, r.amount, 0);
+
+    const cycle = pickStr(r.cycle, r.billing_cycle, r.payment_cycle, r.rent_cycle) || "—";
+    const dueDay = pickStr(r.due_day, r.dueDay, r.due_day_of_month) || (r.due_date ? String(r.due_date).slice(8, 10) : "—");
+
+    const endRaw = r.end_date || r.lease_end || r.end || r.move_out || null;
+    const ended =
+      (r.status && String(r.status).toLowerCase().includes("end")) ||
+      (r.is_active === false) ||
+      (r.active === false) ||
+      (endRaw ? new Date(String(endRaw).slice(0, 10)) < today : false);
+
+    const status = ended ? "ended" : "active";
+    const statusClass = ended ? "ended" : "ok";
+
+    const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
+    const waText = `Hello ${tenant},\nKindly note your rent arrangements for ${unit}. Thank you.`;
+    const waHref = phone ? buildWhatsAppLink(phone, waText) : "";
+
+    return `
+      <tr>
+        <td>${escapeHtml(tenant)}</td>
+        <td>${escapeHtml(unit)}</td>
+        <td class="num">${fmtKes(rent)}</td>
+        <td>${escapeHtml(cycle)}</td>
+        <td>${escapeHtml(String(dueDay))}</td>
+        <td><span class="status ${statusClass}">${escapeHtml(status)}</span></td>
+        <td>${waHref ? `<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}</td>
+      </tr>`;
+  }).join("");
 }
 
 /* ------------------------- Payments ------------------------- */
 function initPayments() {
-  const apply = $("#applyPayments");
-  const clear = $("#clearPayments");
-
-  if (apply) apply.addEventListener("click", () => loadPayments(true));
-  if (clear) clear.addEventListener("click", () => {
-    $("#paymentsTenant").value = "";
-    $("#paymentsStatus").value = "";
+  $("#applyPayments")?.addEventListener("click", () => loadPayments(true));
+  $("#clearPayments")?.addEventListener("click", () => {
+    setSelectValue("#paymentsMonth", state.month);
+    const t = $("#paymentsTenant"); if (t) t.value = "";
+    const s = $("#paymentsStatus"); if (s) s.value = "";
     loadPayments(true);
   });
 }
 
-async function loadPayments() {
-  const tbody = $("#paymentsBody");
-  const empty = $("#paymentsEmpty");
-  const count = $("#paymentsCount");
-  const countChip = $("#paymentsCountChip");
-  const totalChip = $("#paymentsTotalChip");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  show(empty, false);
-
+async function loadPayments(force = false) {
   try {
-    const m = ($("#paymentsMonth")?.value || state.month || "").trim();
-    const tenant = ($("#paymentsTenant")?.value || "").trim();
-    const status = ($("#paymentsStatus")?.value || "").trim();
+    const m = currentMonthFor("#paymentsMonth");
+    let data;
+    try { data = await apiGet(`/payments?month=${encodeURIComponent(m)}`); }
+    catch (_) { data = await apiGet(`/dashboard/payments?month=${encodeURIComponent(m)}`); }
 
-    const data = await apiGet("/dashboard/payments", { month: m, tenant, status });
-    const rows = data.rows || data || [];
-
-    setText(count, rows.length);
-    setText(countChip, rows.length);
-
-    let total = 0;
-    const frag = document.createDocumentFragment();
-    rows.forEach(r => {
-      const tr = document.createElement("tr");
-      const dt = r.paid_at || r.date || r.created_at || "";
-      const payer = r.tenant_name || r.tenant || r.payer || r.payer_name || "—";
-      const method = r.method || r.channel || "—";
-      const st = r.status || "—";
-      const amt = Number(r.amount || r.paid_amount || 0);
-      total += amt;
-
-      tr.innerHTML = `
-        <td>${clampStr(dt, 20)}</td>
-        <td>${clampStr(payer, 50)}</td>
-        <td>${clampStr(method, 16)}</td>
-        <td class="muted">${clampStr(st, 16)}</td>
-        <td class="num">${fmtKES2(amt)}</td>
-      `;
-      frag.appendChild(tr);
-    });
-
-    tbody.appendChild(frag);
-    setText(totalChip, fmtKES2(total));
-
-    if (!rows.length) show(empty, true);
+    state.payments = unwrapRows(data);
+    renderPayments();
   } catch (e) {
-    console.error(e);
-    show(empty, true);
-    setText(empty, `Failed to load payments: ${e.message}`);
+    console.warn("loadPayments failed:", e);
+    state.payments = [];
+    renderPayments();
   }
+}
+
+function renderPayments() {
+  const body = $("#paymentsBody");
+  const empty = $("#paymentsEmpty");
+  if (!body) return;
+
+  const q = String($("#paymentsTenant")?.value || "").trim().toLowerCase();
+  const statusF = String($("#paymentsStatus")?.value || "").trim().toLowerCase();
+
+  const rows = (state.payments || []).filter((r) => {
+    const tenant = (r.tenant || r.full_name || r.tenant_name || "").toLowerCase();
+    const payer = (r.payer_name || r.payer || r.name || "").toLowerCase();
+    const unit = (r.unit || r.unit_code || "").toLowerCase();
+    const combined = `${tenant} ${payer} ${unit}`.trim();
+
+    const st = String(r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated") || "").toLowerCase();
+    const okStatus = !statusF || st.includes(statusF);
+    const okQ = !q || combined.includes(q);
+    return okStatus && okQ;
+  });
+
+  setText("#paymentsCount", rows.length);
+  setText("#paymentsCountChip", rows.length);
+  setText("#paymentsTotalChip", fmtKes(sum(rows, (r) => pickNum(r.amount, r.paid_amount, r.paid, 0))));
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    return;
+  }
+  hide(empty);
+
+  body.innerHTML = rows.map((r) => {
+    const date = r.paid_at || r.date || r.created_at || "—";
+    const tenant =
+      r.tenant ||
+      r.full_name ||
+      r.tenant_name ||
+      r.payer_name ||
+      r.payer ||
+      (r.unit_code ? `Unit ${r.unit_code}` : "—");
+
+    const method = r.method || r.channel || "—";
+    const st = r.status || r.alloc_status || (r.invoice_id ? "allocated" : "unallocated");
+    const amt = pickNum(r.amount, r.paid_amount, r.paid, 0);
+
+    return `
+      <tr>
+        <td>${escapeHtml(String(date).slice(0, 10))}</td>
+        <td>${escapeHtml(tenant)}</td>
+        <td>${escapeHtml(method)}</td>
+        <td class="muted">${escapeHtml(st)}</td>
+        <td class="num">${fmtKes(amt)}</td>
+      </tr>`;
+  }).join("");
 }
 
 /* ------------------------- Rent Roll ------------------------- */
 function initRentRoll() {
-  const apply = $("#applyRentroll");
-  const clear = $("#clearRentroll");
-  if (apply) apply.addEventListener("click", () => loadRentRoll(true));
-  if (clear) clear.addEventListener("click", () => {
-    $("#rentrollTenant").value = "";
-    $("#rentrollProperty").value = "";
+  $("#applyRentroll")?.addEventListener("click", () => loadRentRoll(true));
+  $("#clearRentroll")?.addEventListener("click", () => {
+    setSelectValue("#rentrollMonth", state.month);
+    const t = $("#rentrollTenant"); if (t) t.value = "";
+    const p = $("#rentrollProperty"); if (p) p.value = "";
     loadRentRoll(true);
   });
 }
 
-async function loadRentRoll() {
-  const tbody = $("#rentrollBody");
-  const empty = $("#rentrollEmpty");
-  const count = $("#rentrollCount");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  show(empty, false);
-
+async function loadRentRoll(force = false) {
   try {
-    const m = ($("#rentrollMonth")?.value || state.month || "").trim();
-    const tenant = ($("#rentrollTenant")?.value || "").trim();
-    const property = ($("#rentrollProperty")?.value || "").trim();
+    const m = currentMonthFor("#rentrollMonth") || state.month;
 
-    const data = await apiGet("/dashboard/rentroll", { month: m, tenant, property });
-    const rows = data.rows || data || [];
+    let data;
+    try { data = await apiGet(`/rentroll?month=${encodeURIComponent(m)}`); }
+    catch (_) { data = await apiGet(`/dashboard/rentroll?month=${encodeURIComponent(m)}`); }
 
-    setText(count, rows.length);
-
-    // Totals
-    let billed = 0, paid = 0, overdue = 0, credit = 0;
-
-    const frag = document.createDocumentFragment();
-    rows.forEach(r => {
-      const tr = document.createElement("tr");
-
-      const prop = r.property_name || r.property || "—";
-      const unit = r.unit_code || r.unit || "—";
-      const tn = r.tenant_name || r.tenant || r.full_name || "—";
-      const ps = r.period_start || r.start || "";
-      const pe = r.period_end || r.end || "";
-      const period = ps && pe ? `${ps} → ${pe}` : (r.period || "—");
-
-      const rent = Number(r.subtotal_rent ?? r.rent ?? 0);
-      const late = Number(r.late_fees ?? r.late_fee ?? 0);
-      const totalDue = Number(r.total_due ?? (rent + late) ?? 0);
-      const paidTotal = Number(r.paid_total ?? r.paid ?? 0);
-      const bal = Number(r.invoice_balance ?? r.balance ?? 0);
-
-      billed += totalDue;
-      paid += paidTotal;
-      if (bal > 0) overdue += bal;
-      if (bal < 0) credit += Math.abs(bal);
-
-      const status = bal > 0 ? "due" : (bal < 0 ? "ok" : "ok");
-      const invoiceId = r.invoice_id || r.invoice || "";
-      const phone = r.tenant_phone || r.phone || "";
-      const wa = renderWhatsAppLink({
-        tenant: tn,
-        phone,
-        period: monthLabel(m),
-        balance: bal > 0 ? bal : 0,
-      });
-
-      tr.innerHTML = `
-        <td>${clampStr(prop, 40)}</td>
-        <td>${clampStr(unit, 12)}</td>
-        <td>${clampStr(tn, 45)}</td>
-        <td>${clampStr(period, 28)}</td>
-        <td class="num">${fmtKES2(rent)}</td>
-        <td class="num">${fmtKES2(late)}</td>
-        <td>${renderStatus(status)}</td>
-        <td class="num">${fmtKES2(bal)}</td>
-        <td>${invoiceId ? `<a href="#" data-invoice="${invoiceId}" class="waLink">WhatsApp</a>` : wa}</td>
-      `;
-
-      // If the backend does not provide tenant_phone, still keep the link usable by opening
-      // the standard WhatsApp builder tab prefilled (no phone, but message ready).
-      tr.querySelector("a.waLink")?.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        const message = defaultDunningText({ tenant: tn, period: monthLabel(m), overdue: (bal > 0 ? bal : 0) });
-        const url = buildWhatsAppUrl({ phone, text: message });
-        window.open(url, "_blank");
-      });
-
-      frag.appendChild(tr);
-    });
-
-    tbody.appendChild(frag);
-
-    setText("#rentrollDueChip", `${fmtKES(billed)} billed`);
-    setText("#rentrollPaidChip", `${fmtKES(paid)} received`);
-    setText("#rentrollBalChip", `${fmtKES(overdue)} overdue`);
-    setText("#rentrollCreditChip", `${fmtKES(credit)} prepaid credit`);
-
-    if (!rows.length) show(empty, true);
+    state.rentroll = unwrapRows(data);
+    renderRentRoll();
+    loadOverview();
   } catch (e) {
-    console.error(e);
-    show(empty, true);
-    setText(empty, `Failed to load rent roll: ${e.message}`);
+    console.warn("loadRentRoll failed:", e);
+    state.rentroll = [];
+    renderRentRoll();
+    loadOverview();
   }
 }
 
-/* ------------------------- Balances ------------------------- */
+function renderRentRoll() {
+  const body = $("#rentrollBody");
+  const empty = $("#rentrollEmpty");
+  if (!body) return;
+
+  const m = currentMonthFor("#rentrollMonth") || state.month;
+
+  const qT = String($("#rentrollTenant")?.value || "").trim().toLowerCase();
+  const qP = String($("#rentrollProperty")?.value || "").trim().toLowerCase();
+
+  const rows = (state.rentroll || []).filter((r) => {
+    const tenantLike = (r.tenant || r.tenant_name || r.full_name || r.unit_code || "").toLowerCase();
+    const prop = (r.property_name || r.property || "").toLowerCase();
+    return (!qT || tenantLike.includes(qT)) && (!qP || prop.includes(qP));
+  });
+
+  setText("#rentrollCount", rows.length);
+
+  const billedTotal = sum(rows, (r) => pickNum(r.total_due, r.subtotal_rent, 0));
+  const paidTotal = sum(rows, (r) => pickNum(r.paid_total, 0));
+  const overdueTotal = sum(rows, (r) => Math.max(0, pickNum(r.invoice_balance, 0)));
+  const creditTotal =
+    sum(rows, (r) => Math.max(0, -pickNum(r.invoice_balance, 0))) +
+    sum(rows, (r) => Math.max(0, pickNum(r.credits, 0)));
+
+  setText("#rentrollDueChip", `${fmtKes(billedTotal)} billed`);
+  setText("#rentrollPaidChip", `${fmtKes(paidTotal)} received`);
+  setText("#rentrollBalChip", `${fmtKes(overdueTotal)} overdue`);
+  setText("#rentrollCreditChip", `${fmtKes(creditTotal)} prepaid credit`);
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    return;
+  }
+  hide(empty);
+
+  body.innerHTML = rows.map((r) => {
+    const property = pickStr(r.property_name, r.property) || "—";
+    const unit = pickStr(r.unit_code, r.unit) || "—";
+    const tenant = pickStr(r.tenant, r.tenant_name, r.full_name) || unit;
+
+    const period =
+      (r.period_start && r.period_end)
+        ? `${String(r.period_start).slice(0, 10)} → ${String(r.period_end).slice(0, 10)}`
+        : m;
+
+    const rentBilled = pickNum(r.total_due, r.subtotal_rent, 0);
+    const late = pickNum(r.late_fees, 0);
+    const paid = pickNum(r.paid_total, 0);
+    const invBal = pickNum(r.invoice_balance, 0);
+    const credit = Math.max(0, -invBal) + Math.max(0, pickNum(r.credits, 0));
+    const balEnd = invBal;
+
+    const statusText = balEnd > 0 ? "due" : "ok";
+    const statusClass = balEnd > 0 ? "due" : "ok";
+
+    const invoiceId = pickStr(r.invoice_id) || "";
+    const leaseId = pickStr(r.lease_id) || "";
+
+    const waUrl =
+      (invoiceId ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(invoiceId)}` : "") ||
+      (leaseId ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(leaseId)}&month=${encodeURIComponent(m)}` : "");
+
+    return `
+      <tr>
+        <td>${escapeHtml(property)}</td>
+        <td>${escapeHtml(unit)}</td>
+        <td>${escapeHtml(tenant)}</td>
+        <td>${escapeHtml(String(period))}</td>
+        <td class="num">${fmtKes(rentBilled)}</td>
+        <td class="num">${fmtKes(late)}</td>
+        <td class="num">${fmtKes(paid)}</td>
+        <td class="num">${fmtKes(credit)}</td>
+        <td class="num">${fmtKes(balEnd)}</td>
+        <td><span class="status ${statusClass}">${escapeHtml(statusText)}</span></td>
+        <td>
+          ${waUrl ? `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+/* ------------------------- Balances + Outstanding ------------------------- */
 function initBalances() {
   $("#reloadBalances")?.addEventListener("click", () => loadBalances(true));
-  $("#reloadOutstandingByTenant")?.addEventListener("click", () => loadOutstandingByTenant(true));
-  $("#btnExportBalances")?.addEventListener("click", exportBalancesCsv);
-}
+  $("#balancesMonth")?.addEventListener("change", () => loadBalances(true));
 
-async function loadBalances() {
-  const tbody = $("#balancesBody");
-  const empty = $("#balancesEmpty");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  show(empty, false);
-
-  try {
-    const m = ($("#balancesMonth")?.value || state.month || "").trim();
-    const data = await apiGet("/dashboard/balances", { month: m });
-    const rows = data.rows || data || [];
-
-    let due = 0, rec = 0, arr = 0;
-
-    const frag = document.createDocumentFragment();
-    rows.forEach(r => {
-      const tenant = r.tenant_name || r.tenant || r.full_name || "—";
-      const billed = Number(r.rent_billed_month ?? r.billed ?? r.total_due ?? 0);
-      const received = Number(r.rent_received_month ?? r.received ?? r.paid_total ?? 0);
-      const arrears = Number(r.arrears_end ?? r.arrears ?? r.invoice_balance ?? 0);
-      const rate = r.rent_collection_rate ?? r.collection_rate ?? (billed > 0 ? received / billed : 0);
-
-      due += billed; rec += received; arr += arrears;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${clampStr(tenant, 55)}</td>
-        <td class="num">${fmtKES2(billed)}</td>
-        <td class="num">${fmtKES2(received)}</td>
-        <td class="num">${fmtKES2(arrears)}</td>
-        <td class="num">${fmtPct(rate)}</td>
-      `;
-      frag.appendChild(tr);
-    });
-
-    tbody.appendChild(frag);
-
-    setText("#balMonthDue", `${fmtKES(due)} billed`);
-    setText("#balMonthCollected", `${fmtKES(rec)} received`);
-    setText("#balMonthBalance", `${fmtKES(arr)} arrears (end)`);
-    setText("#balMonthRate", `${fmtPct(due > 0 ? rec / due : 0)} rent collection rate`);
-    setText("#balancesLastUpdated", `Last updated: ${new Date().toLocaleString()}`);
-
-    if (!rows.length) show(empty, true);
-
-    // Keep the "Outstanding by tenant" section aligned (loads only if balances tab visible)
-    if (state.activeTab === "balances") loadOutstandingByTenant().catch(() => {});
-  } catch (e) {
-    console.error(e);
-    show(empty, true);
-    setText(empty, `Failed to load balances: ${e.message}`);
-  }
-}
-
-async function loadOutstandingByTenant() {
-  const tbody = $("#outstandingBody");
-  const empty = $("#outstandingEmpty");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  show(empty, false);
-
-  try {
-    const m = state.month;
-    const data = await apiGet("/dashboard/outstanding_by_tenant", { month: m });
-    const rows = data.rows || data || [];
-
-    const frag = document.createDocumentFragment();
-    rows.forEach(r => {
-      const tenant = r.tenant_name || r.tenant || r.full_name || "—";
-      const overdue = Number(r.overdue ?? r.invoice_balance ?? r.balance ?? 0);
-      const rate = r.rent_collection_rate ?? r.collection_rate ?? 0;
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${clampStr(tenant, 55)}</td>
-        <td class="num">${fmtKES2(overdue)}</td>
-        <td class="num">${fmtPct(rate)}</td>
-      `;
-      frag.appendChild(tr);
-    });
-
-    tbody.appendChild(frag);
-    setText("#outstandingLastUpdated", `Last updated: ${new Date().toLocaleString()}`);
-    if (!rows.length) show(empty, true);
-  } catch (e) {
-    console.error(e);
-    show(empty, true);
-    setText(empty, `Failed to load outstanding by tenant: ${e.message}`);
-  }
-}
-
-function exportBalancesCsv() {
-  const rows = [];
-  const headers = ["Tenant", "Rent billed (month)", "Rent received (month)", "Arrears (end)", "Rent collection rate"];
-  rows.push(headers);
-  $$("#balancesBody tr").forEach(tr => {
-    const cols = Array.from(tr.querySelectorAll("td")).map(td => (td.textContent || "").trim());
-    if (cols.length) rows.push(cols);
+  $("#reloadOutstandingByTenant")?.addEventListener("click", () => {
+    renderOutstandingFromBalances();
   });
-  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `balances_${state.month || "month"}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+
+  $("#btnExportBalances")?.addEventListener("click", async () => {
+    try {
+      const m = currentMonthFor("#balancesMonth") || state.month;
+      const base = apiBase();
+      if (!base) return alert("Set API base first.");
+
+      const url = `${base}/balances/export?month=${encodeURIComponent(m)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert(`Export failed: ${e.message}`);
+    }
+  });
 }
 
-/* ------------------------- Dunning ------------------------- */
+async function loadBalances(force = false) {
+  try {
+    const m = currentMonthFor("#balancesMonth") || state.month;
+
+    const data = await apiGet(`/balances/by_unit?month=${encodeURIComponent(m)}`);
+    state.balances = unwrapRows(data);
+
+    renderBalances();
+    renderOutstandingFromBalances();
+
+    setText("#balMonthLabel", monthLabel(m));
+    setText("#outstandingMonthLabel", monthLabel(m));
+    setText("#balancesLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
+    setText("#outstandingLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
+
+    loadOverview();
+  } catch (e) {
+    console.warn("loadBalances failed:", e);
+    state.balances = [];
+    renderBalances();
+    renderOutstandingFromBalances();
+    loadOverview();
+  }
+}
+
+function renderBalances() {
+  const body = $("#balancesBody");
+  const empty = $("#balancesEmpty");
+  if (!body) return;
+
+  const rows = state.balances || [];
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    setText("#balMonthDue", "KES 0 billed");
+    setText("#balMonthCollected", "KES 0 received");
+    setText("#balMonthBalance", "KES 0 arrears (end)");
+    setText("#balMonthRate", "0.0% rent collection rate");
+    return;
+  }
+  hide(empty);
+
+  const dueTotal = sum(rows, (r) => pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0));
+  const paidTotal = sum(rows, (r) => pickNum(r.paid_total, r.paid, r.collected_amt, 0));
+  const balTotal = sum(rows, (r) => pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0));
+  const rate = dueTotal ? (paidTotal / dueTotal) * 100 : 0;
+
+  setText("#balMonthDue", `${fmtKes(dueTotal)} billed`);
+  setText("#balMonthCollected", `${fmtKes(paidTotal)} received`);
+  setText("#balMonthBalance", `${fmtKes(balTotal)} arrears (end)`);
+  setText("#balMonthRate", `${fmtPct(rate)} rent collection rate`);
+
+  body.innerHTML = rows.map((r) => {
+    const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+    const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
+    const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
+    const bal = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
+    const cr = r.collection_rate ?? (due ? (paid / due) * 100 : 0);
+
+    return `
+      <tr>
+        <td>${escapeHtml(tenant)}</td>
+        <td class="num">${fmtKes(due)}</td>
+        <td class="num">${fmtKes(paid)}</td>
+        <td class="num">${fmtKes(bal)}</td>
+        <td class="num">${fmtPct(cr)}</td>
+      </tr>`;
+  }).join("");
+}
+
+function renderOutstandingFromBalances() {
+  const body = $("#outstandingBody");
+  const empty = $("#outstandingEmpty");
+  if (!body) return;
+
+  const rows = (state.balances || [])
+    .map((r) => {
+      const tenant = pickStr(r.tenant, r.full_name, r.tenant_name, r.unit_code) || "—";
+      const outstanding = pickNum(r.balance, r.closing_balance, r.invoice_balance, r.lease_running_balance, 0);
+      const due = pickNum(r.total_due, r.rent_due, r.invoiced_amt, r.subtotal_rent, 0);
+      const paid = pickNum(r.paid_total, r.paid, r.collected_amt, 0);
+      const cr = r.collection_rate ?? (due ? (paid / due) * 100 : 0);
+      return { tenant, outstanding, cr };
+    })
+    .filter((x) => x.outstanding > 0.0001)
+    .sort((a, b) => b.outstanding - a.outstanding);
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    return;
+  }
+  hide(empty);
+
+  body.innerHTML = rows.map((x) => `
+    <tr>
+      <td>${escapeHtml(x.tenant)}</td>
+      <td class="num">${fmtKes(x.outstanding)}</td>
+      <td class="num">${fmtPct(x.cr)}</td>
+    </tr>
+  `).join("");
+}
+
+/* ------------------------- Dunning (Action Center) ------------------------- */
 function initDunning() {
   $("#reloadDunning")?.addEventListener("click", () => loadDunning(true));
+
   $("#dunningSelectAll")?.addEventListener("change", (e) => {
-    const yes = !!e.target.checked;
-    $$("#dunningBody input[type=checkbox][data-dun]").forEach(cb => cb.checked = yes);
+    const checked = !!e.target.checked;
+    document.querySelectorAll("input.dunning-check").forEach((cb) => cb.checked = checked);
   });
 
-  $("#btnDunningBuildLinks")?.addEventListener("click", () => buildDunningLinks());
+  $("#btnDunningBuildLinks")?.addEventListener("click", (e) => buildDunningLinks({ autoOpen: e.shiftKey }));
   $("#btnDunningMarkSent")?.addEventListener("click", () => markDunningSelectedAsSent());
 }
 
-function getSelectedDunningRows() {
-  return $$("#dunningBody input[type=checkbox][data-dun]:checked").map(cb => {
-    try { return JSON.parse(cb.dataset.dun); } catch { return null; }
-  }).filter(Boolean);
+function dunningMonth() {
+  return currentMonthFor("#balancesMonth") || state.month;
 }
 
-function defaultDunningText({ tenant, period, overdue }) {
-  const amt = fmtKES2(overdue || 0);
-  const who = tenant ? `Hi ${tenant}, ` : "Hi, ";
-  return `${who}friendly reminder your rent for ${period} is overdue by ${amt}. Kindly settle at your earliest convenience. Thank you.`;
+async function loadDunning(force = false) {
+  try {
+    const m = dunningMonth();
+    setSelectValue("#rentrollMonth", m);
+
+    if (force || !state.rentroll.length) {
+      await loadRentRoll(true);
+    }
+    renderDunning();
+  } catch (e) {
+    console.warn("loadDunning failed:", e);
+    renderDunning();
+  }
+}
+
+function renderDunning() {
+  const body = $("#dunningBody");
+  const empty = $("#dunningEmpty");
+  const msg = $("#dunningMsg");
+  const links = $("#dunningLinks");
+  const linksBody = $("#dunningLinksBody");
+
+  if (linksBody) linksBody.innerHTML = "";
+  if (links) hide(links);
+  if (msg) msg.textContent = "";
+
+  const m = dunningMonth();
+  setText("#dunningMonthLabel", monthLabel(m));
+  setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
+
+  if (!body) return;
+
+  const rows = (state.rentroll || [])
+    .map((r) => {
+      const tenant = pickStr(r.tenant, r.tenant_name, r.full_name) || pickStr(r.unit_code) || "—";
+      const invBal = pickNum(r.invoice_balance, 0);
+      const outstanding = Math.max(0, invBal);
+      const due = pickNum(r.total_due, r.subtotal_rent, 0);
+      const paid = pickNum(r.paid_total, 0);
+      const cr = due ? (paid / due) * 100 : 0;
+
+      const invoiceId = pickStr(r.invoice_id) || "";
+      const leaseId = pickStr(r.lease_id) || "";
+      const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
+
+      return { tenant, outstanding, cr, invoiceId, leaseId, phone };
+    })
+    .filter((x) => x.outstanding > 0.0001)
+    .sort((a, b) => b.outstanding - a.outstanding);
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    show(empty);
+    return;
+  }
+  hide(empty);
+
+  body.innerHTML = rows.map((x, i) => {
+    const period = monthLabel(m);
+    const txt =
+      `Hello ${x.tenant},\n` +
+      `This is a gentle reminder that your rent balance for ${period} is ${fmtKes(x.outstanding)}.\n` +
+      `Kindly pay at your earliest convenience. Thank you.`;
+
+    const waRedirect =
+      x.invoiceId
+        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
+        : x.leaseId
+        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(m)}`
+        : "";
+
+    const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
+    const waHref = waRedirect || waDirect;
+
+    return `
+      <tr>
+        <td><input class="dunning-check" type="checkbox" data-idx="${i}" /></td>
+        <td>${escapeHtml(x.tenant)}</td>
+        <td class="num">${fmtKes(x.outstanding)}</td>
+        <td class="num">${fmtPct(x.cr)}</td>
+        <td>${waHref ? `<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}</td>
+        <td class="muted">${x.invoiceId ? escapeHtml(x.invoiceId) : "—"}</td>
+      </tr>`;
+  }).join("");
+}
+
+function getSelectedDunningRows() {
+  const checks = Array.from(document.querySelectorAll("input.dunning-check:checked"));
+  const m = dunningMonth();
+
+  const all = (state.rentroll || [])
+    .map((r) => {
+      const tenant = pickStr(r.tenant, r.tenant_name, r.full_name) || pickStr(r.unit_code) || "—";
+      const outstanding = Math.max(0, pickNum(r.invoice_balance, 0));
+      const invoiceId = pickStr(r.invoice_id) || "";
+      const leaseId = pickStr(r.lease_id) || "";
+      const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
+      return { tenant, outstanding, invoiceId, leaseId, phone, month: m };
+    })
+    .filter((x) => x.outstanding > 0.0001)
+    .sort((a, b) => b.outstanding - a.outstanding);
+
+  return checks.map((cb) => all[Number(cb.dataset.idx)]).filter(Boolean);
+}
+
+function dunningMessageText(tenant, period, amountKes) {
+  return (
+    `Hello ${tenant},\n` +
+    `This is a gentle reminder that your rent balance for ${period} is ${amountKes}.\n` +
+    `Kindly pay at your earliest convenience. Thank you.`
+  );
 }
 
 function buildDunningLinks({ autoOpen = false } = {}) {
@@ -763,35 +956,54 @@ function buildDunningLinks({ autoOpen = false } = {}) {
   const selected = getSelectedDunningRows();
   if (!selected.length) {
     msg.textContent = "Select at least one tenant first.";
-    show(links, false);
     return;
   }
 
-  msg.textContent = `Building ${selected.length} WhatsApp link(s)…`;
-  linksBody.innerHTML = "";
+  const dm = dunningMonth();
+  const period = monthLabel(dm);
 
-  const frag = document.createDocumentFragment();
-  selected.forEach((r, idx) => {
-    const tenant = r.tenant_name || r.tenant || "Tenant";
-    const phone = r.phone || r.tenant_phone || "";
-    const overdue = Number(r.overdue ?? r.invoice_balance ?? r.balance ?? 0);
-    const period = monthLabel(state.month);
-    const text = defaultDunningText({ tenant, period, overdue });
-    const url = buildWhatsAppUrl({ phone, text });
+  const urls = [];
+  const items = selected.map((x) => {
+    const txt = dunningMessageText(x.tenant, period, fmtKes(x.outstanding));
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = `${idx + 1}. ${tenant} — ${fmtKES2(overdue)}`;
-    frag.appendChild(a);
+    const waRedirect =
+      x.invoiceId
+        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
+        : x.leaseId
+        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
+        : "";
 
-    if (autoOpen) window.open(url, "_blank");
+    const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
+    const href = waRedirect || waDirect;
+
+    if (href) urls.push(href);
+
+    return href
+      ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(x.tenant)} — ${fmtKes(x.outstanding)}</a>`
+      : `<div class="muted">${escapeHtml(x.tenant)} — missing phone/ids</div>`;
   });
 
-  linksBody.appendChild(frag);
-  show(links, true);
-  msg.textContent = "Links ready. Click each link to open WhatsApp.";
+  linksBody.innerHTML = items.join("");
+  show(links);
+
+  msg.textContent = autoOpen
+    ? `Opening ${urls.length} WhatsApp link(s) sequentially… (Tip: allow popups for this site).`
+    : `Built ${selected.length} link(s). Click them below to send (avoids pop-up blockers). Tip: Shift+Click to auto-open.`;
+
+  if (autoOpen) {
+    const first = urls[0];
+    const w = first ? window.open(first, "_blank") : null;
+    if (!w) {
+      msg.textContent = "Popup blocked. Please allow popups for this site, then try again.";
+      return;
+    }
+    (async () => {
+      for (let i = 1; i < urls.length; i++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        try { w.location.href = urls[i]; } catch (_) {}
+      }
+    })();
+  }
 }
 
 async function markDunningSelectedAsSent() {
@@ -799,169 +1011,94 @@ async function markDunningSelectedAsSent() {
   if (!msg) return;
 
   const selected = getSelectedDunningRows();
+  const invoiceIds = selected.map((x) => x.invoiceId).filter(Boolean);
+
   if (!selected.length) {
     msg.textContent = "Select at least one tenant first.";
     return;
   }
-
-  // We attempt a safe, generic payload that your backend can accept.
-  // If your backend endpoint name differs, adjust here only.
-  const invoiceIds = selected.map(r => r.invoice_id || r.invoice || r.invoiceId).filter(Boolean);
-
-  msg.textContent = "Marking selected as sent…";
-  try {
-    await apiPost("/admin/dunning/mark_sent", { month: state.month, invoice_ids: invoiceIds }, { admin: true });
-    msg.textContent = `Marked ${invoiceIds.length} as sent.`;
-    loadDunning(true);
-  } catch (e) {
-    console.error(e);
-    msg.textContent = `Failed to mark as sent: ${e.message}`;
+  if (!invoiceIds.length) {
+    msg.textContent = "Selected rows have no invoice_id (cannot mark sent).";
+    return;
   }
-}
 
-async function loadDunning() {
-  updateMonthLabelsEverywhere();
-
-  const tbody = $("#dunningBody");
-  const empty = $("#dunningEmpty");
-  const last = $("#dunningLastUpdated");
-  const selectAll = $("#dunningSelectAll");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-  show(empty, false);
-  if (selectAll) selectAll.checked = false;
-  show($("#dunningLinks"), false);
-  setText("#dunningMsg", "");
+  msg.textContent = "Marking selected invoices as sent…";
 
   try {
-    // Prefer a dedicated dunning endpoint if available, else fall back to outstanding_by_tenant.
-    let data;
     try {
-      data = await apiGet("/dashboard/dunning", { month: state.month });
-    } catch {
-      data = await apiGet("/dashboard/outstanding_by_tenant", { month: state.month });
+      await apiPost("/invoices/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
+    } catch (_) {
+      await apiPost("/admin/invoices/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
     }
-
-    const rows = data.rows || data || [];
-    const items = rows
-      .map(r => ({
-        tenant_name: r.tenant_name || r.tenant || r.full_name || "—",
-        overdue: Number(r.overdue ?? r.invoice_balance ?? r.balance ?? 0),
-        rent_collection_rate: r.rent_collection_rate ?? r.collection_rate ?? 0,
-        tenant_phone: r.tenant_phone || r.phone || "",
-        invoice_id: r.invoice_id || r.invoice || "",
-        whatsapp_url: r.whatsapp_url || r.whatsapp || "",
-      }))
-      .filter(x => x.overdue > 0);
-
-    const frag = document.createDocumentFragment();
-    items.forEach(it => {
-      const tr = document.createElement("tr");
-
-      const payload = {
-        tenant_name: it.tenant_name,
-        overdue: it.overdue,
-        rent_collection_rate: it.rent_collection_rate,
-        tenant_phone: it.tenant_phone,
-        invoice_id: it.invoice_id,
-      };
-
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.dataset.dun = JSON.stringify(payload);
-
-      const td0 = document.createElement("td");
-      td0.appendChild(cb);
-
-      const td1 = document.createElement("td");
-      td1.textContent = it.tenant_name;
-
-      const td2 = document.createElement("td");
-      td2.className = "num";
-      td2.textContent = fmtKES2(it.overdue);
-
-      const td3 = document.createElement("td");
-      td3.className = "num";
-      td3.textContent = fmtPct(it.rent_collection_rate);
-
-      const td4 = document.createElement("td");
-      const waText = defaultDunningText({ tenant: it.tenant_name, period: monthLabel(state.month), overdue: it.overdue });
-      const waUrl = it.whatsapp_url || buildWhatsAppUrl({ phone: it.tenant_phone, text: waText });
-      td4.innerHTML = `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>`;
-
-      const td5 = document.createElement("td");
-      td5.textContent = it.invoice_id ? String(it.invoice_id).slice(0, 8) + "…" : "—";
-      td5.title = it.invoice_id || "";
-
-      tr.appendChild(td0);
-      tr.appendChild(td1);
-      tr.appendChild(td2);
-      tr.appendChild(td3);
-      tr.appendChild(td4);
-      tr.appendChild(td5);
-
-      frag.appendChild(tr);
-    });
-
-    tbody.appendChild(frag);
-
-    setText("#dunningMonthLabel", monthLabel(state.month));
-    if (last) last.textContent = `Last updated: ${new Date().toLocaleString()}`;
-
-    if (!items.length) show(empty, true);
+    msg.textContent = `Marked ${invoiceIds.length} invoice(s) as sent ✅`;
   } catch (e) {
-    console.error(e);
-    show(empty, true);
-    setText(empty, `Failed to load dunning: ${e.message}`);
+    msg.textContent = `Failed: ${e.message}`;
   }
 }
 
-/* ------------------------- WhatsApp Builder ------------------------- */
+/* ------------------------- WhatsApp Builder (ad-hoc) ------------------------- */
 function initWhatsAppBuilder() {
   $("#waBuild")?.addEventListener("click", () => {
-    const tenant = ($("#waTenant")?.value || "").trim();
-    const phone = ($("#waPhone")?.value || "").trim();
-    const period = ($("#waPeriod")?.value || "").trim() || monthLabel(state.month);
+    const tenant = $("#waTenant")?.value || "tenant";
+    const phone = normalizePhoneKE($("#waPhone")?.value || "");
+    const period = $("#waPeriod")?.value || monthLabel(state.month);
     const bal = Number($("#waBalance")?.value || 0);
 
-    const text = defaultDunningText({ tenant, period, overdue: bal });
-    const url = buildWhatsAppUrl({ phone, text });
+    if (!phone) {
+      $("#waResult").innerHTML = `<span class="muted">Enter phone number first.</span>`;
+      return;
+    }
 
-    const out = $("#waResult");
-    if (out) out.innerHTML = `<a href="${url}" target="_blank" rel="noopener">Open WhatsApp message</a>`;
+    const txt =
+      `Hello ${tenant},\n` +
+      `Your rent balance for ${period} is ${fmtKes(bal)}.\n` +
+      `Kindly pay at your earliest convenience. Thank you.`;
+
+    const href = buildWhatsAppLink(phone, txt);
+    $("#waResult").innerHTML = `<a href="${href}" target="_blank" rel="noopener">Open WhatsApp message</a>`;
   });
 }
 
-/* ------------------------- Settings ------------------------- */
+function buildWhatsAppLink(phone2547, message) {
+  const p = normalizePhoneKE(phone2547);
+  const txt = encodeURIComponent(String(message || ""));
+  return `https://wa.me/${p}?text=${txt}`;
+}
+
+/* ------------------------- Settings + Invoice Actions ------------------------- */
 function initSettings() {
+  const api2 = $("#apiBase2");
+  const admin = $("#adminToken");
+
+  const savedApi = localStorage.getItem("api_base") || "";
+  if (api2) api2.value = savedApi;
+
+  const savedToken = localStorage.getItem("admin_token") || "";
+  if (admin) admin.value = savedToken;
+
   $("#saveSettings")?.addEventListener("click", () => {
-    const api = ($("#apiBase2")?.value || "").trim().replace(/\/+$/, "");
-    const tok = ($("#adminToken")?.value || "").trim();
-    if (api) {
-      state.apiBase = api;
-      localStorage.setItem("api_base", api);
-      const top = $("#apiBase");
-      if (top) top.value = api;
+    const v = (api2?.value || "").trim();
+    if (v) {
+      localStorage.setItem("api_base", v);
+      state.apiBase = v;
+      if ($("#apiBase")) $("#apiBase").value = v;
     }
-    if (tok) localStorage.setItem("admin_token", tok);
-    alert("Saved.");
+    const t = (admin?.value || "").trim();
+    localStorage.setItem("admin_token", t);
+    setText("#actionMsg", "Saved ✅");
   });
 
   $("#resetSettings")?.addEventListener("click", () => {
     localStorage.removeItem("api_base");
     localStorage.removeItem("admin_token");
-    localStorage.removeItem("month");
-    localStorage.removeItem("active_tab");
-    location.reload();
+    state.apiBase = "";
+    if ($("#apiBase")) $("#apiBase").value = "";
+    if (api2) api2.value = "";
+    if (admin) admin.value = "";
+    setText("#actionMsg", "Reset ✅");
   });
-
-  // prefill
-  if ($("#apiBase2")) $("#apiBase2").value = state.apiBase || "";
-  if ($("#adminToken")) $("#adminToken").value = localStorage.getItem("admin_token") || "";
 }
 
-/* ------------------------- Admin Invoice Actions ------------------------- */
 function initInvoiceActions() {
   const healthBtn = $("#btnHealth");
   const markBtn = $("#btnMarkSent");
@@ -974,46 +1111,52 @@ function initInvoiceActions() {
     healthBtn.addEventListener("click", async () => {
       setMsg("Checking admin token…");
       try {
-        const headers = {};
-        const t = localStorage.getItem("admin_token") || (window.getAdminToken ? window.getAdminToken() : "");
-        if (t) headers["X-Admin-Token"] = t;
-
-        const base = (state.apiBase || "").replace(/\/+$/, "");
-        const res = await fetch(base + "/admin/ping", { headers });
-        const data = await res.json().catch(() => ({}));
-        setMsg(res.ok ? `OK: ${JSON.stringify(data)}` : `Failed: ${JSON.stringify(data)}`);
+        await apiGet("/admin/ping", { admin: true, timeoutMs: 15000 });
+        setMsg("Admin token OK ✅");
       } catch (e) {
-        setMsg("Auth ping failed: " + e.message);
+        setMsg(`Ping failed: ${e.message}`);
       }
     });
   }
 
   if (markBtn) {
     markBtn.addEventListener("click", async () => {
-      const invoiceId = (input?.value || "").trim();
-      if (!invoiceId) return setMsg("Paste an invoice_id first.");
+      const invoice_id = (input?.value || "").trim();
+      if (!invoice_id) return setMsg("Enter invoice_id first.");
       setMsg("Marking invoice as sent…");
       try {
-        // If your backend uses a different endpoint name, adjust this path:
-        await apiPost("/admin/invoices/mark_sent", { invoice_id: invoiceId }, { admin: true });
-        setMsg("Marked as sent.");
+        try {
+          await apiPost("/invoices/mark_sent", { invoice_ids: [invoice_id] }, { admin: true });
+        } catch (_) {
+          await apiPost("/admin/invoices/mark_sent", { invoice_ids: [invoice_id] }, { admin: true });
+        }
+        setMsg("Marked as sent ✅");
       } catch (e) {
-        setMsg("Failed: " + e.message);
+        setMsg(`Failed: ${e.message}`);
       }
     });
   }
 }
 
-/* ------------------------- Rendering helpers ------------------------- */
-function renderStatus(status) {
-  const s = (status || "").toString().toLowerCase();
-  if (s === "due" || s === "overdue" || s === "unpaid") return `<span class="status due">due</span>`;
-  if (s === "ended" || s === "inactive") return `<span class="status ended">ended</span>`;
-  return `<span class="status ok">ok</span>`;
-}
+/* ------------------------- Init ------------------------- */
+document.addEventListener("DOMContentLoaded", () => {
+  initTabs();
+  initApiBaseControls();
+  initMonthPicker();
 
-function renderWhatsAppLink({ tenant, phone, period, balance }) {
-  const text = defaultDunningText({ tenant, period, overdue: balance });
-  const url = buildWhatsAppUrl({ phone, text });
-  return `<a href="${url}" target="_blank" rel="noopener">WhatsApp</a>`;
-}
+  initLeases();
+  initPayments();
+  initRentRoll();
+  initBalances();
+  initDunning();
+  initWhatsAppBuilder();
+  initSettings();
+  initInvoiceActions();
+
+  loadOverview();
+  loadLeases(true);
+  loadPayments(true);
+  loadRentRoll(true);
+  loadBalances(true);
+  loadDunning(true);
+});
