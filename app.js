@@ -40,6 +40,7 @@ function parseDateOnly(s) {
   const d = new Date(String(s).slice(0, 10) + "T00:00:00");
   return Number.isNaN(d.getTime()) ? null : d;
 }
+
 function daysOverdueFromDueDate(dueDateStr) {
   const due = parseDateOnly(dueDateStr);
   if (!due) return null;
@@ -50,6 +51,13 @@ function daysOverdueFromDueDate(dueDateStr) {
   return diff > 0 ? diff : 0;
 }
 
+// Numeric helpers
+function clamp0(n, cap = 1e15) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  if (x < 0) return 0;
+  return Math.min(x, cap);
+}
 
 function fmtPct(n) {
   const x = Number(n);
