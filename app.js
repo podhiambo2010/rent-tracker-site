@@ -372,6 +372,10 @@ function setSelectValue(sel, value) {
   if (el) el.value = value || "";
 }
 
+function waDirect(phone, message) {
+  return buildWhatsAppLink(phone, message);
+}
+
 /* ------------------------- Overview ------------------------- */
 async function loadOverview() {
   try {
