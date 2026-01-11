@@ -69,6 +69,7 @@ function toNumber(v, def = 0) {
   return Number.isFinite(n) ? n : def;
 }
 
+
 function fmtPct(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return "0.0%";
