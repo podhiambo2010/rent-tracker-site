@@ -92,6 +92,12 @@ function normalizePhoneKE(p) {
   return s;
 }
 
+// Back-compat alias (some code paths call this older name)
+function normalizeKenyanPhone(p) {
+  return normalizePhoneKE(p);
+}
+
+
 /* ------------------------- Response shape helpers ------------------------- */
 function unwrapRows(data) {
   if (!data) return [];
