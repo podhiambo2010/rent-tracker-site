@@ -59,6 +59,16 @@ function clamp0(n, cap = 1e15) {
   return Math.min(x, cap);
 }
 
+// Convert unknown values to a safe number (handles strings like "1,234"; null -> default).
+function toNumber(v, def = 0) {
+  if (v === null || v === undefined) return def;
+  if (typeof v === "number") return Number.isFinite(v) ? v : def;
+  const s = String(v).trim();
+  if (!s) return def;
+  const n = Number(s.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : def;
+}
+
 function fmtPct(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return "0.0%";
