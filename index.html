@@ -506,6 +506,149 @@ doctype html>
         <div id="waResult" class="muted"></div>
       </div>
 
+
+      <!-- ===== Balances ===== -->
+      <div class="panel hidden" id="tab-balances">
+        <div class="bar-flex">
+          <h2>Balances</h2>
+          <button id="reloadBalances" class="btn ghost">Reload</button>
+          <button id="btnExportBalances" class="btn ghost">Export CSV</button>
+        </div>
+
+        <div class="filters">
+          <select id="balancesMonth"></select>
+        </div>
+
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th class="num">Rent billed (month)</th>
+                <th class="num">Rent received (month)</th>
+                <th class="num">Arrears (end)</th>
+                <th class="num">Rent collection rate</th>
+              </tr>
+            </thead>
+            <tbody id="balancesBody"></tbody>
+          </table>
+        </div>
+        <div id="balancesEmpty" class="empty hidden">No balances to show yet.</div>
+
+        <div style="margin-top:24px;">
+          <h3 style="margin:0 0 8px 0;">This month totals (all tenants)</h3>
+          <div id="balances-summary">
+            <div class="chip"><strong id="balMonthLabel">—</strong></div>
+            <div class="chip" id="balMonthDue">KES 0 billed</div>
+            <div class="chip" id="balMonthCollected">KES 0 received</div>
+            <div class="chip" id="balMonthBalance">KES 0 arrears (end)</div>
+            <div class="chip" id="balMonthRate">0.0% rent collection rate</div>
+          </div>
+          <p id="balancesLastUpdated" class="muted" style="margin:6px 0 0 0;">Last updated: —</p>
+        </div>
+
+        <!-- Divider -->
+        <div class="section-split" style="margin-top:24px;">
+          <div class="split-line"></div>
+          <div class="split-label">Outstanding</div>
+          <div class="split-line"></div>
+        </div>
+
+        <div class="bar-flex" style="margin-top:12px;">
+          <h3 style="margin:0;">Rent overdue by tenant (month)</h3>
+          <span class="chip" id="outstandingMonthLabel">—</span>
+          <button id="reloadOutstandingByTenant" class="btn ghost">Reload</button>
+          <span class="muted">Actions moved to <b>Dunning</b>.</span>
+        </div>
+
+        <p id="outstandingLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tenant</th>
+                <th class="num">Overdue</th>
+                <th class="num">Rent collection rate</th>
+              </tr>
+            </thead>
+            <tbody id="outstandingBody"></tbody>
+          </table>
+        </div>
+        <div id="outstandingEmpty" class="empty hidden">No outstanding balances this month 🎉</div>
+      </div>
+
+      <!-- ===== Dunning (Action Center) ===== -->
+      <div class="panel hidden" id="tab-dunning">
+        <div class="bar-flex">
+          <h2>Dunning</h2>
+          <span class="chip" id="dunningMonthLabel">—</span>
+          <button id="reloadDunning" class="btn ghost">Reload</button>
+        </div>
+
+        <p id="dunningLastUpdated" class="muted" style="margin:4px 0 0 0;">Last updated: —</p>
+
+        <div class="filters" style="margin-top:10px;">
+          <select id="dunningMonth"></select>
+          <input id="dunningMinDaysOverdue" type="number" min="0" value="0" placeholder="Min days overdue (e.g., 6)"/>
+          <span class="muted">Tip: set Min days to your grace days + 1 to target only past-grace.</span>
+        </div>
+
+        <div class="dunning-actions">
+          <label class="muted" style="display:flex;gap:8px;align-items:center;">
+            <input type="checkbox" id="dunningSelectAll"/>
+            Select all
+          </label>
+
+          <button class="btn" id="btnDunningBuildLinks">Build WhatsApp links (Selected)</button>
+          <button class="btn secondary" id="btnDunningMarkSent">Mark Selected as Sent</button>
+
+          <span class="muted" id="dunningMsg"></span>
+        </div>
+
+        <div class="table-wrap" style="margin-top:10px;">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Tenant</th>
+                <th class="num">Overdue (month)</th>
+                <th class="num">Total owed</th>
+                <th class="num">Days overdue</th>
+                <th class="num">Rent collection rate</th>
+                <th>WhatsApp</th>
+                <th>Invoice</th>
+              </tr>
+            </thead>
+            <tbody id="dunningBody"></tbody>
+          </table>
+        </div>
+        <div id="dunningEmpty" class="empty hidden">No dunning items match your filter 🎉</div>
+
+        <div id="dunningLinks" class="dunning-links hidden">
+          <div class="muted" style="margin-bottom:6px;">
+            Click links below (this avoids pop-up blockers when sending many messages):
+          </div>
+          <div id="dunningLinksBody"></div>
+        </div>
+      </div>
+
+      <!-- ===== WhatsApp (ad-hoc builder) ===== -->
+      <div class="panel hidden" id="tab-whatsapp">
+        <h2>WhatsApp Message (ad-hoc)</h2>
+        <div class="filters">
+          <input id="waTenant" placeholder="Tenant name"/>
+          <input id="waPhone" placeholder="Phone (2547… or 07… or +2547…)"/>
+          <input id="waPeriod" placeholder="Period label (e.g., Dec 2025)"/>
+          <input id="waBalance" type="number" placeholder="Balance amount (KSh)"/>
+          <button class="btn" id="waBuild">Build Link</button>
+        </div>
+        <p class="muted">
+          For collections, use <b>Dunning</b> (it uses month + outstanding data).
+        </p>
+        <div id="waResult" class="muted"></div>
+      </div>
+
       <!-- ===== Settings ===== -->
       <div class="panel hidden" id="tab-settings">
         <h2>Settings</h2>

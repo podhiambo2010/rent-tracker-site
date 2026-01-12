@@ -897,14 +897,17 @@ function dunningMonth() {
 async function loadDunning(force = false) {
   try {
     const m = dunningMonth();
-    setSelectValue("#rentrollMonth", m);
+    const minDays = Number($("#dunningMinDaysOverdue")?.value || 0);
 
-    if (force || !state.rentroll.length) {
-      await loadRentRoll(true);
-    }
+    const data = await apiGet(
+      `/dunning?month=${encodeURIComponent(m)}&minDays=${minDays}`
+    );
+
+    state.dunning = unwrapRows(data);
     renderDunning();
   } catch (e) {
     console.warn("loadDunning failed:", e);
+    state.dunning = [];
     renderDunning();
   }
 }
@@ -915,7 +918,6 @@ function renderDunning() {
   const msg = $("#dunningMsg");
   const links = $("#dunningLinks");
   const linksBody = $("#dunningLinksBody");
-  const minDays = Number($("#dunningMinDaysOverdue")?.value ?? 0) || 0;
 
   if (linksBody) linksBody.innerHTML = "";
   if (links) hide(links);
@@ -925,106 +927,52 @@ function renderDunning() {
   setText("#dunningMonthLabel", monthLabel(m));
   setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
 
-  // Build rows (sorted by total owed)
-  const all = (state.rentroll || [])
-    .map((r) => {
-      const leaseId = pickStr(r.lease_id, r.leaseId, r.lease) || "";
-      const tenant = pickStr(r.tenant_name, r.tenant, r.tenantName, r.unit_code, r.unitCode, "Tenant");
-      const phone = normalizeKenyanPhone(pickStr(r.tenant_phone, r.phone, r.tenantPhone, ""));
-      
-      const invoiceId = pickStr(r.invoice_id, r.invoiceId, r.invoice) || "";
+  const rows = state.dunning || [];
 
-      const monthOverdue = clamp0(toNumber(r.invoice_balance));
-      const totalOwed = clamp0(toNumber(r.lease_running_balance));
-
-      const dueDate = pickStr(r.due_date, r.dueDate) || "";
-      const daysOverdue = daysOverdueFromDueDate(dueDate);
-
-      // Rent collection rate (month): paid / total_due (fallback: 0)
-      const due = toNumber(r.total_due);
-      const paid = toNumber(r.paid_total);
-      const cr = due > 0 ? (paid / due) * 100 : 0;
-
-      return {
-        leaseId,
-        tenant,
-        phone,
-        invoiceId,
-        monthOverdue,
-        totalOwed,
-        dueDate,
-        daysOverdue,
-        cr,
-      };
-    })
-    .filter((x) => x.totalOwed > 0)
-    .filter((x) => (x.daysOverdue ?? 0) >= minDays)
-    .sort((a, b) => (b.totalOwed || 0) - (a.totalOwed || 0));
-
-  if (!all.length) {
+  if (!rows.length) {
     if (body) body.innerHTML = "";
     if (empty) show(empty);
     return;
   }
-  if (empty) hide(empty);
+  hide(empty);
 
-  const period = monthLabel(m);
+  body.innerHTML = rows
+    .map((r, idx) => {
+      const wa = r.whatsapp_link
+        ? `<a href="${r.whatsapp_link}" target="_blank" rel="noopener">WhatsApp</a>`
+        : `<span class="muted">missing phone</span>`;
 
-  if (body) {
-    body.innerHTML = all
-      .map((x, i) => {
-        const txt = dunningMessageText(
-          x.tenant,
-          period,
-          fmtKes(x.monthOverdue),
-          fmtKes(x.totalOwed),
-          x.daysOverdue
-        );
+      return `
+        <tr>
+          <td><input class="dunning-check" type="checkbox" data-idx="${idx}" /></td>
+          <td>${escapeHtml(r.tenant)}</td>
+          <td class="num">${fmtKes(r.total_due)}</td>
+          <td class="num">${fmtKes(r.balance)}</td>
+          <td class="num">${r.days_overdue}</td>
+          <td>${escapeHtml(r.bucket)}</td>
+          <td>${wa}</td>
+          <td class="muted mono">${escapeHtml(r.invoice_id)}</td>
+        </tr>
+      `;
+    })
+    .join("");
 
-        const wa = x.phone
-          ? `<a href="${waDirect(x.phone, txt)}" target="_blank" rel="noopener">WhatsApp</a>`
-          : `<div class="muted">missing phone</div>`;
-
-        return `<tr>
-      <td><input class="dunning-check" type="checkbox" data-idx="${i}" /></td>
-      <td>${escapeHtml(x.tenant)}</td>
-      <td class="num">${fmtKes(x.monthOverdue)}</td>
-      <td class="num">${fmtKes(x.totalOwed)}</td>
-      <td class="num">${x.daysOverdue == null ? "—" : x.daysOverdue}</td>
-      <td class="num">${(x.cr || 0).toFixed(1)}%</td>
-      <td>${wa}</td>
-      <td class="muted mono">${escapeHtml(x.invoiceId)}</td>
-    </tr>`;
-      })
-      .join("");
-  }
-
-  // reset "select all" when re-rendering
   const sa = $("#dunningSelectAll");
   if (sa) sa.checked = false;
 }
+
 function getSelectedDunningRows() {
-  const checks = Array.from(document.querySelectorAll("input.dunning-check:checked"));
-  const m = dunningMonth();
+  const rows = state.dunning || [];
+  const out = [];
 
-  const all = (state.rentroll || [])
-    .map((r) => {
-      const tenant = pickStr(r.tenant, r.tenant_name, r.full_name) || pickStr(r.unit_code) || "—";
-      const monthOverdue = Math.max(0, pickNum(r.invoice_balance, 0));
-      const totalOwed = Math.max(0, pickNum(r.lease_running_balance, r.invoice_balance, 0));
-      const phone = normalizePhoneKE(r.tenant_phone || r.phone || r.msisdn || r.whatsapp_phone || "");
-      const invoiceId = pickStr(r.invoice_id, r.invoiceId, r.invoice) || "";
-      const leaseId = pickStr(r.lease_id, r.leaseId, r.lease) || "";
-      const dueDate = pickStr(r.due_date, r.dueDate) || "";
-      const daysOverdue = daysOverdueFromDueDate(dueDate);
-      return { tenant, monthOverdue, totalOwed, invoiceId, leaseId, dueDate, daysOverdue, phone, month: m };
+  document.querySelectorAll("input.dunning-check:checked").forEach((cb) => {
+    const idx = Number(cb.dataset.idx);
+    if (Number.isFinite(idx) && rows[idx]) {
+      out.push(rows[idx]);
+    }
+  });
 
-    })
-    .filter((x) => x.totalOwed > 0.0001)
-    .filter((x) => (x.daysOverdue ?? 0) >= minDays)
-    .sort((a, b) => b.totalOwed - a.totalOwed);
-    
-  return checks.map((cb) => all[Number(cb.dataset.idx)]).filter(Boolean);
+  return out;
 }
 
 function dunningMessageText(tenant, period, monthKes, totalKes, daysOverdue) {
@@ -1053,48 +1001,29 @@ function buildDunningLinks({ autoOpen = false } = {}) {
     return;
   }
 
-  const dm = dunningMonth();
-  const period = monthLabel(dm);
-
   const urls = [];
-  const items = selected.map((x) => {
-    const txt = dunningMessageText(
-      x.tenant,
-      period,
-      fmtKes(x.monthOverdue),
-      fmtKes(x.totalOwed),
-      x.daysOverdue
-    );
-    
-    const waRedirect =
-      x.invoiceId
-        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(x.invoiceId)}`
-        : x.leaseId
-        ? `${apiBase()}/wa_for_rentroll_redirect?lease_id=${encodeURIComponent(x.leaseId)}&month=${encodeURIComponent(dm)}`
-        : "";
-
-    const waDirect = x.phone ? buildWhatsAppLink(x.phone, txt) : "";
-    const href = waRedirect || waDirect;
+  const items = selected.map((r) => {
+    const href = r.whatsapp_link || "";
 
     if (href) urls.push(href);
 
     return href
-      ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(x.tenant)} — ${fmtKes(x.totalOwed)} (month ${fmtKes(x.monthOverdue)}, ${x.daysOverdue == null ? "?" : x.daysOverdue}d overdue)</a>`
-      : `<div class="muted">${escapeHtml(x.tenant)} — missing phone/ids</div>`;
+      ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(r.tenant)} — ${fmtKes(r.balance)} (${r.days_overdue}d overdue)</a>`
+      : `<div class="muted">${escapeHtml(r.tenant)} — missing phone</div>`;
   });
 
   linksBody.innerHTML = items.join("");
   show(links);
 
   msg.textContent = autoOpen
-    ? `Opening ${urls.length} WhatsApp link(s) sequentially… (Tip: allow popups for this site).`
-    : `Built ${selected.length} link(s). Click them below to send (avoids pop-up blockers). Tip: Shift+Click to auto-open.`;
+    ? `Opening ${urls.length} WhatsApp link(s)…`
+    : `Built ${urls.length} link(s). Click below to send.`;
 
-  if (autoOpen) {
+  if (autoOpen && urls.length > 0) {
     const first = urls[0];
-    const w = first ? window.open(first, "_blank") : null;
+    const w = window.open(first, "_blank");
     if (!w) {
-      msg.textContent = "Popup blocked. Please allow popups for this site, then try again.";
+      msg.textContent = "Popup blocked. Allow popups and try again.";
       return;
     }
     (async () => {
@@ -1111,26 +1040,18 @@ async function markDunningSelectedAsSent() {
   if (!msg) return;
 
   const selected = getSelectedDunningRows();
-  const invoiceIds = selected.map((x) => x.invoiceId).filter(Boolean);
+  const invoiceIds = selected.map((r) => r.invoice_id).filter(Boolean);
 
-  if (!selected.length) {
-    msg.textContent = "Select at least one tenant first.";
-    return;
-  }
   if (!invoiceIds.length) {
-    msg.textContent = "Selected rows have no invoice_id (cannot mark sent).";
+    msg.textContent = "Select at least one invoice first.";
     return;
   }
 
   msg.textContent = "Marking selected invoices as sent…";
 
   try {
-    try {
-      await apiPost("/invoices/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
-    } catch (_) {
-      await apiPost("/admin/invoices/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
-    }
-    msg.textContent = `Marked ${invoiceIds.length} invoice(s) as sent ✅`;
+    await apiPost("/dunning/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
+    msg.textContent = `Marked ${invoiceIds.length} invoice(s) as sent.`;
   } catch (e) {
     msg.textContent = `Failed: ${e.message}`;
   }
