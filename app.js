@@ -925,7 +925,13 @@ function renderDunning() {
 
   const m = dunningMonth();
   setText("#dunningMonthLabel", monthLabel(m));
+  setText("#dunningInvoiceCount", `${rows.length} overdue invoice(s)`);
   setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
+
+  <span id="dunningInvoiceCount" class="muted small"></span>
+
+  if (body) body.innerHTML = "";
+  hide("#dunningTip"); // assuming your tip has id="dunningTip"
 
   const rows = state.dunning || [];
 
@@ -1119,38 +1125,47 @@ function initSettings() {
     setText("#actionMsg", "Reset ✅");
   });
 }
+async function initInvoiceActions() {
+  const token = getAdminToken();
+  const msg = document.querySelector("#invoiceStatus");
 
-function initInvoiceActions() {
-  const healthBtn = $("#btnHealth");
-  const markBtn = $("#btnMarkSent");
-  const input = $("#invoiceIdInput");
-  const msg = $("#actionMsg");
-
-  const setMsg = (t) => { if (msg) msg.textContent = t; };
-
-  if (healthBtn) {
-    healthBtn.addEventListener("click", async () => {
-      setMsg("Checking admin token…");
-      try {
-        await apiGet("/admin/ping", { admin: true, timeoutMs: 15000 });
-        setMsg("Admin token OK ✅");
-      } catch (e) {
-        setMsg(`Ping failed: ${e.message}`);
+  // ---------------------- Auth Ping ----------------------
+  try {
+    const res = await fetch(`${apiBase()}/admin/ping`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
       }
     });
+
+    if (!res.ok) throw new Error(`Ping failed: ${res.status}`);
+    msg.textContent = "Ping OK ✅";
+  } catch (e) {
+    msg.textContent = `Ping failed: ${e.message}`;
   }
+
+  // ---------------------- Mark Invoice as Sent ----------------------
+  const markBtn = document.querySelector("#markInvoiceBtn");
+  const input = document.querySelector("#invoiceIdInput");
 
   if (markBtn) {
     markBtn.addEventListener("click", async () => {
       const invoice_id = (input?.value || "").trim();
       if (!invoice_id) return setMsg("Enter invoice_id first.");
-      setMsg("Marking invoice as sent…");
+      setMsg("Marking invoice as sent...");
+
       try {
-        try {
-          await apiPost("/invoices/mark_sent", { invoice_ids: [invoice_id] }, { admin: true });
-        } catch (_) {
-          await apiPost("/admin/invoices/mark_sent", { invoice_ids: [invoice_id] }, { admin: true });
-        }
+        const res = await fetch(`${apiBase()}/admin/invoices/mark_sent`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ invoice_ids: [invoice_id] })
+        });
+
+        if (!res.ok) throw new Error(`Failed: ${res.status}`);
         setMsg("Marked as sent ✅");
       } catch (e) {
         setMsg(`Failed: ${e.message}`);
@@ -1159,7 +1174,6 @@ function initInvoiceActions() {
   }
 }
 
-/* ------------------------- Init ------------------------- */
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
   initApiBaseControls();
@@ -1167,17 +1181,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initLeases();
   initPayments();
-  initRentRoll();
-  initBalances();
-  initDunning();
-  initWhatsAppBuilder();
-  initSettings();
-  initInvoiceActions();
-
-  loadOverview();
-  loadLeases(true);
-  loadPayments(true);
-  loadRentRoll(true);
-  loadBalances(true);
-  loadDunning(true);
+  initInvoiceActions(); // ✅ This line was missing before
 });
