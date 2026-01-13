@@ -158,8 +158,7 @@ const state = {
 
 /* ------------------------- API ------------------------- */
 function apiBase() {
-  const b = (state.apiBase || "").trim().replace(/\/+$/, "");
-  return b;
+  return state.apiBase || localStorage.getItem("api_base") || "https://rent-tracker-api-16i0.onrender.com";
 }
 
 function getAdminTokenFromStorage() {
