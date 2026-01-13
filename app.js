@@ -928,7 +928,7 @@ function renderDunning() {
   setText("#dunningInvoiceCount", `${rows.length} overdue invoice(s)`);
   setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
 
-  <span id="dunningInvoiceCount" class="muted small"></span>
+  
 
   if (body) body.innerHTML = "";
   hide("#dunningTip"); // assuming your tip has id="dunningTip"
