@@ -868,12 +868,110 @@ function renderOutstandingFromBalances() {
   `).join("");
 }
 
-/* ------------------------- Dunning ------------------------- */
+/* ------------------------- Invoice Actions ------------------------- */
 
-async function loadDunning() {
+function initInvoiceActions() {
+  const btnSent = $("#btnMarkSent");
+  const btnHealth = $("#btnHealth");
+  const input = $("#invoiceIdInput");
+  const msg = $("#actionMsg");
+
+  if (!btnSent || !btnHealth || !input || !msg) return;
+
+  btnSent.addEventListener("click", async () => {
+    const id = input.value.trim();
+    if (!id) {
+      msg.textContent = "Enter an invoice_id first.";
+      return;
+    }
+
+    const token = window.getAdminToken();
+    if (!token) {
+      msg.textContent = "Admin token required.";
+      return;
+    }
+
+    msg.textContent = "Marking invoice as sent…";
+
+    try {
+      const res = await fetch(`${apiBase()}/admin/mark_invoice_sent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": token
+        },
+        body: JSON.stringify({ invoice_id: id })
+      });
+
+      if (!res.ok) {
+        msg.textContent = `Failed: ${res.status}`;
+        return;
+      }
+
+      msg.textContent = "Invoice marked as sent.";
+      input.value = "";
+    } catch (e) {
+      msg.textContent = "Network error.";
+      console.warn(e);
+    }
+  });
+
+  btnHealth.addEventListener("click", async () => {
+    const token = window.getAdminToken();
+    if (!token) {
+      msg.textContent = "Admin token required.";
+      return;
+    }
+
+    msg.textContent = "Checking auth…";
+
+    try {
+      const res = await fetch(`${apiBase()}/admin/health`, {
+        headers: { "X-Admin-Token": token }
+      });
+
+      msg.textContent = res.ok ? "Auth OK" : `Auth failed (${res.status})`;
+    } catch (e) {
+      msg.textContent = "Network error.";
+      console.warn(e);
+    }
+  });
+}
+
+/* ------------------------- Dunning initDunning------------------------- */
+function initDunning() {
+  $("#reloadDunning")?.addEventListener("click", () => loadDunning(true));
+  $("#dunningMonth")?.addEventListener("change", () => loadDunning(true));
+  $("#dunningSelectAll")?.addEventListener("change", (e) => {
+    const checked = !!e.target.checked;
+    document.querySelectorAll("input.dunning-check").forEach((cb) => cb.checked = checked);
+  });
+
+  const minDays = $("#dunningMinDaysOverdue");
+  if (minDays) {
+    minDays.addEventListener("input", () => {
+      renderDunning(); // re-render with new filter
+    });
+  }
+
+  $("#btnDunningBuildLinks")?.addEventListener("click", (e) => buildDunningLinks({ autoOpen: e.shiftKey }));
+  $("#btnDunningMarkSent")?.addEventListener("click", () => markDunningSelectedAsSent());
+}
+
+function dunningMonth() {
+  return currentMonthFor("#dunningMonth") || currentMonthFor("#balancesMonth") || state.month;
+}
+
+/* ------------------------- Dunning ------------------------- */
+async function loadDunning(force = false) {
   try {
-    const m = state.month;
-    const data = await apiGet(`/dashboard/dunning?month=${encodeURIComponent(m)}`);
+    const m = dunningMonth();
+    const minDays = Number($("#dunningMinDaysOverdue")?.value || 0);
+
+    const data = await apiGet(
+      `/dunning?month=${encodeURIComponent(m)}&minDays=${minDays}`
+    );
+
     state.dunning = unwrapRows(data);
     renderDunning();
   } catch (e) {
@@ -1026,75 +1124,6 @@ function initSettings() {
   });
 }
 
-/* ------------------------- Invoice Actions ------------------------- */
-
-function initInvoiceActions() {
-  const btnSent = $("#btnMarkSent");
-  const btnHealth = $("#btnHealth");
-  const input = $("#invoiceIdInput");
-  const msg = $("#actionMsg");
-
-  if (!btnSent || !btnHealth || !input || !msg) return;
-
-  btnSent.addEventListener("click", async () => {
-    const id = input.value.trim();
-    if (!id) {
-      msg.textContent = "Enter an invoice_id first.";
-      return;
-    }
-
-    const token = window.getAdminToken();
-    if (!token) {
-      msg.textContent = "Admin token required.";
-      return;
-    }
-
-    msg.textContent = "Marking invoice as sent…";
-
-    try {
-      const res = await fetch(`${apiBase()}/admin/mark_invoice_sent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-Token": token
-        },
-        body: JSON.stringify({ invoice_id: id })
-      });
-
-      if (!res.ok) {
-        msg.textContent = `Failed: ${res.status}`;
-        return;
-      }
-
-      msg.textContent = "Invoice marked as sent.";
-      input.value = "";
-    } catch (e) {
-      msg.textContent = "Network error.";
-      console.warn(e);
-    }
-  });
-
-  btnHealth.addEventListener("click", async () => {
-    const token = window.getAdminToken();
-    if (!token) {
-      msg.textContent = "Admin token required.";
-      return;
-    }
-
-    msg.textContent = "Checking auth…";
-
-    try {
-      const res = await fetch(`${apiBase()}/admin/health`, {
-        headers: { "X-Admin-Token": token }
-      });
-
-      msg.textContent = res.ok ? "Auth OK" : `Auth failed (${res.status})`;
-    } catch (e) {
-      msg.textContent = "Network error.";
-      console.warn(e);
-    }
-  });
-}
 
 document.addEventListener("DOMContentLoaded", () => {
   initTabs();
