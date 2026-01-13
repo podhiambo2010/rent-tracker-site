@@ -1024,9 +1024,15 @@ function renderDunning() {
 
   body.innerHTML = rows
     .map((r, idx) => {
-      const wa = r.whatsapp_link
-        ? `<a href="${r.whatsapp_link}" target="_blank" rel="noopener">WhatsApp</a>`
-        : `<span class="muted">missing phone</span>`;
+
+      // 🔥 Correct WhatsApp link for Dunning (rent reminders)
+      const waUrl = r.invoice_id
+        ? `${apiBase()}/wa_for_rentroll_redirect?invoice_id=${encodeURIComponent(r.invoice_id)}`
+        : "";
+
+      const wa = waUrl
+        ? `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>`
+        : `<span class="muted">missing invoice</span>`;
 
       return `
         <tr>
