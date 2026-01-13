@@ -10,21 +10,29 @@ doctype html>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
-    :root{
-      --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --panel-3:#10182f; --text:#f1f5f9;
-      --muted:#93a4c4; --brand:#4f8cff; --bd:#1c2546; --chip:#1e2a4a;
-      --ok:#22c55e; --danger:#ef4444;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-      background:linear-gradient(180deg,var(--bg),#060a19 60%); color:var(--text)
-    }
-    a{color:#7aa7ff}
-    th.num, td.num { text-align: right; }
+  :root{
+    --bg:#0b1020; --panel:#111936; --panel-2:#0f1730; --panel-3:#10182f; --text:#f1f5f9;
+    --muted:#93a4c4; --brand:#4f8cff; --bd:#1c2546; --chip:#1e2a4a;
+    --ok:#22c55e; --danger:#ef4444;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; 
+    font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:linear-gradient(180deg,var(--bg),#060a19 60%); 
+    color:var(--text);
+  }
+  a{color:#7aa7ff}
+  th.num, td.num { text-align: right; }
 
-    /* Shell */
+  /* Highlight for overdue invoice count */
+  .overdue-alert {
+    color: #e74c3c;
+    font-weight: 600;
+  }
+
+  /* Shell */
     .shell{display:grid;grid-template-rows:auto 1fr auto;min-height:100%}
     header{position:sticky;top:0;z-index:5;background:rgba(15,23,48,.8);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd)}
     .bar{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:12px 20px;max-width:1200px;margin-inline:auto}
@@ -440,7 +448,7 @@ doctype html>
         <div class="bar-flex">
           <h2>Dunning</h2>
           <span class="chip" id="dunningMonthLabel">—</span>
-          <button id="reloadDunning" class="btn ghost">Reload</button>
+          <span id="dunningInvoiceCount" class="muted small"></span>
           <button id="reloadDunning" class="btn ghost">Reload</button>
         </div>
 

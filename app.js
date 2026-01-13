@@ -925,15 +925,26 @@ function renderDunning() {
 
   const m = dunningMonth();
   setText("#dunningMonthLabel", monthLabel(m));
-  setText("#dunningInvoiceCount", `${rows.length} overdue invoice(s)`);
-  setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
-
-  
-
-  if (body) body.innerHTML = "";
-  hide("#dunningTip"); // assuming your tip has id="dunningTip"
 
   const rows = state.dunning || [];
+
+  const countEl = $("#dunningInvoiceCount");
+  if (countEl) {
+    if (rows.length > 0) {
+      countEl.classList.add("overdue-alert");
+      setText("#dunningInvoiceCount", `${rows.length} overdue invoice${rows.length === 1 ? "" : "s"}`);
+      show("#dunningInvoiceCount");
+    } else {
+      countEl.classList.remove("overdue-alert");
+      setText("#dunningInvoiceCount", "");
+      hide("#dunningInvoiceCount");
+    }
+  }
+
+  setText("#dunningLastUpdated", `Last updated: ${new Date().toLocaleString("en-GB")}`);
+
+  if (body) body.innerHTML = "";
+  hide("#dunningTip");
 
   if (!rows.length) {
     if (body) body.innerHTML = "";
