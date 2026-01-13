@@ -643,17 +643,19 @@ async function loadRentRoll(force = false) {
     const m = currentMonthFor("#rentrollMonth") || state.month;
 
     let data;
-    try { data = await apiGet(`/rentroll?month=${encodeURIComponent(m)}`); }
-    catch (_) { data = await apiGet(`/dashboard/rentroll?month=${encodeURIComponent(m)}`); }
+    try {
+      data = await apiGet(`/rentroll?month=${encodeURIComponent(m)}`);
+    } catch (_) {
+      data = await apiGet(`/dashboard/rentroll?month=${encodeURIComponent(m)}`);
+    }
 
     state.rentroll = unwrapRows(data);
     renderRentRoll();
-    loadOverview();
+
   } catch (e) {
     console.warn("loadRentRoll failed:", e);
     state.rentroll = [];
     renderRentRoll();
-    loadOverview();
   }
 }
 
@@ -866,43 +868,12 @@ function renderOutstandingFromBalances() {
   `).join("");
 }
 
-/* ------------------------- Dunning (Action Center) ------------------------- */
-function initDunning() {
-  $("#reloadDunning")?.addEventListener("click", () => loadDunning(true));
+/* ------------------------- Dunning ------------------------- */
 
-  $("#dunningMonth")?.addEventListener("change", () => loadDunning(true));
-
-  $("#dunningSelectAll")?.addEventListener("change", (e) => {
-    const checked = !!e.target.checked;
-    document.querySelectorAll("input.dunning-check").forEach((cb) => cb.checked = checked);
-  });
-
-  $("#btnDunningBuildLinks")?.addEventListener("click", (e) => buildDunningLinks({ autoOpen: e.shiftKey }));
-  $("#btnDunningMarkSent")?.addEventListener("click", () => markDunningSelectedAsSent());
-
-  const minDays = $("#dunningMinDaysOverdue");
-  if (minDays) {
-    minDays.addEventListener("input", () => {
-      // Just re-render using already loaded rentroll
-      renderDunning();
-    });
-  }
-
-}
-
-function dunningMonth() {
-  return currentMonthFor("#dunningMonth") || currentMonthFor("#balancesMonth") || state.month;
-}
-
-async function loadDunning(force = false) {
+async function loadDunning() {
   try {
-    const m = dunningMonth();
-    const minDays = Number($("#dunningMinDaysOverdue")?.value || 0);
-
-    const data = await apiGet(
-      `/dunning?month=${encodeURIComponent(m)}&minDays=${minDays}`
-    );
-
+    const m = state.month;
+    const data = await apiGet(`/dashboard/dunning?month=${encodeURIComponent(m)}`);
     state.dunning = unwrapRows(data);
     renderDunning();
   } catch (e) {
@@ -992,88 +963,6 @@ function getSelectedDunningRows() {
   return out;
 }
 
-function dunningMessageText(tenant, period, monthKes, totalKes, daysOverdue) {
-  const daysLine =
-    daysOverdue != null && Number(daysOverdue) > 0
-      ? `Days overdue (from due date): ${Number(daysOverdue)} day(s).\n`
-      : "";
-  return (
-    `Hello ${tenant},\n` +
-    `Gentle reminder: your rent balance for ${period} is ${monthKes}.\n` +
-    `Total arrears owed to date: ${totalKes}.\n` +
-    daysLine +
-    `Kindly pay at your earliest convenience. Thank you.`
-  );
-}
-
-function buildDunningLinks({ autoOpen = false } = {}) {
-  const msg = $("#dunningMsg");
-  const links = $("#dunningLinks");
-  const linksBody = $("#dunningLinksBody");
-  if (!linksBody || !links || !msg) return;
-
-  const selected = getSelectedDunningRows();
-  if (!selected.length) {
-    msg.textContent = "Select at least one tenant first.";
-    return;
-  }
-
-  const urls = [];
-  const items = selected.map((r) => {
-    const href = r.whatsapp_link || "";
-
-    if (href) urls.push(href);
-
-    return href
-      ? `<a href="${href}" target="_blank" rel="noopener">${escapeHtml(r.tenant)} — ${fmtKes(r.balance)} (${r.days_overdue}d overdue)</a>`
-      : `<div class="muted">${escapeHtml(r.tenant)} — missing phone</div>`;
-  });
-
-  linksBody.innerHTML = items.join("");
-  show(links);
-
-  msg.textContent = autoOpen
-    ? `Opening ${urls.length} WhatsApp link(s)…`
-    : `Built ${urls.length} link(s). Click below to send.`;
-
-  if (autoOpen && urls.length > 0) {
-    const first = urls[0];
-    const w = window.open(first, "_blank");
-    if (!w) {
-      msg.textContent = "Popup blocked. Allow popups and try again.";
-      return;
-    }
-    (async () => {
-      for (let i = 1; i < urls.length; i++) {
-        await new Promise((r) => setTimeout(r, 1200));
-        try { w.location.href = urls[i]; } catch (_) {}
-      }
-    })();
-  }
-}
-
-async function markDunningSelectedAsSent() {
-  const msg = $("#dunningMsg");
-  if (!msg) return;
-
-  const selected = getSelectedDunningRows();
-  const invoiceIds = selected.map((r) => r.invoice_id).filter(Boolean);
-
-  if (!invoiceIds.length) {
-    msg.textContent = "Select at least one invoice first.";
-    return;
-  }
-
-  msg.textContent = "Marking selected invoices as sent…";
-
-  try {
-    await apiPost("/dunning/mark_sent", { invoice_ids: invoiceIds }, { admin: true });
-    msg.textContent = `Marked ${invoiceIds.length} invoice(s) as sent.`;
-  } catch (e) {
-    msg.textContent = `Failed: ${e.message}`;
-  }
-}
-
 /* ------------------------- WhatsApp Builder (ad-hoc) ------------------------- */
 function initWhatsAppBuilder() {
   $("#waBuild")?.addEventListener("click", () => {
@@ -1136,53 +1025,75 @@ function initSettings() {
     setText("#actionMsg", "Reset ✅");
   });
 }
-async function initInvoiceActions() {
-  const token = getAdminToken();
-  const msg = document.querySelector("#invoiceStatus");
 
-  // ---------------------- Auth Ping ----------------------
-  try {
-    const res = await fetch(`${apiBase()}/admin/ping`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
+/* ------------------------- Invoice Actions ------------------------- */
+
+function initInvoiceActions() {
+  const btnSent = $("#btnMarkSent");
+  const btnHealth = $("#btnHealth");
+  const input = $("#invoiceIdInput");
+  const msg = $("#actionMsg");
+
+  if (!btnSent || !btnHealth || !input || !msg) return;
+
+  btnSent.addEventListener("click", async () => {
+    const id = input.value.trim();
+    if (!id) {
+      msg.textContent = "Enter an invoice_id first.";
+      return;
+    }
+
+    const token = window.getAdminToken();
+    if (!token) {
+      msg.textContent = "Admin token required.";
+      return;
+    }
+
+    msg.textContent = "Marking invoice as sent…";
+
+    try {
+      const res = await fetch(`${apiBase()}/admin/mark_invoice_sent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": token
+        },
+        body: JSON.stringify({ invoice_id: id })
+      });
+
+      if (!res.ok) {
+        msg.textContent = `Failed: ${res.status}`;
+        return;
       }
-    });
 
-    if (!res.ok) throw new Error(`Ping failed: ${res.status}`);
-    msg.textContent = "Ping OK ✅";
-  } catch (e) {
-    msg.textContent = `Ping failed: ${e.message}`;
-  }
+      msg.textContent = "Invoice marked as sent.";
+      input.value = "";
+    } catch (e) {
+      msg.textContent = "Network error.";
+      console.warn(e);
+    }
+  });
 
-  // ---------------------- Mark Invoice as Sent ----------------------
-  const markBtn = document.querySelector("#markInvoiceBtn");
-  const input = document.querySelector("#invoiceIdInput");
+  btnHealth.addEventListener("click", async () => {
+    const token = window.getAdminToken();
+    if (!token) {
+      msg.textContent = "Admin token required.";
+      return;
+    }
 
-  if (markBtn) {
-    markBtn.addEventListener("click", async () => {
-      const invoice_id = (input?.value || "").trim();
-      if (!invoice_id) return setMsg("Enter invoice_id first.");
-      setMsg("Marking invoice as sent...");
+    msg.textContent = "Checking auth…";
 
-      try {
-        const res = await fetch(`${apiBase()}/admin/invoices/mark_sent`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ invoice_ids: [invoice_id] })
-        });
+    try {
+      const res = await fetch(`${apiBase()}/admin/health`, {
+        headers: { "X-Admin-Token": token }
+      });
 
-        if (!res.ok) throw new Error(`Failed: ${res.status}`);
-        setMsg("Marked as sent ✅");
-      } catch (e) {
-        setMsg(`Failed: ${e.message}`);
-      }
-    });
-  }
+      msg.textContent = res.ok ? "Auth OK" : `Auth failed (${res.status})`;
+    } catch (e) {
+      msg.textContent = "Network error.";
+      console.warn(e);
+    }
+  });
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1192,5 +1103,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initLeases();
   initPayments();
-  initInvoiceActions(); // ✅ This line was missing before
+  initInvoiceActions();
+  initDunning();
+  initRentRoll();
+
+  // Load initial data for the dashboard
+  loadOverview();
+  loadDunning();
 });
