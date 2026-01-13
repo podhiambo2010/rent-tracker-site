@@ -526,9 +526,14 @@ function renderLeases() {
     const status = ended ? "ended" : "active";
     const statusClass = ended ? "ended" : "ok";
 
-    const phone = normalizePhoneKE(r.phone || r.msisdn || r.whatsapp_phone || "");
-    const waText = `Hello ${tenant},\nKindly note your rent arrangements for ${unit}. Thank you.`;
-    const waHref = phone ? buildWhatsAppLink(phone, waText) : "";
+    // 🔥 Correct WhatsApp link for administrative onboarding
+    const waUrl = r.lease_id
+      ? `${apiBase()}/wa_for_lease_redirect?lease_id=${encodeURIComponent(r.lease_id)}`
+      : "";
+
+    const wa = waUrl
+      ? `<a href="${waUrl}" target="_blank" rel="noopener">WhatsApp</a>`
+      : `<span class="muted">—</span>`;
 
     return `
       <tr>
@@ -538,7 +543,7 @@ function renderLeases() {
         <td>${escapeHtml(cycle)}</td>
         <td>${escapeHtml(String(dueDay))}</td>
         <td><span class="status ${statusClass}">${escapeHtml(status)}</span></td>
-        <td>${waHref ? `<a href="${waHref}" target="_blank" rel="noopener">WhatsApp</a>` : `<span class="muted">—</span>`}</td>
+        <td>${wa}</td>
       </tr>`;
   }).join("");
 }
