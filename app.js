@@ -156,9 +156,12 @@ const state = {
   balances: [],
 };
 
-/* ------------------------- API ------------------------- */
 function apiBase() {
-  return state.apiBase || localStorage.getItem("api_base") || "https://rent-tracker-api-16i0.onrender.com";
+  return (
+    state.apiBase ||
+    localStorage.getItem("api_base") ||
+    "https://rent-tracker-api-16i0.onrender.com"
+  );
 }
 
 function getAdminTokenFromStorage() {
