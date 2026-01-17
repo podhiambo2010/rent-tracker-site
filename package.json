@@ -1,7 +1,7 @@
 {
   "name": "rent-tracker-site",
   "version": "1.0.0",
-  "description": "Frontend dashboard for Rent Tracker",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
