@@ -1,10 +1,25 @@
+// src/layout/DashboardLayout.jsx
 import React from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
+import { useApiBase } from "../hooks/useApiBase";
 
 export default function DashboardLayout() {
   const location = useLocation();
+  const { effectiveBase, override, updateApiBase } = useApiBase();
+  const [inputValue, setInputValue] = React.useState(override || effectiveBase);
 
   const isActive = (path) => location.pathname === path;
+
+  function handleUseApiClick() {
+    const trimmed = (inputValue || "").trim();
+    if (!trimmed) return;
+    updateApiBase(trimmed);
+  }
+
+  function handleDocsClick() {
+    const base = effectiveBase;
+    window.open(`${base}/docs`, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div className="shell">
@@ -18,14 +33,16 @@ export default function DashboardLayout() {
             <input
               id="apiBase"
               placeholder="API base e.g. https://rent-tracker-api-16i0.onrender.com"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
             />
-            <button className="btn" id="useApi">
+            <button className="btn" onClick={handleUseApiClick}>
               Use this API
             </button>
-            <button className="btn secondary" id="openDocs">
+            <button className="btn secondary" onClick={handleDocsClick}>
               /docs
             </button>
-            <button className="btn ghost" id="setAdminTokenBtn" title="Set Admin Token">
+            <button className="btn ghost" title="Set Admin Token">
               ⚙️ Admin Token
             </button>
           </div>
@@ -33,67 +50,33 @@ export default function DashboardLayout() {
       </header>
 
       <main>
-        {/* LEFT NAV */}
         <nav aria-label="Sections">
-          <Link
-            className="tab"
-            aria-selected={isActive("/")}
-            to="/"
-          >
+          <Link className="tab" aria-selected={isActive("/")} to="/">
             🏠 Overview
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/leases")}
-            to="/leases"
-          >
+          <Link className="tab" aria-selected={isActive("/leases")} to="/leases">
             🔑 Leases
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/payments")}
-            to="/payments"
-          >
-            💸 Payments
+          <Link className="tab" aria-selected={isActive("/payments")} to="/payments">
+            💳 Payments
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/rent-roll")}
-            to="/rent-roll"
-          >
-            🧾 Rent Roll
+          <Link className="tab" aria-selected={isActive("/rent-roll")} to="/rent-roll">
+            📄 Rent Roll
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/balances")}
-            to="/balances"
-          >
+          <Link className="tab" aria-selected={isActive("/balances")} to="/balances">
             📊 Balances
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/dunning")}
-            to="/dunning"
-          >
+          <Link className="tab" aria-selected={isActive("/dunning")} to="/dunning">
             🔔 Dunning
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/whatsapp")}
-            to="/whatsapp"
-          >
+          <Link className="tab" aria-selected={isActive("/whatsapp")} to="/whatsapp">
             📱 WhatsApp
           </Link>
-          <Link
-            className="tab"
-            aria-selected={isActive("/settings")}
-            to="/settings"
-          >
+          <Link className="tab" aria-selected={isActive("/settings")} to="/settings">
             ⚙️ Settings
           </Link>
         </nav>
 
-        {/* RIGHT CONTENT */}
         <section>
           <Outlet />
         </section>
