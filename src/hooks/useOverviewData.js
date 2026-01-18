@@ -16,13 +16,17 @@ export function useOverviewData(selectedMonth) {
   useEffect(() => {
     let cancelled = false;
     fetchMonths()
-      .then((data) => {
-        if (cancelled) return;
-        setMonths(data || []);
-        if (!month && Array.isArray(data) && data.length > 0) {
-          setMonth(data[0]);
-        }
-      })
+    .then((data) => {
+      if (cancelled) return;
+
+      const arr = Array.isArray(data) ? data : [data];
+      setMonths(arr);
+
+      if (!month && arr.length > 0) {
+        setMonth(arr[0]);
+      }
+    })
+
       .catch((err) => {
         if (cancelled) return;
         console.error(err);
