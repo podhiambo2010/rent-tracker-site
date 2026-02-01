@@ -20,3 +20,19 @@ export default function App() {
     </Routes>
   );
 }
+
+<aside className="sidebar">
+  <nav>
+    <ul>
+      <li>🏠 Overview</li>
+      <li>🔑 Leases</li>
+      <li>🚙 Payments</li>
+      <li>📄 Rent Roll</li>
+      <li>📊 Balances</li>
+      <li>🔔 Dunning</li>
+      <li>🧮 WhatsApp</li>
+      <li>⚙️ Settings</li>
+    </ul>
+  </nav>
+</aside>
+

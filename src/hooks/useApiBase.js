@@ -11,16 +11,24 @@ export function useApiBase() {
   const [override, setOverride] = useState(getStoredApiBase);
 
   useEffect(() => {
-    setEffectiveBase(getApiBase());
-    setOverride(getStoredApiBase());
+    // Initialize values from storage and defaults
+    const stored = getStoredApiBase();
+    const base = getApiBase();
+
+    setOverride(stored);
+    setEffectiveBase(stored || base);
   }, []);
 
   function updateApiBase(newBase) {
+    // Persist the new base
     setStoredApiBase(newBase || "");
+
+    // Update local state
     setOverride(newBase || null);
-    setEffectiveBase(getApiBase());
-    // Hard reload so all hooks pick up new base
-    window.location.reload();
+    setEffectiveBase(newBase || null);
+
+    // ❌ Removed reload to prevent infinite refresh loop
+    // The app will now update smoothly without disappearing
   }
 
   return {

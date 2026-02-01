@@ -1,4 +1,3 @@
-// src/hooks/useOverviewData.js
 import { useEffect, useState } from "react";
 import {
   fetchDashboardOverview,
@@ -15,22 +14,42 @@ export function useOverviewData(selectedMonth) {
   // Load available months once
   useEffect(() => {
     let cancelled = false;
+
     fetchMonths()
-    .then((data) => {
-      if (cancelled) return;
+      .then((data) => {
+        if (cancelled) return;
 
-      const arr = Array.isArray(data) ? data : [data];
-      setMonths(arr);
+        const raw = Array.isArray(data?.months) ? data.months : [];
 
-      if (!month && arr.length > 0) {
-        setMonth(arr[0]);
-      }
-    })
+        const formatted = raw
+          .map((item) => {
+            if (
+              typeof item === "object" &&
+              item !== null &&
+              typeof item.year === "number" &&
+              typeof item.month === "number"
+            ) {
+              const paddedMonth = String(item.month).padStart(2, "0");
+              return {
+                value: `${item.year}-${paddedMonth}`, // for API
+                label: item.label || `${item.year}-${paddedMonth}`, // for display
+              };
+            }
+            return null;
+          })
+          .filter(Boolean);
 
+        setMonths(formatted);
+
+        if (!month && formatted.length > 0) {
+          setMonth(formatted[0].value);
+        }
+      })
       .catch((err) => {
         if (cancelled) return;
-        console.error(err);
+        console.error("Failed to fetch months:", err);
       });
+
     return () => {
       cancelled = true;
     };
@@ -51,7 +70,7 @@ export function useOverviewData(selectedMonth) {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error(err);
+        console.error("Failed to fetch overview:", err);
         setError(err);
         setLoading(false);
       });
