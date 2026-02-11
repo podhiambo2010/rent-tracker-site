@@ -1,0 +1,153 @@
+.overview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  box-sizing: border-box;
+}
+
+/* KPI / DASHBOARD CARDS */
+.dashboard-cards {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.9rem;
+  margin-top: 0.8rem;
+  flex-wrap: nowrap;
+}
+
+.dashboard-card {
+  flex: 1 1 0;
+  max-width: 210px;
+  background: #ffffff;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid #e0e0e0;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  box-sizing: border-box;
+}
+
+.dashboard-card:hover {
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+
+.dashboard-card h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #003366;
+  margin: 0 0 0.25rem 0;
+}
+
+.dashboard-card .value {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #222;
+  margin: 0 0 0.15rem 0;
+}
+
+.dashboard-card .subtext {
+  font-size: 0.7rem;
+  color: #777;
+  margin: 0;
+}
+
+/* CENTER WIDGETS */
+.center-widgets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.widget {
+  background: #ffffff;
+  padding: 1rem;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-sizing: border-box;
+}
+
+.widget h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.6rem 0;
+}
+
+.chart-placeholder {
+  background: #f0f0f0;
+  height: 160px;
+  border-radius: 6px;
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 0.8rem;
+}
+
+.cashflow-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.cashflow-table td {
+  padding: 0.25rem 0;
+}
+
+/* BOTTOM WIDGETS */
+.bottom-widgets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.alerts-list {
+  margin: 0.8rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+}
+
+.alerts-list li {
+  margin-bottom: 0.25rem;
+}
+
+.dunning-btn {
+  padding: 0.5rem 0.9rem;
+  background: #d9534f;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+/* QUICK ACTIONS */
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 0.5rem;
+}
+
+.quick-actions button {
+  padding: 0.5rem 0.9rem;
+  background: #0078d4;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+/* RESPONSIVE TWEAKS */
+@media (max-width: 1024px) {
+  .dashboard-cards {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .center-widgets,
+  .bottom-widgets {
+    grid-template-columns: 1fr;
+  }
+}

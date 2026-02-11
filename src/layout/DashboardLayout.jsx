@@ -1,112 +1,138 @@
 // src/layout/DashboardLayout.jsx
-import React from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { useApiBase } from "../hooks/useApiBase";
-import renteraLogo from '../assets/RentEra_Logo.png';
+import React, { useState, useEffect } from "react";
+import { Outlet, NavLink } from "react-router-dom";
+import "./DashboardLayout.css";
+
+import logo from "../assets/RentEra_logo.png";
 
 export default function DashboardLayout() {
-  const location = useLocation();
-  const { effectiveBase, override, updateApiBase } = useApiBase();
-  const [inputValue, setInputValue] = React.useState(override || effectiveBase);
+  const [theme, setTheme] = useState("light");
 
-  function handleUseApiClick() {
-    const trimmed = (inputValue || "").trim();
-    if (!trimmed) return;
-    updateApiBase(trimmed);
-  }
+  const user = {
+    name: "Peter", // temporary placeholder
+  };
 
-  function handleDocsClick() {
-    const base = effectiveBase;
-    window.open(`${base}/docs`, "_blank", "noopener,noreferrer");
-  }
+  const firstName =
+  user?.name?.split(" ")[0] ||
+  user?.email?.split("@")[0] ||
+  "User";
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
 
   return (
-    <div className="dashboard-layout">
-
-    <div className="sidebar-brand">RentEra</div>
-
+    <div className="app-shell">
       {/* SIDEBAR */}
       <aside className="sidebar">
-        <nav>
-          <ul>
-            <li><NavLink to="/" end>🏠 Overview</NavLink></li>
-            <li><NavLink to="/leases">🔑 Leases</NavLink></li>
-            <li><NavLink to="/payments">💳 Payments</NavLink></li>
-            <li><NavLink to="/rent-roll">📄 Rent Roll</NavLink></li>
-            <li><NavLink to="/balances">📊 Balances</NavLink></li>
-            <li><NavLink to="/dunning">🔔 Dunning</NavLink></li>
-            <li><NavLink to="/whatsapp">📱 WhatsApp</NavLink></li>
-            <li><NavLink to="/settings">⚙️ Settings</NavLink></li>
-          </ul>
-        </nav>
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-logo">R</div>
+          <div className="sidebar-brand-name">RentEra</div>
+        </div>
+
+        <nav className="sidebar-nav">
+
+  {/* MAIN */}
+  <div className="sidebar-section-label">MAIN</div>
+
+  <NavLink to="/" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    🏠 Dashboard
+  </NavLink>
+
+  <NavLink to="/leases" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    🔑 Leases
+  </NavLink>
+
+  <NavLink to="/rent-roll" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    📄 Rent Roll
+  </NavLink>
+
+  <NavLink to="/balances" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    💰 Balances
+  </NavLink>
+
+  <NavLink to="/payments" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    🚙 Payments
+  </NavLink>
+
+  <NavLink to="/reports" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    📊 Reports
+  </NavLink>
+
+
+  {/* COMMUNICATION */}
+  <div className="sidebar-section-label">COMMUNICATION</div>
+
+  <NavLink to="/whatsapp" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    💬 WhatsApp Messaging
+  </NavLink>
+
+  <NavLink to="/dunning" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    📢 Dunning & Reminders
+  </NavLink>
+
+
+  {/* ADMINISTRATION */}
+  <div className="sidebar-section-label">ADMINISTRATION</div>
+
+  <NavLink to="/property-setup" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    🏢 Property Setup
+  </NavLink>
+
+  <NavLink to="/users" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    👥 User Management
+  </NavLink>
+
+  <NavLink to="/notifications" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    🔔 Notifications
+  </NavLink>
+
+  <NavLink to="/audit-logs" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    📜 Audit Logs
+  </NavLink>
+
+  <NavLink to="/settings" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+    ⚙️ Settings
+  </NavLink>
+
+</nav>
+
+        <div className="sidebar-footer">
+          <button
+            className="btn secondary"
+            onClick={() =>
+              setTheme(theme === "light" ? "dark" : "light")
+            }
+          >
+            {theme === "light" ? "Dark mode" : "Light mode"}
+          </button>
+        </div>
       </aside>
 
-      {/* HEADER BAR (API Controls) */}
-<header className="header-bar">
-  <div className="bar">
-
-    {/* LEFT SIDE: LOGO + BRAND NAME */}
-    <div className="brand">
-      <div className="logo-block">
-        <img
-          src={renteraLogo}
-          alt="RentEra"
-          className="brand-logo"
-        />
-        <span className="brand-name">RentEra</span>
-      </div>
-    </div>
-
-    {/* RIGHT SIDE: API CONTROLS */}
-    <div className="env">
-      <input
-        id="apiBase"
-        placeholder="API base e.g. https://rentera-api-16i0.onrender.com"
-        value={inputValue}
-        onChange={(e) => setInputValue(e.target.value)}
-      />
-
-      <button className="btn" onClick={handleUseApiClick}>
-        Use this API
-      </button>
-
-      <button className="btn secondary" onClick={handleDocsClick}>
-        /docs
-      </button>
-
-      <button className="btn ghost" title="Set Admin Token">
-        ⚙️ Admin Token
-      </button>
-    </div>
-
-  </div>
-</header>
-
-      {/* TOP STRIP (Dashboard Header) */}
-      <div className="top-strip">
-        <div className="brand-title">
-          RentEra | Dashboard
-        </div>
-
-        <div className="search-bar">
-          <input
-            type="text"
-            placeholder="Search tenants, units, invoices…"
-          />
-        </div>
-
-        <div className="user-info">
-          <span>🔔</span>
-          <span>⚙️</span>
-          <span>Hello Peter ▾</span>
-        </div>
-      </div>
-
       {/* MAIN CONTENT */}
-      <main>
-        <section>
-          <Outlet />
-        </section>
+      <main className="main-content dashboard-shell">
+
+        {/* ⭐⭐⭐ INSERT TOPBAR HERE — EXACTLY HERE ⭐⭐⭐ */}
+        <div className="topbar">
+          <div className="topbar-left">
+            <img src={logo} alt="RentEra Logo" className="logo" />
+          </div>
+
+          <div className="topbar-right">
+            <span className="hello">Hello, {firstName}</span>
+
+            <button className="icon-btn">
+              <i className="ri-notification-3-line"></i>
+            </button>
+
+            <button className="icon-btn">
+              <i className="ri-settings-3-line"></i>
+            </button>
+          </div>
+        </div>
+        {/* ⭐⭐⭐ END OF TOPBAR ⭐⭐⭐ */}
+
+        <Outlet />
       </main>
     </div>
   );

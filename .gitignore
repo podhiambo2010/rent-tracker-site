@@ -1,1 +1,4 @@
-etl
+node_modules/
+dist/
+.env
+.vite/

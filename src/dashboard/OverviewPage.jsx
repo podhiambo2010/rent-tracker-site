@@ -1,35 +1,100 @@
 // src/dashboard/OverviewPage.jsx
-import React from "react";
+import React, { useEffect } from "react";
+import "./OverviewPage.css";
+
+import useDashboardKPIs from "../hooks/useDashboardKPIs";
 
 export default function OverviewPage() {
+  
+  // Fetch real KPI data from Supabase
+  const { loading, kpi } = useDashboardKPIs();
+
+  // Count-up animation for KPI values
+  useEffect(() => {
+    const counters = document.querySelectorAll(".count-up");
+
+    counters.forEach(counter => {
+      const target = +counter.getAttribute("data-value");
+      let current = 0;
+      const increment = target / 60; // 1-second animation
+
+      const update = () => {
+        current += increment;
+        if (current < target) {
+          counter.innerText = "KES " + Math.floor(current).toLocaleString();
+          requestAnimationFrame(update);
+        } else {
+          counter.innerText = "KES " + target.toLocaleString();
+        }
+      };
+
+      update();
+    });
+  }, []);
+
+  if (loading) {
+    return <div className="overview-content">Loading dashboard…</div>;
+  }
+
   return (
-    <div className="overview-page">
+    <div className="overview-content">
+
       {/* KPI GRID */}
-      <div className="dashboard-cards">
-        <div className="dashboard-card">
-          <h3>Total Rent Expected</h3>
-          <div className="value">KES 620,000</div>
+      <div className="summary-grid">
+
+        <div className="summary-card kpi-blue">
+          <div className="kpi-header">
+            <i className="ri-home-8-line kpi-icon"></i>
+            <div className="label">Total Rent Expected</div>
+          </div>
+          <div className="value count-up" data-value={kpi.totalRentExpected}>
+            KES {kpi.totalRentExpected.toLocaleString()}
+          </div>
           <div className="subtext">Across 24 active leases</div>
+          <div className="trend up">▲ 5%</div>
         </div>
 
-        <div className="dashboard-card">
-          <h3>Total Collected</h3>
-          <div className="value">KES 482,000</div>
+        <div className="summary-card kpi-green">
+          <div className="kpi-header">
+            <i className="ri-money-dollar-circle-line kpi-icon"></i>
+            <div className="label">Total Collected</div>
+          </div>
+          <div className="value count-up" data-value={kpi.totalCollected}>
+            KES {kpi.totalCollected.toLocaleString()}
+          </div>
+
           <div className="subtext">78% collection rate</div>
+          <div className="trend up">▲ 5%</div>
         </div>
 
-        <div className="dashboard-card">
-          <h3>Outstanding Arrears</h3>
-          <div className="value">KES 138,000</div>
+        <div className="summary-card kpi-red">
+          <div className="kpi-header">
+            <i className="ri-error-warning-line kpi-icon"></i>
+            <div className="label">Outstanding Arrears</div>
+          </div>
+          <div className="value count-up" data-value={kpi.outstandingArrears}>
+            KES {kpi.outstandingArrears.toLocaleString()}
+          </div>
+
           <div className="subtext">7 tenants overdue</div>
+          <div className="trend down">▼ 3%</div>
         </div>
 
-        <div className="dashboard-card">
-          <h3>Tenants in Credit</h3>
-          <div className="value">KES 74,969</div>
+        <div className="summary-card kpi-green">
+          <div className="kpi-header">
+            <i className="ri-user-smile-line kpi-icon"></i>
+            <div className="label">Tenants in Credit</div>
+          </div>
+          <div className="value count-up" data-value={kpi.tenantsInCredit}>
+            KES {kpi.tenantsInCredit.toLocaleString()}
+          </div>
+
           <div className="subtext">3 tenants ahead</div>
+          <div className="trend up">▲ 8%</div>
         </div>
+
       </div>
+      {/* END KPI GRID */}
 
       {/* CENTER WIDGETS */}
       <section className="center-widgets">
@@ -82,225 +147,6 @@ export default function OverviewPage() {
         <button>Record Payment</button>
       </footer>
 
-      {/* INLINE STYLES */}
-      <style>{`
-/* ROOT LAYOUT */
-.overview-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 1.75rem;
-  font-family: "Segoe UI", sans-serif;
-  background: #f5f6f8;
-  box-sizing: border-box;
-}
-
-/* TOP NAVIGATION */
-.top-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #ffffff;
-  padding: 0.55rem 1rem;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  font-size: 0.9rem;
-  box-sizing: border-box;
-  min-height: 48px;
-}
-
-.nav-left {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.nav-center {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  min-width: 0;
-}
-
-.search-input {
-  width: 240px;
-}
-
-.nav-right {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  white-space: nowrap;
-}
-
-.nav-icon {
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.nav-user {
-  font-size: 0.85rem;
-}
-
-/* KPI / DASHBOARD CARDS */
-.dashboard-cards {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.9rem;
-  margin-top: 0.8rem;
-  flex-wrap: nowrap;
-}
-
-.dashboard-card {
-  flex: 1 1 0;
-  max-width: 210px;
-  background: #ffffff;
-  padding: 0.7rem 0.9rem;
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  border: 1px solid #e0e0e0;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-  box-sizing: border-box;
-}
-
-.dashboard-card:hover {
-  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-  transform: translateY(-1px);
-}
-
-.dashboard-card h3 {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #003366;
-  margin: 0 0 0.25rem 0;
-}
-
-.dashboard-card .value {
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: #222;
-  margin: 0 0 0.15rem 0;
-}
-
-.dashboard-card .subtext {
-  font-size: 0.7rem;
-  color: #777;
-  margin: 0;
-}
-
-/* CENTER WIDGETS */
-.center-widgets {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-}
-
-.widget {
-  background: #ffffff;
-  padding: 1rem;
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  box-sizing: border-box;
-}
-
-.widget h3 {
-  font-size: 0.9rem;
-  margin: 0 0 0.6rem 0;
-}
-
-.chart-placeholder {
-  background: #f0f0f0;
-  height: 160px;
-  border-radius: 6px;
-  margin-bottom: 0.8rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #999;
-  font-size: 0.8rem;
-}
-
-.cashflow-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-}
-
-.cashflow-table td {
-  padding: 0.25rem 0;
-}
-
-/* BOTTOM WIDGETS */
-.bottom-widgets {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-}
-
-.alerts-list {
-  margin: 0.8rem 0;
-  padding-left: 1.1rem;
-  font-size: 0.8rem;
-}
-
-.alerts-list li {
-  margin-bottom: 0.25rem;
-}
-
-.dunning-btn {
-  padding: 0.5rem 0.9rem;
-  background: #d9534f;
-  color: #ffffff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-/* QUICK ACTIONS */
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-  margin-top: 0.5rem;
-}
-
-.quick-actions button {
-  padding: 0.5rem 0.9rem;
-  background: #0078d4;
-  color: #ffffff;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-/* RESPONSIVE TWEAKS */
-@media (max-width: 1024px) {
-  .dashboard-cards {
-    flex-wrap: wrap;
-  }
-}
-
-@media (max-width: 768px) {
-  .center-widgets,
-  .bottom-widgets {
-    grid-template-columns: 1fr;
-  }
-
-  .top-nav {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .nav-center {
-    justify-content: flex-start;
-  }
-}
-      `}</style>
     </div>
   );
 }
