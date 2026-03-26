@@ -1,9 +1,9 @@
 // src/layout/DashboardLayout.jsx
-import React, { useState, useEffect } from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet } from "react-router-dom";
 import "./DashboardLayout.css";
 
-import logo from "../assets/RentEra_logo.png";
+import logo from "../assets/RentEra_Logo.png";
 
 export default function DashboardLayout() {
   const [theme, setTheme] = useState("light");
