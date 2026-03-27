@@ -1,9 +1,9 @@
 // src/layout/DashboardLayout.jsx
+
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import "./DashboardLayout.css";
-
 import logo from "../assets/RentEra_Logo.png";
+import "./DashboardLayout.css";
 
 export default function DashboardLayout() {
   const [theme, setTheme] = useState("light");
@@ -13,9 +13,9 @@ export default function DashboardLayout() {
   };
 
   const firstName =
-  user?.name?.split(" ")[0] ||
-  user?.email?.split("@")[0] ||
-  "User";
+    user?.name?.split(" ")[0] ||
+    user?.email?.split("@")[0] ||
+    "User";
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -31,71 +31,67 @@ export default function DashboardLayout() {
         </div>
 
         <nav className="sidebar-nav">
+          {/* MAIN */}
+          <div className="sidebar-section-label">MAIN</div>
 
-  {/* MAIN */}
-  <div className="sidebar-section-label">MAIN</div>
+          <NavLink to="/" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            🏠 Dashboard
+          </NavLink>
 
-  <NavLink to="/" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    🏠 Dashboard
-  </NavLink>
+          <NavLink to="/leases" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            🔑 Leases
+          </NavLink>
 
-  <NavLink to="/leases" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    🔑 Leases
-  </NavLink>
+          <NavLink to="/rent-roll" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            📄 Rent Roll
+          </NavLink>
 
-  <NavLink to="/rent-roll" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    📄 Rent Roll
-  </NavLink>
+          <NavLink to="/balances" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            💰 Balances
+          </NavLink>
 
-  <NavLink to="/balances" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    💰 Balances
-  </NavLink>
+          <NavLink to="/payments" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            🚙 Payments
+          </NavLink>
 
-  <NavLink to="/payments" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    🚙 Payments
-  </NavLink>
+          <NavLink to="/reports" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            📊 Reports
+          </NavLink>
 
-  <NavLink to="/reports" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    📊 Reports
-  </NavLink>
+          {/* COMMUNICATION */}
+          <div className="sidebar-section-label">COMMUNICATION</div>
 
+          <NavLink to="/whatsapp" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            💬 WhatsApp Messaging
+          </NavLink>
 
-  {/* COMMUNICATION */}
-  <div className="sidebar-section-label">COMMUNICATION</div>
+          <NavLink to="/dunning" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            📢 Dunning & Reminders
+          </NavLink>
 
-  <NavLink to="/whatsapp" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    💬 WhatsApp Messaging
-  </NavLink>
+          {/* ADMINISTRATION */}
+          <div className="sidebar-section-label">ADMINISTRATION</div>
 
-  <NavLink to="/dunning" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    📢 Dunning & Reminders
-  </NavLink>
+          <NavLink to="/property-setup" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            🏢 Property Setup
+          </NavLink>
 
+          <NavLink to="/users" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            👥 User Management
+          </NavLink>
 
-  {/* ADMINISTRATION */}
-  <div className="sidebar-section-label">ADMINISTRATION</div>
+          <NavLink to="/notifications" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            🔔 Notifications
+          </NavLink>
 
-  <NavLink to="/property-setup" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    🏢 Property Setup
-  </NavLink>
+          <NavLink to="/audit-logs" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            📜 Audit Logs
+          </NavLink>
 
-  <NavLink to="/users" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    👥 User Management
-  </NavLink>
-
-  <NavLink to="/notifications" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    🔔 Notifications
-  </NavLink>
-
-  <NavLink to="/audit-logs" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    📜 Audit Logs
-  </NavLink>
-
-  <NavLink to="/settings" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
-    ⚙️ Settings
-  </NavLink>
-
-</nav>
+          <NavLink to="/settings" className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}>
+            ⚙️ Settings
+          </NavLink>
+        </nav>
 
         <div className="sidebar-footer">
           <button
@@ -112,7 +108,7 @@ export default function DashboardLayout() {
       {/* MAIN CONTENT */}
       <main className="main-content dashboard-shell">
 
-        {/* ⭐⭐⭐ INSERT TOPBAR HERE — EXACTLY HERE ⭐⭐⭐ */}
+        {/* TOPBAR */}
         <div className="topbar">
           <div className="topbar-left">
             <img src={logo} alt="RentEra Logo" className="logo" />
@@ -130,7 +126,6 @@ export default function DashboardLayout() {
             </button>
           </div>
         </div>
-        {/* ⭐⭐⭐ END OF TOPBAR ⭐⭐⭐ */}
 
         <Outlet />
       </main>

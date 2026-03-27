@@ -7,7 +7,9 @@ export function useProperties() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("http://localhost:8000/properties");
+        const API_URL = import.meta.env.VITE_API_URL;
+        const res = await fetch(`${API_URL}/properties`);
+
         const data = await res.json();
         setProperties(data);
       } catch (err) {
