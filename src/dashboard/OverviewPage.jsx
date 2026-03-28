@@ -1,5 +1,5 @@
 // src/dashboard/OverviewPage.jsx
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import "./OverviewPage.css";
 
 import useDashboardKPIs from "../hooks/useDashboardKPIs";
@@ -144,7 +144,9 @@ export default function OverviewPage() {
         <button>Generate Monthly Invoices</button>
         <button>Export Balances</button>
         <button>View Rent Roll</button>
-        <button>Record Payment</button>
+        <button onClick={() => window.location.href = "/payments/new"}>
+          Record Payment
+        </button>
       </footer>
 
     </div>

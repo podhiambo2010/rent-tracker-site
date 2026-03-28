@@ -40,7 +40,7 @@ export default function useDashboardKPIs() {
       firstDay.setDate(1);
 
       const { data: payments, error: paymentsError } = await supabase
-        .from("payments") // VIEW
+        .from("payments")
         .select("amount, paid_at")
         .gte("paid_at", firstDay.toISOString());
 
@@ -54,11 +54,11 @@ export default function useDashboardKPIs() {
         payments?.reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
 
       // -----------------------------
-      // 3. BALANCES VIEW → ARREARS + CREDITS
+      // 3. BALANCES VIEW → ARREARS + CREDIT
       // -----------------------------
       const { data: balances, error: balancesError } = await supabase
         .from("v_monthly_rent_balances")
-        .select("rent_subtotal, late_fees, credits, opening_added, paid_total");
+        .select("rent_due_total, amount_paid_total, balance_total");
 
       if (balancesError) {
         console.error("❌ Balances error:", balancesError);
@@ -66,27 +66,23 @@ export default function useDashboardKPIs() {
         console.log("📄 Balances:", balances);
       }
 
-      // Correct arrears formula:
-      // arrears = (rent_subtotal + late_fees + opening_added) - (paid_total + credits)
       const outstandingArrears =
-        balances
-          ?.map((b) => {
-            const amount =
-              Number(b.rent_subtotal || 0) +
-              Number(b.late_fees || 0) +
-              Number(b.opening_added || 0) -
-              Number(b.paid_total || 0) -
-              Number(b.credits || 0);
-
-            return amount;
-          })
-          .filter((amount) => amount > 0)
-          .reduce((sum, amount) => sum + amount, 0) || 0;
+        balances?.reduce(
+          (sum, b) =>
+            sum +
+            (Number(b.balance_total) > 0 ? Number(b.balance_total) : 0),
+          0
+        ) || 0;
 
       const tenantsInCredit =
-        balances
-          ?.filter((b) => Number(b.credits) > 0)
-          .reduce((sum, b) => sum + Number(b.credits || 0), 0) || 0;
+        balances?.reduce(
+          (sum, b) =>
+            sum +
+            (Number(b.balance_total) < 0
+              ? Math.abs(Number(b.balance_total))
+              : 0),
+          0
+        ) || 0;
 
       // -----------------------------
       // 4. UPDATE STATE

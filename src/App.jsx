@@ -1,9 +1,8 @@
-import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 
-import DashboardLayout from "./layout/DashboardLayout";
 import OverviewPage from "./dashboard/OverviewPage";
 import ArchivedPaymentsPage from "./dashboard/payments/archived/ArchivedPaymentsPage";
+import DashboardLayout from "./layout/DashboardLayout";
 import LeasesPage from "./leases/LeasesPage";
 
 export default function App() {
